@@ -1,0 +1,20 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:smart_park/screens/welcome_screen.dart';
+import 'package:smart_park/theme/app_theme.dart';
+
+void main() {
+  testWidgets('Welcome screen renders', (WidgetTester tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.lightTheme,
+        home: const WelcomeScreen(),
+      ),
+    );
+
+    expect(find.text('Welcome to SmartPark.'), findsOneWidget);
+    expect(find.text('Choose how you want to continue.'), findsOneWidget);
+    expect(find.text('Login'), findsOneWidget);
+    expect(find.text('Sign Up'), findsOneWidget);
+  });
+}

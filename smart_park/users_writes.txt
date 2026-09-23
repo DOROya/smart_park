@@ -1,0 +1,217 @@
+
+  lib\screens\driver_home_page.dart:131:
+  lib\screens\driver_home_page.dart:132:    setState(() {
+  lib\screens\driver_home_page.dart:133:      _savingProfile = true;
+  lib\screens\driver_home_page.dart:134:    });
+  lib\screens\driver_home_page.dart:135:
+  lib\screens\driver_home_page.dart:136:    try {
+> lib\screens\driver_home_page.dart:137:      await FirebaseFirestore.instance.collection('users').doc(uid).update(
+  lib\screens\driver_home_page.dart:138:        <String, dynamic>{
+  lib\screens\driver_home_page.dart:139:          'firstName': firstName,
+  lib\screens\driver_home_page.dart:140:          'lastName': lastName,
+  lib\screens\driver_home_page.dart:141:          'email': email,
+  lib\screens\driver_home_page.dart:142:          'updatedAt': FieldValue.serverTimestamp(),
+  lib\screens\driver_home_page.dart:143:        },
+  lib\screens\driver_home_page.dart:144:      );
+  lib\screens\driver_home_page.dart:145:      _showSnackBar('Profile updated.');
+  lib\screens\driver_home_page.dart:146:    } finally {
+  lib\screens\driver_home_page.dart:147:      if (mounted) {
+  lib\screens\driver_home_page.dart:207:    if (uid == null) {
+  lib\screens\driver_home_page.dart:208:      return Future<DocumentSnapshot<Map<String, dynamic>>>.error(
+  lib\screens\driver_home_page.dart:209:        StateError('No logged-in user found.'),
+  lib\screens\driver_home_page.dart:210:      );
+  lib\screens\driver_home_page.dart:211:    }
+  lib\screens\driver_home_page.dart:212:
+> lib\screens\driver_home_page.dart:213:    return FirebaseFirestore.instance.collection('users').doc(uid).get();
+  lib\screens\driver_home_page.dart:214:  }
+  lib\screens\driver_home_page.dart:215:
+  lib\screens\driver_home_page.dart:216:  Future<void> _initializeDriverPermissions() async {
+  lib\screens\driver_home_page.dart:217:    final bool locationGranted =
+  lib\screens\driver_home_page.dart:218:        await _permissionService.ensureDriverLocationPermission(context);
+  lib\screens\driver_home_page.dart:219:
+  lib\screens\driver_home_page.dart:220:    if (!mounted || !locationGranted) {
+  lib\screens\driver_home_page.dart:221:      if (mounted) {
+  lib\screens\driver_home_page.dart:222:        setState(() {
+  lib\screens\driver_home_page.dart:223:          _locationLabel = 'Location permission not granted';
+  lib\screens\parking_owner_home_screen.dart:74:    if (email.isNotEmpty) {
+  lib\screens\parking_owner_home_screen.dart:75:      mergedData['email'] = email;
+  lib\screens\parking_owner_home_screen.dart:76:    }
+  lib\screens\parking_owner_home_screen.dart:77:
+  lib\screens\parking_owner_home_screen.dart:78:    return FirebaseFirestore.instance
+  lib\screens\parking_owner_home_screen.dart:79:        .collection('users')
+> lib\screens\parking_owner_home_screen.dart:80:        .doc(uid)
+  lib\screens\parking_owner_home_screen.dart:81:        .set(mergedData, SetOptions(merge: true));
+  lib\screens\parking_owner_home_screen.dart:82:  }
+  lib\screens\parking_owner_home_screen.dart:83:
+  lib\screens\parking_owner_home_screen.dart:84:  Future<DocumentSnapshot<Map<String, dynamic>>> _fetchUserDocument() async {
+  lib\screens\parking_owner_home_screen.dart:85:    final User? currentUser = FirebaseAuth.instance.currentUser;
+  lib\screens\parking_owner_home_screen.dart:86:    final String? uid = currentUser?.uid;
+  lib\screens\parking_owner_home_screen.dart:87:    if (uid == null) {
+  lib\screens\parking_owner_home_screen.dart:88:      throw StateError('No logged-in user found.');
+  lib\screens\parking_owner_home_screen.dart:89:    }
+  lib\screens\parking_owner_home_screen.dart:90:
+  lib\screens\parking_owner_home_screen.dart:92:        .trim()
+  lib\screens\parking_owner_home_screen.dart:93:        .toLowerCase();
+  lib\screens\parking_owner_home_screen.dart:94:    final CollectionReference<Map<String, dynamic>> usersCollection =
+  lib\screens\parking_owner_home_screen.dart:95:        FirebaseFirestore.instance.collection('users');
+  lib\screens\parking_owner_home_screen.dart:96:
+  lib\screens\parking_owner_home_screen.dart:97:    final DocumentSnapshot<Map<String, dynamic>> byUid = await usersCollection
+> lib\screens\parking_owner_home_screen.dart:98:        .doc(uid)
+  lib\screens\parking_owner_home_screen.dart:99:        .get();
+  lib\screens\parking_owner_home_screen.dart:100:    if (byUid.exists) {
+  lib\screens\parking_owner_home_screen.dart:101:      return byUid;
+  lib\screens\parking_owner_home_screen.dart:102:    }
+  lib\screens\parking_owner_home_screen.dart:103:
+  lib\screens\parking_owner_home_screen.dart:104:    final QuerySnapshot<Map<String, dynamic>> byUserId = await usersCollection
+  lib\screens\parking_owner_home_screen.dart:105:        .where('userID', isEqualTo: uid)
+  lib\screens\parking_owner_home_screen.dart:106:        .limit(1)
+  lib\screens\parking_owner_home_screen.dart:107:        .get();
+  lib\screens\parking_owner_home_screen.dart:108:    if (byUserId.docs.isNotEmpty) {
+  lib\screens\parking_owner_home_screen.dart:109:      final Map<String, dynamic> data = byUserId.docs.first.data();
+  lib\screens\parking_owner_home_screen.dart:110:      await _backfillUserDocument(uid: uid, email: normalizedEmail, data: data);
+> lib\screens\parking_owner_home_screen.dart:111:      return usersCollection.doc(uid).get();
+  lib\screens\parking_owner_home_screen.dart:112:    }
+  lib\screens\parking_owner_home_screen.dart:113:
+  lib\screens\parking_owner_home_screen.dart:114:    if (normalizedEmail.isNotEmpty) {
+  lib\screens\parking_owner_home_screen.dart:115:      final QuerySnapshot<Map<String, dynamic>> byEmail = await usersCollection
+  lib\screens\parking_owner_home_screen.dart:116:          .where('email', isEqualTo: normalizedEmail)
+  lib\screens\parking_owner_home_screen.dart:117:          .limit(1)
+  lib\screens\parking_owner_home_screen.dart:118:          .get();
+  lib\screens\parking_owner_home_screen.dart:119:      if (byEmail.docs.isNotEmpty) {
+  lib\screens\parking_owner_home_screen.dart:120:        final Map<String, dynamic> data = byEmail.docs.first.data();
+  lib\screens\parking_owner_home_screen.dart:121:        await _backfillUserDocument(
+  lib\screens\parking_owner_home_screen.dart:122:          uid: uid,
+  lib\screens\parking_owner_home_screen.dart:123:          email: normalizedEmail,
+  lib\screens\parking_owner_home_screen.dart:124:          data: data,
+  lib\screens\parking_owner_home_screen.dart:125:        );
+> lib\screens\parking_owner_home_screen.dart:126:        return usersCollection.doc(uid).get();
+  lib\screens\parking_owner_home_screen.dart:127:      }
+  lib\screens\parking_owner_home_screen.dart:128:    }
+  lib\screens\parking_owner_home_screen.dart:129:
+  lib\screens\parking_owner_home_screen.dart:130:    return byUid;
+  lib\screens\parking_owner_home_screen.dart:131:  }
+  lib\screens\parking_owner_home_screen.dart:132:
+  lib\screens\parking_owner_home_screen.dart:133:  void _showSnackBar(String message) {
+  lib\screens\parking_owner_home_screen.dart:134:    if (!mounted) return;
+  lib\screens\parking_owner_home_screen.dart:135:    ScaffoldMessenger.of(
+  lib\screens\parking_owner_home_screen.dart:136:      context,
+  lib\screens\parking_owner_home_screen.dart:239:      _showSnackBar('Please complete profile fields.');
+  lib\screens\parking_owner_home_screen.dart:240:      return;
+  lib\screens\parking_owner_home_screen.dart:241:    }
+  lib\screens\parking_owner_home_screen.dart:242:
+  lib\screens\parking_owner_home_screen.dart:243:    setState(() => _savingProfile = true);
+  lib\screens\parking_owner_home_screen.dart:244:    try {
+> lib\screens\parking_owner_home_screen.dart:245:      await FirebaseFirestore.instance.collection('users').doc(ownerId).update({
+  lib\screens\parking_owner_home_screen.dart:246:        'firstName': firstName,
+  lib\screens\parking_owner_home_screen.dart:247:        'lastName': lastName,
+  lib\screens\parking_owner_home_screen.dart:248:        'email': email,
+  lib\screens\parking_owner_home_screen.dart:249:        'role': role,
+  lib\screens\parking_owner_home_screen.dart:250:        'updatedAt': FieldValue.serverTimestamp(),
+  lib\screens\parking_owner_home_screen.dart:251:      });
+  lib\screens\parking_owner_home_screen.dart:252:      _showSnackBar('Profile updated.');
+  lib\screens\parking_owner_home_screen.dart:253:    } finally {
+  lib\screens\parking_owner_home_screen.dart:254:      if (mounted) setState(() => _savingProfile = false);
+  lib\screens\parking_owner_home_screen.dart:255:    }
+  lib\screens\role_based_home_page.dart:75:    required CollectionReference<Map<String, dynamic>> usersCollection,
+  lib\screens\role_based_home_page.dart:76:    required String uid,
+  lib\screens\role_based_home_page.dart:77:    required User authenticatedUser,
+  lib\screens\role_based_home_page.dart:78:    required bool hasRetriedAfterTokenRefresh,
+  lib\screens\role_based_home_page.dart:79:  }) async {
+  lib\screens\role_based_home_page.dart:80:    try {
+> lib\screens\role_based_home_page.dart:81:      return await usersCollection.doc(uid).get();
+  lib\screens\role_based_home_page.dart:82:    } on FirebaseException catch (error) {
+  lib\screens\role_based_home_page.dart:83:      if (!hasRetriedAfterTokenRefresh && error.code == 'permission-denied') {
+  lib\screens\role_based_home_page.dart:84:        await authenticatedUser.getIdToken(true);
+  lib\screens\role_based_home_page.dart:85:        return _readUserDocWithRetry(
+  lib\screens\role_based_home_page.dart:86:          usersCollection: usersCollection,
+  lib\screens\role_based_home_page.dart:87:          uid: uid,
+  lib\screens\role_based_home_page.dart:88:          authenticatedUser: authenticatedUser,
+  lib\screens\role_based_home_page.dart:89:          hasRetriedAfterTokenRefresh: true,
+  lib\screens\role_based_home_page.dart:90:        );
+  lib\screens\role_based_home_page.dart:91:      }
+  lib\screens\role_based_home_page.dart:190:    if (email.isNotEmpty) {
+  lib\screens\role_based_home_page.dart:191:      mergedData['email'] = email;
+  lib\screens\role_based_home_page.dart:192:    }
+  lib\screens\role_based_home_page.dart:193:
+  lib\screens\role_based_home_page.dart:194:    return FirebaseFirestore.instance
+  lib\screens\role_based_home_page.dart:195:        .collection('users')
+> lib\screens\role_based_home_page.dart:196:        .doc(uid)
+  lib\screens\role_based_home_page.dart:197:        .set(mergedData, SetOptions(merge: true));
+  lib\screens\role_based_home_page.dart:198:  }
+  lib\screens\role_based_home_page.dart:199:
+  lib\screens\role_based_home_page.dart:200:  Future<String> _resolveRole() async {
+  lib\screens\role_based_home_page.dart:201:    return _resolveRoleInternal(hasRetriedAfterTokenRefresh: false);
+  lib\screens\role_based_home_page.dart:202:  }
+  lib\screens\role_based_home_page.dart:203:
+  lib\screens\role_based_home_page.dart:204:  Future<String> _resolveRoleInternal({
+  lib\screens\role_based_home_page.dart:205:    required bool hasRetriedAfterTokenRefresh,
+  lib\screens\role_based_home_page.dart:206:  }) async {
+  lib\screens\staff_home_page.dart:88:      detectionSpeed: DetectionSpeed.noDuplicates,
+  lib\screens\staff_home_page.dart:89:      facing: CameraFacing.back,
+  lib\screens\staff_home_page.dart:90:      torchEnabled: false,
+  lib\screens\staff_home_page.dart:91:    );
+  lib\screens\staff_home_page.dart:92:
+  lib\screens\staff_home_page.dart:93:    final String? uid = FirebaseAuth.instance.currentUser?.uid;
+> lib\screens\staff_home_page.dart:94:    _userFuture = FirebaseFirestore.instance.collection('users').doc(uid).get();
+  lib\screens\staff_home_page.dart:95:
+  lib\screens\staff_home_page.dart:96:    _historyTabController = TabController(length: 4, vsync: this);
+  lib\screens\staff_home_page.dart:97:    _historyTabController.addListener(() {
+  lib\screens\staff_home_page.dart:98:      if (_historyTabController.indexIsChanging) {
+  lib\screens\staff_home_page.dart:99:        return;
+  lib\screens\staff_home_page.dart:100:      }
+  lib\screens\staff_home_page.dart:101:
+  lib\screens\staff_home_page.dart:102:      setState(() {
+  lib\screens\staff_home_page.dart:103:        _historyFilter = switch (_historyTabController.index) {
+  lib\screens\staff_home_page.dart:104:          0 => 'all',
+  lib\screens\staff_home_page.dart:170:        });
+  lib\screens\staff_home_page.dart:171:        return;
+  lib\screens\staff_home_page.dart:172:      }
+  lib\screens\staff_home_page.dart:173:    }
+  lib\screens\staff_home_page.dart:174:
+  lib\screens\staff_home_page.dart:175:    final DocumentSnapshot<Map<String, dynamic>> userDoc =
+> lib\screens\staff_home_page.dart:176:        await FirebaseFirestore.instance.collection('users').doc(uid).get();
+  lib\screens\staff_home_page.dart:177:
+  lib\screens\staff_home_page.dart:178:    if (!mounted) {
+  lib\screens\staff_home_page.dart:179:      return;
+  lib\screens\staff_home_page.dart:180:    }
+  lib\screens\staff_home_page.dart:181:
+  lib\screens\staff_home_page.dart:182:    setState(() {
+  lib\screens\staff_home_page.dart:183:      _assignedFacilityId = (userDoc.data()?['establishmentID'] as String?) ??
+  lib\screens\staff_home_page.dart:184:          (userDoc.data()?['facilityId'] as String?);
+  lib\screens\staff_home_page.dart:185:      _ownerId = userDoc.data()?['ownerId'] as String?;
+  lib\screens\staff_home_page.dart:186:    });
+  lib\screens\verify_email_screen.dart:168:    if (canonicalRole != null) {
+  lib\screens\verify_email_screen.dart:169:      userData['role'] = canonicalRole;
+  lib\screens\verify_email_screen.dart:170:    }
+  lib\screens\verify_email_screen.dart:171:
+  lib\screens\verify_email_screen.dart:172:    await FirebaseFirestore.instance
+  lib\screens\verify_email_screen.dart:173:        .collection('users')
+> lib\screens\verify_email_screen.dart:174:        .doc(uid)
+  lib\screens\verify_email_screen.dart:175:        .set(userData, SetOptions(merge: true));
+  lib\screens\verify_email_screen.dart:176:  }
+  lib\screens\verify_email_screen.dart:177:
+  lib\screens\verify_email_screen.dart:178:  Future<void> _checkVerification() async {
+  lib\screens\verify_email_screen.dart:179:    final User? user = FirebaseAuth.instance.currentUser;
+  lib\screens\verify_email_screen.dart:180:    if (user == null) {
+  lib\screens\verify_email_screen.dart:181:      if (!mounted) {
+  lib\screens\verify_email_screen.dart:182:        return;
+  lib\screens\verify_email_screen.dart:183:      }
+  lib\screens\verify_email_screen.dart:184:      Navigator.of(context).pushAndRemoveUntil(
+  lib\services\establishment_repository.dart:13:  CollectionReference<Map<String, dynamic>> get _establishments =>
+  lib\services\establishment_repository.dart:14:      FirebaseFirestore.instance.collection('establishments');
+  lib\services\establishment_repository.dart:15:  CollectionReference<Map<String, dynamic>> get _establishmentDetails =>
+  lib\services\establishment_repository.dart:16:      FirebaseFirestore.instance.collection('establishment_details');
+  lib\services\establishment_repository.dart:17:
+  lib\services\establishment_repository.dart:18:  DocumentReference<Map<String, dynamic>> _userRef(String ownerId) =>
+> lib\services\establishment_repository.dart:19:      FirebaseFirestore.instance.collection('users').doc(ownerId);
+  lib\services\establishment_repository.dart:20:
+  lib\services\establishment_repository.dart:21:  Future<String> saveFacility({
+  lib\services\establishment_repository.dart:22:    required String ownerId,
+  lib\services\establishment_repository.dart:23:    required Map<String, dynamic> ownerData,
+  lib\services\establishment_repository.dart:24:    required FacilityRegistrationData formData,
+  lib\services\establishment_repository.dart:25:    String? establishmentId,
+  lib\services\establishment_repository.dart:26:  }) async {
+  lib\services\establishment_repository.dart:27:    final bool isCreate = establishmentId == null;
+  lib\services\establishment_repository.dart:28:    final String savedId =
+  lib\services\establishment_repository.dart:29:        establishmentId ?? _establishments.doc().id;
+

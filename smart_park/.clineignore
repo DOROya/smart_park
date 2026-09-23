@@ -1,0 +1,12 @@
+# Stop the AI from reading secret payment keys or local settings
+paymongo.dev.json
+.env
+*.env
+
+# Stop the AI from wasting tokens reading platform-specific native configurations
+/android/
+/ios/
+/web/
+/macos/
+/windows/
+/linux/

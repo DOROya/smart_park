@@ -1,0 +1,26 @@
+_userFuture = FirebaseFirestore.instance.collection('users').doc(uid).get();
+.collection('activity_logs')
+.collection('establishment_details')
+.collection('establishments')
+.collection('payment_splits')
+.collection('payments')
+.collection('staff_accounts')
+.collection('transactions')
+.collection('users')
+await FirebaseFirestore.instance.collection('activity_logs').add(
+await FirebaseFirestore.instance.collection('staff_accounts').add({
+await FirebaseFirestore.instance.collection('StaffActivityLogs').add(
+await FirebaseFirestore.instance.collection('users').doc(ownerId).update({
+await FirebaseFirestore.instance.collection('users').doc(uid).get();
+await FirebaseFirestore.instance.collection('users').doc(uid).update(
+FirebaseFirestore.instance.collection('activity_logs').doc();
+FirebaseFirestore.instance.collection('establishment_details');
+FirebaseFirestore.instance.collection('establishments');
+FirebaseFirestore.instance.collection('payment_splits').doc();
+FirebaseFirestore.instance.collection('payments').doc();
+FirebaseFirestore.instance.collection('transactions').doc();
+FirebaseFirestore.instance.collection('transactions').doc(transactionId);
+FirebaseFirestore.instance.collection('users');
+FirebaseFirestore.instance.collection('users').doc(ownerId);
+return FirebaseFirestore.instance.collection('users').doc(uid).get();
+stream: FirebaseFirestore.instance.collection('users').snapshots(),

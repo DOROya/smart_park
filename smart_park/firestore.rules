@@ -1,0 +1,52 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Staff sign in with a synthetic-domain email (see
+    // staff_credentials.dart) and can never complete Firebase's email
+    // verification flow, so treat those accounts as verified here too.
+    function isVerifiedOrStaff() {
+      // matches() requires a FULL string match, so the username portion
+      // before '@' needs an explicit wildcard - without it this never
+      // matched any real staff email (e.g. "hx37e_juandelacruz@...").
+      return request.auth != null &&
+        (request.auth.token.email_verified == true ||
+         request.auth.token.email.matches('.*@staff[.]smartpark[.]internal$'));
+    }
+
+    match /users/{userId} {
+      // Allow role/profile bootstrap reads even when email_verified claim is stale.
+      allow read: if request.auth != null;
+      allow create, update: if request.auth != null && request.auth.uid == userId;
+      allow delete: if false;
+    }
+
+    match /staff_accounts/{staffId} {
+      // Role resolution checks this collection by email for staff logins.
+      allow read: if request.auth != null;
+      allow create, update: if request.auth != null && request.auth.token.email_verified == true;
+      allow delete: if false;
+    }
+
+    match /activity_logs/{logId} {
+      allow read, create: if isVerifiedOrStaff();
+      // Slice 1 gate flow closes the open ENTRY log on EXIT (isActive=false).
+      allow update: if isVerifiedOrStaff();
+      allow delete: if false;
+    }
+
+    match /StaffActivityLogs/{logId} {
+      allow read, create: if isVerifiedOrStaff();
+      allow update, delete: if false;
+    }
+
+    match /transactions/{transactionId} {
+      allow read, create, update: if isVerifiedOrStaff();
+      allow delete: if false;
+    }
+
+    match /{document=**} {
+      allow read, write: if isVerifiedOrStaff();
+    }
+  }
+}

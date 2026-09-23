@@ -1,0 +1,26 @@
+{
+	"firestore": {
+		"rules": "firestore.rules",
+		"indexes": "firestore.indexes.json"
+	},
+	"flutter": {
+		"platforms": {
+			"android": {
+				"default": {
+					"projectId": "smartpark-87e3d",
+					"appId": "1:858489179060:android:79fd2f93bc73021ba8c0e1",
+					"fileOutput": "android/app/google-services.json"
+				}
+			},
+			"dart": {
+				"lib/firebase_options.dart": {
+					"projectId": "smartpark-87e3d",
+					"configurations": {
+						"android": "1:858489179060:android:79fd2f93bc73021ba8c0e1",
+						"ios": "1:858489179060:ios:9af2b6e4e9fc119da8c0e1"
+					}
+				}
+			}
+		}
+	}
+}
