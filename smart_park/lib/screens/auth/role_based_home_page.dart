@@ -2,11 +2,11 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
-import '../utils/staff_credentials.dart';
-import 'admin_home_page.dart';
-import 'driver_home_page.dart';
-import 'parking_owner_home_screen.dart';
-import 'staff_home_page.dart';
+import '../../utils/staff_credentials.dart';
+import '../admin/admin_home_page.dart';
+import '../driver/driver_home_page.dart';
+import '../parking_owner/parking_owner_home_screen.dart';
+import '../staff/staff_home_page.dart';
 
 class RoleBasedHomePage extends StatefulWidget {
   const RoleBasedHomePage({super.key});

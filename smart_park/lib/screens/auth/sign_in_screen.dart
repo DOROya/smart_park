@@ -3,9 +3,9 @@ import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
-import '../services/email_rate_limiter.dart';
-import '../widgets/auth_widgets.dart';
-import '../utils/staff_credentials.dart';
+import '../../services/email_rate_limiter.dart';
+import '../../widgets/auth_widgets.dart';
+import '../../utils/staff_credentials.dart';
 import 'role_based_home_page.dart';
 import 'sign_up_screen.dart';
 import 'verify_email_screen.dart';

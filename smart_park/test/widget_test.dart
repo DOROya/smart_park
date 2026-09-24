@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:smart_park/screens/welcome_screen.dart';
+import 'package:smart_park/screens/auth/welcome_screen.dart';
 import 'package:smart_park/theme/app_theme.dart';
 
 void main() {

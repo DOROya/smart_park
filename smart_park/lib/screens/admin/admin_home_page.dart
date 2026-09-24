@@ -5,14 +5,14 @@ import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
-import '../theme/app_theme.dart';
-import '../widgets/smartpark_ui.dart';
-import 'sign_in_screen.dart';
+import '../../theme/app_theme.dart';
+import '../../widgets/smartpark_ui.dart';
+import '../auth/sign_in_screen.dart';
 
-part 'admin/admin_home_page_fragments.dart';
-part 'admin/admin_facility_review.dart';
-part 'admin/admin_user_directory.dart';
-part 'admin/admin_finance_series.dart';
+part 'admin_home_page_fragments.dart';
+part 'admin_facility_review.dart';
+part 'admin_user_directory.dart';
+part 'admin_finance_series.dart';
 
 enum _AdminTab { dashboard, facility, users, finance, settings }
 

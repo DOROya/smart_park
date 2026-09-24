@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
-import '../theme/app_theme.dart';
+import '../../theme/app_theme.dart';
 
 class DriverInAppCheckoutPage extends StatefulWidget {
   const DriverInAppCheckoutPage({

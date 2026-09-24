@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
-import '../theme/app_theme.dart';
+import '../../theme/app_theme.dart';
 
 class DriverPaidTicketPage extends StatelessWidget {
   const DriverPaidTicketPage({

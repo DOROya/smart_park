@@ -7,15 +7,15 @@ import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
-import '../services/permission_service.dart';
-import '../theme/app_theme.dart';
-import '../widgets/smartpark_ui.dart';
-import 'driver/services/driver_establishment_service.dart';
-import 'driver/widgets/driver_home_section.dart';
-import 'driver/widgets/driver_profile_section.dart';
-import 'driver/widgets/driver_ticket_history_section.dart';
+import '../../services/permission_service.dart';
+import '../../theme/app_theme.dart';
+import '../../widgets/smartpark_ui.dart';
+import 'services/driver_establishment_service.dart';
+import 'widgets/driver_home_section.dart';
+import 'widgets/driver_profile_section.dart';
+import 'widgets/driver_ticket_history_section.dart';
 import 'establishment_detail_page.dart';
-import 'sign_in_screen.dart';
+import '../auth/sign_in_screen.dart';
 
 class DriverHomePage extends StatefulWidget {
   const DriverHomePage({super.key, this.role = 'driver'});

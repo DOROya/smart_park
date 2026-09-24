@@ -1,6 +1,6 @@
 // ignore_for_file: invalid_use_of_protected_member
 
-part of '../admin_home_page.dart';
+part of 'admin_home_page.dart';
 
 /// Facility tab: metrics, review panels, table and cards.
 extension _AdminFacilityReview on _AdminHomePageState {

@@ -1,6 +1,6 @@
 // ignore_for_file: invalid_use_of_protected_member
 
-part of 'package:smart_park/screens/parking_owner_home_screen.dart';
+part of 'package:smart_park/screens/parking_owner/parking_owner_home_screen.dart';
 
 extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
   InputDecoration _ownerFieldDecoration({

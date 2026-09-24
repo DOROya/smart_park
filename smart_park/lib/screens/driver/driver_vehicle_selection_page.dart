@@ -3,8 +3,8 @@ import 'package:flutter/material.dart';
 import 'driver_checkout_payment_page.dart';
 import 'driver_package_selection_page.dart';
 import 'driver_payment_page.dart';
-import '../services/parking_pricing.dart';
-import '../theme/app_theme.dart';
+import '../../services/parking_pricing.dart';
+import '../../theme/app_theme.dart';
 
 class DriverVehicleOption {
   const DriverVehicleOption({

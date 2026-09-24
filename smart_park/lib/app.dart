@@ -6,9 +6,9 @@ import 'package:flutter/foundation.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import 'services/app_version_guard.dart';
-import 'screens/role_based_home_page.dart';
-import 'screens/verify_email_screen.dart';
-import 'screens/welcome_screen.dart';
+import 'screens/auth/role_based_home_page.dart';
+import 'screens/auth/verify_email_screen.dart';
+import 'screens/auth/welcome_screen.dart';
 import 'theme/app_theme.dart';
 import 'utils/staff_credentials.dart';
 

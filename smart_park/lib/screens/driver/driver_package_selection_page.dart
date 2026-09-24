@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 
-import '../services/parking_pricing.dart';
-import '../theme/app_theme.dart';
-import '../widgets/smartpark_ui.dart';
+import '../../services/parking_pricing.dart';
+import '../../theme/app_theme.dart';
+import '../../widgets/smartpark_ui.dart';
 
 class DriverPackageOption {
   const DriverPackageOption({

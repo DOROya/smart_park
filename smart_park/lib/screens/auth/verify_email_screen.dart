@@ -4,9 +4,9 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
-import '../services/email_rate_limiter.dart';
-import '../theme/app_theme.dart';
-import '../widgets/auth_widgets.dart';
+import '../../services/email_rate_limiter.dart';
+import '../../theme/app_theme.dart';
+import '../../widgets/auth_widgets.dart';
 import 'role_based_home_page.dart';
 import 'sign_in_screen.dart';
 

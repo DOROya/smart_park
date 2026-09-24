@@ -1,6 +1,6 @@
 // ignore_for_file: invalid_use_of_protected_member
 
-part of '../admin_home_page.dart';
+part of 'admin_home_page.dart';
 
 /// Users tab: directory rows and the user details dialog.
 extension _AdminUserDirectory on _AdminHomePageState {

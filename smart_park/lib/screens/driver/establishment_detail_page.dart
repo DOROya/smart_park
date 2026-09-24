@@ -9,11 +9,11 @@ import 'driver_payment_page.dart';
 import 'driver_vehicle_selection_page.dart';
 import 'driver_in_app_checkout_page.dart';
 import 'driver_paid_ticket_page.dart';
-import '../services/parking_checkout_service.dart';
-import '../theme/app_theme.dart';
-import '../widgets/smartpark_ui.dart';
-import 'driver/services/driver_establishment_service.dart';
-import '../services/operating_hours.dart';
+import '../../services/parking_checkout_service.dart';
+import '../../theme/app_theme.dart';
+import '../../widgets/smartpark_ui.dart';
+import 'services/driver_establishment_service.dart';
+import '../../services/operating_hours.dart';
 
 part 'establishment_detail/rate_display.dart';
 

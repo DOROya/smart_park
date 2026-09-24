@@ -1,4 +1,4 @@
-part of 'package:smart_park/screens/parking_owner_home_screen.dart';
+part of 'package:smart_park/screens/parking_owner/parking_owner_home_screen.dart';
 
 DateTime? _parseDateTime(dynamic value) {
   if (value == null) return null;

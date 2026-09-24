@@ -1,4 +1,4 @@
-part of '../admin_home_page.dart';
+part of 'admin_home_page.dart';
 
 /// Dashboard and Finance chart series built from `stats_daily`.
 extension _AdminFinanceSeries on _AdminHomePageState {

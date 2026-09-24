@@ -6,14 +6,14 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
-import '../services/parking_pricing.dart';
-import '../services/permission_service.dart';
-import '../theme/app_theme.dart';
-import '../widgets/smartpark_ui.dart';
-import 'sign_in_screen.dart';
-import 'staff/walk_in_panel.dart';
+import '../../services/parking_pricing.dart';
+import '../../services/permission_service.dart';
+import '../../theme/app_theme.dart';
+import '../../widgets/smartpark_ui.dart';
+import '../auth/sign_in_screen.dart';
+import 'walk_in_panel.dart';
 
-part 'staff/staff_home_page_fragments.dart';
+part 'staff_home_page_fragments.dart';
 
 class StaffHomePage extends StatefulWidget {
   const StaffHomePage({super.key});

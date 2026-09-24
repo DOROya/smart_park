@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 
-import '../theme/app_theme.dart';
-import '../widgets/auth_widgets.dart';
-import '../widgets/smartpark_ui.dart';
+import '../../theme/app_theme.dart';
+import '../../widgets/auth_widgets.dart';
+import '../../widgets/smartpark_ui.dart';
 import 'sign_in_screen.dart';
 import 'select_role_screen.dart';
 import 'welcome_screen.dart';

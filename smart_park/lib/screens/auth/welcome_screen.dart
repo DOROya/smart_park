@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
-import '../theme/app_theme.dart';
-import '../widgets/auth_widgets.dart';
+import '../../theme/app_theme.dart';
+import '../../widgets/auth_widgets.dart';
 import 'sign_in_screen.dart';
 import 'sign_up_screen.dart';
 

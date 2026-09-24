@@ -1,4 +1,4 @@
-part of 'package:smart_park/screens/parking_owner_home_screen.dart';
+part of 'package:smart_park/screens/parking_owner/parking_owner_home_screen.dart';
 
 class _GateActivityContent extends StatefulWidget {
   const _GateActivityContent({required this.facilityId});

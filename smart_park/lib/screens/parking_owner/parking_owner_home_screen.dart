@@ -10,19 +10,19 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 
-import '../models/facility_registration_data.dart';
-import '../theme/app_theme.dart';
-import '../services/establishment_repository.dart';
-import '../services/platform_fees.dart';
-import '../utils/staff_credentials.dart';
-import '../widgets/smartpark_ui.dart';
-import 'parking_owner/widgets/facility_registration_dialog.dart';
-import 'parking_owner/widgets/facility_review_status_banner.dart';
-import 'sign_in_screen.dart';
+import '../../models/facility_registration_data.dart';
+import '../../theme/app_theme.dart';
+import '../../services/establishment_repository.dart';
+import '../../services/platform_fees.dart';
+import '../../utils/staff_credentials.dart';
+import '../../widgets/smartpark_ui.dart';
+import 'widgets/facility_registration_dialog.dart';
+import 'widgets/facility_review_status_banner.dart';
+import '../auth/sign_in_screen.dart';
 
-part 'parking_owner/parking_owner_home_fragments.dart';
-part 'parking_owner/parking_owner_commissions.dart';
-part 'parking_owner/parking_owner_gate_activity.dart';
+part 'parking_owner_home_fragments.dart';
+part 'parking_owner_commissions.dart';
+part 'parking_owner_gate_activity.dart';
 
 class ParkingOwnerHomePage extends StatefulWidget {
   const ParkingOwnerHomePage({super.key, this.role = 'parking owner'});
