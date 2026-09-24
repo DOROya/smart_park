@@ -74,8 +74,10 @@ class _SignInScreenState extends State<SignInScreen> {
         if (!mounted) {
           return;
         }
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute<void>(builder: (_) => const VerifyEmailScreen()),
+        unawaited(
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute<void>(builder: (_) => const VerifyEmailScreen()),
+          ),
         );
         return;
       }
@@ -90,8 +92,10 @@ class _SignInScreenState extends State<SignInScreen> {
         return;
       }
 
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute<void>(builder: (_) => const RoleBasedHomePage()),
+      unawaited(
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute<void>(builder: (_) => const RoleBasedHomePage()),
+        ),
       );
     } on FirebaseAuthException catch (error) {
       if (!mounted) {

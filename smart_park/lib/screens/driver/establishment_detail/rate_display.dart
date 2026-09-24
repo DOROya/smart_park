@@ -97,19 +97,19 @@ List<_RateDetailCell> _getRateGridCells(
   final Map<String, dynamic> ratesByType = _asStringMap(data['ratesByType']);
   final Map<String, dynamic> rates = _asStringMap(data['rates']);
 
-  dynamic rawVehicleValue = ratesByType[vehicleKey] ?? rates[vehicleKey];
-  Map<String, dynamic> vMap = rawVehicleValue is Map
+  final dynamic rawVehicleValue = ratesByType[vehicleKey] ?? rates[vehicleKey];
+  final Map<String, dynamic> vMap = rawVehicleValue is Map
       ? _asStringMap(rawVehicleValue)
       : <String, dynamic>{};
 
-  dynamic rawInitial =
+  final dynamic rawInitial =
       vMap['initial'] ??
       vMap['rates'] ??
       vMap['hourly'] ??
       vMap['firstHours'] ??
       rawVehicleValue;
 
-  dynamic rawDaily = _extractRateValue(data, vMap, vehicleKey, <String>[
+  final dynamic rawDaily = _extractRateValue(data, vMap, vehicleKey, <String>[
     'succeedingDaily',
     'SucceedingDaily',
     'succeeding_daily',
@@ -117,7 +117,7 @@ List<_RateDetailCell> _getRateGridCells(
     'ratesByDaily',
   ]);
 
-  dynamic rawWeekly = _extractRateValue(data, vMap, vehicleKey, <String>[
+  final dynamic rawWeekly = _extractRateValue(data, vMap, vehicleKey, <String>[
     'succeedingWeekly',
     'SucceedingWeekly',
     'succeeding_weekly',
@@ -126,7 +126,7 @@ List<_RateDetailCell> _getRateGridCells(
     'succeedingWeeklyRates',
   ]);
 
-  dynamic rawMonthly = _extractRateValue(data, vMap, vehicleKey, <String>[
+  final dynamic rawMonthly = _extractRateValue(data, vMap, vehicleKey, <String>[
     'succeedingMonthly',
     'SucceedingMonthly',
     'succeeding_monthly',
@@ -209,7 +209,7 @@ _QuickRateData _getQuickRateData(Map<String, dynamic> data, String vehicleKey) {
         data['ratesByDaily'],
   );
 
-  dynamic rawVehicleValue = ratesByType[vehicleKey] ?? rates[vehicleKey];
+  final dynamic rawVehicleValue = ratesByType[vehicleKey] ?? rates[vehicleKey];
 
   dynamic rawInitial;
   dynamic rawSucceedingHour;

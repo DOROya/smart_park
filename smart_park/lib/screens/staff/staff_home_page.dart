@@ -195,9 +195,11 @@ class _StaffHomePageState extends State<StaffHomePage>
     if (!mounted) {
       return;
     }
-    Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute<void>(builder: (_) => const SignInScreen()),
-      (Route<dynamic> route) => false,
+    unawaited(
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute<void>(builder: (_) => const SignInScreen()),
+        (Route<dynamic> route) => false,
+      ),
     );
   }
 
@@ -665,7 +667,7 @@ class _StaffHomePageState extends State<StaffHomePage>
       return;
     }
 
-    DateTime entryTime = entryAt ?? scannedAt;
+    final DateTime entryTime = entryAt ?? scannedAt;
     Duration elapsed = scannedAt.difference(entryTime);
     if (elapsed.isNegative) {
       elapsed = Duration.zero;

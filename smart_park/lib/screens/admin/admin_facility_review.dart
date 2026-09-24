@@ -388,9 +388,10 @@ extension _AdminFacilityReview on _AdminHomePageState {
         '${(data['ownerFirstName'] as String?) ?? ''} ${(data['ownerLastName'] as String?) ?? ''}'
             .trim();
     final String ownerEmail = ((data['ownerEmail'] as String?) ?? '').trim();
-    final int cars = ((data['slotCounts']?['car'] as num?) ?? 0).toInt();
-    final int motorcycles = ((data['slotCounts']?['motorcycle'] as num?) ?? 0)
+    final int cars = (((data['slotCounts'] as Map?)?['car'] as num?) ?? 0)
         .toInt();
+    final int motorcycles =
+        (((data['slotCounts'] as Map?)?['motorcycle'] as num?) ?? 0).toInt();
     final bool resubmitted =
         ((data['status'] as String?) ?? 'pending').toLowerCase() == 'pending' &&
         data['resubmittedAt'] != null;
@@ -545,9 +546,10 @@ extension _AdminFacilityReview on _AdminHomePageState {
     final String ownerName =
         '${(data['ownerFirstName'] as String?) ?? ''} ${(data['ownerLastName'] as String?) ?? ''}'
             .trim();
-    final int cars = ((data['slotCounts']?['car'] as num?) ?? 0).toInt();
-    final int motorcycles = ((data['slotCounts']?['motorcycle'] as num?) ?? 0)
+    final int cars = (((data['slotCounts'] as Map?)?['car'] as num?) ?? 0)
         .toInt();
+    final int motorcycles =
+        (((data['slotCounts'] as Map?)?['motorcycle'] as num?) ?? 0).toInt();
     final bool resubmitted =
         ((data['status'] as String?) ?? 'pending').toLowerCase() == 'pending' &&
         data['resubmittedAt'] != null;

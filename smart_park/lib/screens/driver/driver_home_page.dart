@@ -436,9 +436,11 @@ class _DriverHomePageState extends State<DriverHomePage>
       return;
     }
 
-    Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute<void>(builder: (_) => const SignInScreen()),
-      (route) => false,
+    unawaited(
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute<void>(builder: (_) => const SignInScreen()),
+        (route) => false,
+      ),
     );
   }
 

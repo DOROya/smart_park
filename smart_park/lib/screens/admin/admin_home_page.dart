@@ -356,9 +356,11 @@ class _AdminHomePageState extends State<AdminHomePage>
       return;
     }
 
-    Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute<void>(builder: (_) => const SignInScreen()),
-      (Route<dynamic> route) => false,
+    unawaited(
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute<void>(builder: (_) => const SignInScreen()),
+        (Route<dynamic> route) => false,
+      ),
     );
   }
 
@@ -428,6 +430,7 @@ class _AdminHomePageState extends State<AdminHomePage>
             in subscriptions) {
           await sub.cancel();
         }
+        await controller.close();
       },
     );
     return controller.stream;
@@ -938,8 +941,8 @@ class _AdminHomePageState extends State<AdminHomePage>
                                       ),
                                       _buildReviewField(
                                         'Slots',
-                                        'Car: ${(data['slotCounts']?['car'] as num?) ?? 0}\n'
-                                            'Motorcycle: ${(data['slotCounts']?['motorcycle'] as num?) ?? 0}',
+                                        'Car: ${((data['slotCounts'] as Map?)?['car'] as num?) ?? 0}\n'
+                                            'Motorcycle: ${((data['slotCounts'] as Map?)?['motorcycle'] as num?) ?? 0}',
                                       ),
                                       _buildReviewField(
                                         'Rates',

@@ -262,9 +262,11 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
       if (!mounted) {
         return;
       }
-      Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute<void>(builder: (_) => const SignInScreen()),
-        (route) => false,
+      unawaited(
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute<void>(builder: (_) => const SignInScreen()),
+          (route) => false,
+        ),
       );
       return;
     }
@@ -283,9 +285,11 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
       if (!mounted) {
         return;
       }
-      Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute<void>(builder: (_) => const RoleBasedHomePage()),
-        (route) => false,
+      unawaited(
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute<void>(builder: (_) => const RoleBasedHomePage()),
+          (route) => false,
+        ),
       );
       return;
     }
@@ -300,9 +304,11 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
     if (!mounted) {
       return;
     }
-    Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute<void>(builder: (_) => const SignInScreen()),
-      (route) => false,
+    unawaited(
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute<void>(builder: (_) => const SignInScreen()),
+        (route) => false,
+      ),
     );
   }
 

@@ -227,9 +227,11 @@ class _ParkingOwnerHomePageState extends State<ParkingOwnerHomePage>
   Future<void> _signOut() async {
     await FirebaseAuth.instance.signOut();
     if (!mounted) return;
-    Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute<void>(builder: (_) => const SignInScreen()),
-      (Route<dynamic> route) => false,
+    unawaited(
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute<void>(builder: (_) => const SignInScreen()),
+        (Route<dynamic> route) => false,
+      ),
     );
   }
 
