@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../theme/app_theme.dart';
+import '../../../widgets/smartpark_ui.dart';
 
 class DriverProfileSection extends StatelessWidget {
   const DriverProfileSection({
@@ -28,41 +29,32 @@ class DriverProfileSection extends StatelessWidget {
   final VoidCallback onChangePassword;
   final VoidCallback onSignOut;
 
-  static const Color _surface = Color(0xFFFFFFFF);
-  static const Color _surfaceSoft = Color(0xFFF8F9FC);
-  static const Color _textStrong = Color(0xFF1E2330);
-  static const Color _textSubtle = Color(0xFF737A88);
-  static const Color _stroke = Color(0xFFE4E7EF);
+  String _initials(String name) {
+    final List<String> parts = name
+        .split(RegExp(r'\s+'))
+        .where((String part) => part.isNotEmpty)
+        .toList();
+    if (parts.isEmpty) return '?';
+    if (parts.length == 1) return parts.first[0].toUpperCase();
+    return '${parts.first[0]}${parts.last[0]}'.toUpperCase();
+  }
 
   @override
   Widget build(BuildContext context) {
     final String fullName =
         '${profileFirstNameController.text.trim()} ${profileLastNameController.text.trim()}'
             .trim();
-    final String displayName = fullName.isEmpty ? 'Driver Account' : fullName;
+    final String displayName = fullName.isEmpty ? 'Driver' : fullName;
+    final String email = profileEmailController.text.trim();
 
     return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 18, 16, 24),
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
       children: [
-        const Text(
-          'Profile',
-          style: TextStyle(
-            fontSize: 24,
-            fontWeight: FontWeight.w700,
-            color: _textStrong,
-            letterSpacing: -0.2,
-          ),
+        const SpPageHeader(
+          title: 'Profile',
+          subtitle: 'Your personal details and account security.',
         ),
-        const SizedBox(height: 6),
-        const Text(
-          'Manage your personal details and account security.',
-          style: TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w500,
-            color: _textSubtle,
-          ),
-        ),
-        const SizedBox(height: 14),
+        const SizedBox(height: 16),
         Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
@@ -71,28 +63,20 @@ class DriverProfileSection extends StatelessWidget {
               end: Alignment.bottomRight,
               colors: <Color>[Color(0xFFFFEAA8), Color(0xFFF7C846)],
             ),
-            borderRadius: BorderRadius.circular(16),
-            boxShadow: const [
-              BoxShadow(
-                color: Color(0x22000000),
-                blurRadius: 12,
-                offset: Offset(0, 6),
-              ),
-            ],
+            borderRadius: BorderRadius.circular(18),
           ),
           child: Row(
             children: [
-              Container(
-                width: 58,
-                height: 58,
-                decoration: BoxDecoration(
-                  color: const Color(0x35FFFFFF),
-                  borderRadius: BorderRadius.circular(18),
-                ),
-                child: const Icon(
-                  Icons.person_rounded,
-                  size: 30,
-                  color: Color(0xFF313645),
+              CircleAvatar(
+                radius: 30,
+                backgroundColor: const Color(0x40FFFFFF),
+                child: Text(
+                  _initials(displayName),
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFF1F2532),
+                  ),
                 ),
               ),
               const SizedBox(width: 14),
@@ -106,19 +90,40 @@ class DriverProfileSection extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         fontSize: 18,
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFF1C2230),
+                        fontWeight: FontWeight.w800,
+                        color: Color(0xFF1F2532),
                       ),
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      profileEmailController.text.trim(),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 13,
-                        color: Color(0xFF4C5362),
-                        fontWeight: FontWeight.w500,
+                    if (email.isNotEmpty) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        email,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          color: Color(0xFF3D4658),
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 3,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0x40FFFFFF),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: const Text(
+                        'Driver',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF3D4658),
+                        ),
                       ),
                     ),
                   ],
@@ -127,20 +132,27 @@ class DriverProfileSection extends StatelessWidget {
             ],
           ),
         ),
-        const SizedBox(height: 14),
-        _SectionCard(
+        const SizedBox(height: 12),
+        SpSectionCard(
+          icon: Icons.manage_accounts_rounded,
           title: 'Personal Information',
           subtitle: 'Keep your details accurate for account verification.',
           child: Column(
             children: [
               TextField(
                 controller: profileFirstNameController,
-                decoration: _fieldDecoration(label: 'First Name'),
+                decoration: _fieldDecoration(
+                  label: 'First Name',
+                  icon: Icons.person_outline_rounded,
+                ),
               ),
               const SizedBox(height: 10),
               TextField(
                 controller: profileLastNameController,
-                decoration: _fieldDecoration(label: 'Last Name'),
+                decoration: _fieldDecoration(
+                  label: 'Last Name',
+                  icon: Icons.person_outline_rounded,
+                ),
               ),
               const SizedBox(height: 10),
               TextField(
@@ -153,36 +165,20 @@ class DriverProfileSection extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 14),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton.icon(
-                  onPressed: savingProfile ? null : onSaveProfile,
-                  icon: savingProfile
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.save_rounded),
-                  label: Text(savingProfile ? 'Saving Profile...' : 'Save Changes'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppTheme.accent,
-                    foregroundColor: const Color(0xFF22252C),
-                    minimumSize: const Size(double.infinity, 48),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    elevation: 0,
-                  ),
-                ),
+              SpPrimaryButton(
+                icon: Icons.save_rounded,
+                label: savingProfile ? 'Saving Profile...' : 'Save Changes',
+                busy: savingProfile,
+                onPressed: onSaveProfile,
               ),
             ],
           ),
         ),
         const SizedBox(height: 12),
-        _SectionCard(
+        SpSectionCard(
+          icon: Icons.shield_outlined,
           title: 'Security',
-          subtitle: 'Use a strong password with at least 8 characters.',
+          subtitle: 'Use a password with at least 6 characters.',
           child: Column(
             children: [
               TextField(
@@ -218,9 +214,10 @@ class DriverProfileSection extends StatelessWidget {
                     updatingPassword
                         ? 'Updating Password...'
                         : 'Update Password',
+                    style: const TextStyle(fontWeight: FontWeight.w700),
                   ),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF1F2430),
+                    backgroundColor: const Color(0xFF1F2532),
                     foregroundColor: Colors.white,
                     minimumSize: const Size(double.infinity, 48),
                     shape: RoundedRectangleBorder(
@@ -230,22 +227,28 @@ class DriverProfileSection extends StatelessWidget {
                   ),
                 ),
               ),
-              const SizedBox(height: 12),
-              OutlinedButton.icon(
-                onPressed: onSignOut,
-                icon: const Icon(Icons.logout_rounded),
-                label: const Text('Sign Out'),
-                style: OutlinedButton.styleFrom(
-                  minimumSize: const Size(double.infinity, 48),
-                  foregroundColor: const Color(0xFFAF2E2E),
-                  side: const BorderSide(color: Color(0xFFF0C9C9)),
-                  backgroundColor: const Color(0xFFFFF6F6),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-              ),
             ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        SizedBox(
+          width: double.infinity,
+          child: OutlinedButton.icon(
+            onPressed: onSignOut,
+            icon: const Icon(Icons.logout_rounded),
+            label: const Text(
+              'Sign Out',
+              style: TextStyle(fontWeight: FontWeight.w700),
+            ),
+            style: OutlinedButton.styleFrom(
+              minimumSize: const Size(double.infinity, 48),
+              foregroundColor: const Color(0xFFAF2E2E),
+              side: const BorderSide(color: Color(0xFFF0C9C9)),
+              backgroundColor: const Color(0xFFFFF6F6),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
           ),
         ),
       ],
@@ -261,78 +264,27 @@ class DriverProfileSection extends StatelessWidget {
       labelText: label,
       helperText: helper,
       filled: true,
-      fillColor: _surfaceSoft,
+      fillColor: const Color(0xFFF8F9FC),
       prefixIcon: icon == null ? null : Icon(icon, size: 20),
       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: _stroke),
+        borderSide: const BorderSide(color: Color(0xFFE4E7EF)),
       ),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: _stroke),
+        borderSide: const BorderSide(color: Color(0xFFE4E7EF)),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
         borderSide: const BorderSide(color: AppTheme.accent, width: 1.4),
       ),
       labelStyle: const TextStyle(
-        color: _textSubtle,
+        color: Color(0xFF737A88),
         fontSize: 13,
         fontWeight: FontWeight.w500,
       ),
-      helperStyle: const TextStyle(
-        color: _textSubtle,
-        fontSize: 11,
-      ),
-    );
-  }
-}
-
-class _SectionCard extends StatelessWidget {
-  const _SectionCard({
-    required this.title,
-    required this.subtitle,
-    required this.child,
-  });
-
-  final String title;
-  final String subtitle;
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: DriverProfileSection._surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: DriverProfileSection._stroke),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            title,
-            style: const TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w700,
-              color: DriverProfileSection._textStrong,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            subtitle,
-            style: const TextStyle(
-              color: DriverProfileSection._textSubtle,
-              fontSize: 12.5,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-          const SizedBox(height: 14),
-          child,
-        ],
-      ),
+      helperStyle: const TextStyle(color: Color(0xFF737A88), fontSize: 11),
     );
   }
 }

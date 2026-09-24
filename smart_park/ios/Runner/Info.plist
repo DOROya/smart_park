@@ -27,7 +27,7 @@
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSCameraUsageDescription</key>
-	<string>SmartPark uses your camera to scan parking ticket QR codes.</string>
+	<string>SmartPark uses your camera to scan parking ticket QR codes and to photograph business documents for facility registration.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>SmartPark uses your location to show nearby parking establishments.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>

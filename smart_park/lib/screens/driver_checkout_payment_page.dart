@@ -64,11 +64,9 @@ class _DriverCheckoutPaymentPageState extends State<DriverCheckoutPaymentPage> {
         }
       }
     } else {
-      Navigator.of(context).pop(
-        DriverCheckoutPaymentSelection(
-          method: _selectedMethod,
-        ),
-      );
+      Navigator.of(
+        context,
+      ).pop(DriverCheckoutPaymentSelection(method: _selectedMethod));
     }
   }
 
@@ -246,7 +244,8 @@ class _DriverCheckoutPaymentPageState extends State<DriverCheckoutPaymentPage> {
                                 const SizedBox(width: 12),
                                 Expanded(
                                   child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     children: [
                                       Text(
                                         method.label,
@@ -259,9 +258,10 @@ class _DriverCheckoutPaymentPageState extends State<DriverCheckoutPaymentPage> {
                                       Text(
                                         method == DriverPaymentMethod.card
                                             ? 'Credit or debit card'
-                                            : (method == DriverPaymentMethod.qrph
-                                                ? 'Pay using any QR Ph app'
-                                                : 'Pay with ${method.label}'),
+                                            : (method ==
+                                                      DriverPaymentMethod.qrph
+                                                  ? 'Pay using any QR Ph app'
+                                                  : 'Pay with ${method.label}'),
                                         style: const TextStyle(
                                           color: AppTheme.textMuted,
                                           fontSize: 11,

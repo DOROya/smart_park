@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
+import '../theme/app_theme.dart';
 import '../widgets/auth_widgets.dart';
+import '../widgets/smartpark_ui.dart';
 import 'terms_screen.dart';
 
 class SelectRoleScreen extends StatefulWidget {
@@ -52,50 +54,99 @@ class _SelectRoleScreenState extends State<SelectRoleScreen> {
     );
   }
 
-  Widget _buildRoleCard(String role, List<String> descriptions) {
+  Widget _buildRoleCard(String role, IconData icon, List<String> descriptions) {
     final bool isSelected = _selectedRole == role;
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(16),
-        onTap: () {
-          setState(() {
-            _selectedRole = role;
-          });
-        },
-        child: Container(
-          margin: const EdgeInsets.symmetric(vertical: 10),
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: isSelected ? const Color(0xFFFFF3E0) : Colors.white,
-            border: Border.all(
-              color: isSelected ? Colors.orange : Colors.grey.shade300,
-              width: 2,
-            ),
-            borderRadius: BorderRadius.circular(16),
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Material(
+        color: isSelected ? const Color(0xFFFFF7DD) : Colors.white,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(18),
+          side: BorderSide(
+            color: isSelected ? AppTheme.accent : spCardBorder,
+            width: isSelected ? 2 : 1,
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                role,
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: isSelected ? Colors.orange : Colors.black,
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: () {
+            setState(() {
+              _selectedRole = role;
+            });
+          },
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      width: 42,
+                      height: 42,
+                      decoration: BoxDecoration(
+                        color: isSelected
+                            ? AppTheme.accent
+                            : const Color(0xFFF1F3F7),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Icon(icon, color: AppTheme.textDark),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        role,
+                        style: const TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.w800,
+                          color: AppTheme.textDark,
+                        ),
+                      ),
+                    ),
+                    AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 150),
+                      child: Icon(
+                        isSelected
+                            ? Icons.check_circle_rounded
+                            : Icons.radio_button_unchecked_rounded,
+                        key: ValueKey<bool>(isSelected),
+                        color: isSelected
+                            ? const Color(0xFFB58A10)
+                            : const Color(0xFFC9CCD4),
+                      ),
+                    ),
+                  ],
                 ),
-              ),
-              const SizedBox(height: 8),
-              ...descriptions.map(
-                (desc) => Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 2),
-                  child: Text(
-                    "• $desc",
-                    style: const TextStyle(fontSize: 14, color: Colors.black87),
+                const SizedBox(height: 12),
+                for (final String desc in descriptions)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Padding(
+                          padding: EdgeInsets.only(top: 1),
+                          child: Icon(
+                            Icons.check_rounded,
+                            size: 16,
+                            color: spEntryColor,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            desc,
+                            style: const TextStyle(
+                              fontSize: 13,
+                              color: Color(0xFF3D4658),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -109,28 +160,65 @@ class _SelectRoleScreenState extends State<SelectRoleScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const SizedBox(height: 18),
+          const AuthBadge(
+            icon: Icons.how_to_reg_rounded,
+            label: 'Step 2 of 3 · Your role',
+          ),
+          const SizedBox(height: 14),
           const AuthHeader(
             first: 'Select ',
             accent: 'Role.',
-            subtitle:
-                '⚠️ Please select carefully. Your role cannot be changed later.',
+            subtitle: 'How will you use SmartPark?',
           ),
-          const SizedBox(height: 26),
-          _buildRoleCard(_driverRole, [
-            "Discover nearby parking establishments on the map",
-            "Pay for parking directly within the app",
-            "Receive a digital QR ticket upon confirmed payment",
-            "Monitor active tickets and view parking history",
+          const SizedBox(height: 16),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFF3D9),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Row(
+              children: [
+                Icon(
+                  Icons.warning_amber_rounded,
+                  size: 18,
+                  color: spInsideColor,
+                ),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Choose carefully. Your role cannot be changed later.',
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF6B5A2E),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          _buildRoleCard(_driverRole, Icons.directions_car_rounded, const [
+            'Discover nearby parking establishments on the map',
+            'Pay for parking directly within the app',
+            'Receive a digital QR ticket upon confirmed payment',
+            'Monitor active tickets and view parking history',
           ]),
-          _buildRoleCard(_parkingOwnerRole, [
-            "Register and manage your parking establishment",
-            "Configure rates, policies, and staff accounts",
-            "Track vehicle activity and transaction records",
-            "Monitor commission payables per transaction",
+          _buildRoleCard(_parkingOwnerRole, Icons.storefront_rounded, const [
+            'Register and manage your parking establishment',
+            'Configure rates, policies, and staff accounts',
+            'Track vehicle activity and transaction records',
+            'Monitor commission payables per transaction',
           ]),
-          const SizedBox(height: 28),
-          PrimaryAuthButton(text: 'Next', onPressed: _goToTermsScreen),
+          const SizedBox(height: 12),
+          PrimaryAuthButton(
+            text: 'Next',
+            icon: Icons.arrow_forward_rounded,
+            enabled: _selectedRole != null,
+            onPressed: _goToTermsScreen,
+          ),
         ],
       ),
     );

@@ -149,120 +149,129 @@ class _VersionGateState extends State<VersionGate> {
 
     return FutureBuilder<AppVersionCheckResult>(
       future: _versionCheckFuture,
-      builder: (BuildContext context, AsyncSnapshot<AppVersionCheckResult> snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Scaffold(
-            body: Center(child: CircularProgressIndicator()),
-          );
-        }
+      builder:
+          (
+            BuildContext context,
+            AsyncSnapshot<AppVersionCheckResult> snapshot,
+          ) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Scaffold(
+                body: Center(child: CircularProgressIndicator()),
+              );
+            }
 
-        if (snapshot.hasError || !snapshot.hasData) {
-          return Scaffold(
-            body: Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Text(
-                      'Unable to verify installed app version.',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFF1E2026),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    Text(
-                      snapshot.error.toString(),
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: Colors.black54,
-                      ),
-                    ),
-                    const SizedBox(height: 18),
-                    ElevatedButton(
-                      onPressed: () {
-                        Navigator.of(context).pushReplacement(
-                          MaterialPageRoute<void>(
-                            builder: (_) => const AuthGate(),
+            if (snapshot.hasError || !snapshot.hasData) {
+              return Scaffold(
+                body: Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Text(
+                          'Unable to verify installed app version.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF1E2026),
                           ),
-                        );
-                      },
-                      child: const Text('Continue Anyway'),
+                        ),
+                        const SizedBox(height: 10),
+                        Text(
+                          snapshot.error.toString(),
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: Colors.black54,
+                          ),
+                        ),
+                        const SizedBox(height: 18),
+                        ElevatedButton(
+                          onPressed: () {
+                            Navigator.of(context).pushReplacement(
+                              MaterialPageRoute<void>(
+                                builder: (_) => const AuthGate(),
+                              ),
+                            );
+                          },
+                          child: const Text('Continue Anyway'),
+                        ),
+                        const SizedBox(height: 8),
+                        TextButton(
+                          onPressed: _recheck,
+                          child: const Text('Retry Check'),
+                        ),
+                      ],
                     ),
-                    const SizedBox(height: 8),
-                    TextButton(onPressed: _recheck, child: const Text('Retry Check')),
-                  ],
+                  ),
+                ),
+              );
+            }
+
+            final AppVersionCheckResult result = snapshot.data!;
+            if (!result.enabled ||
+                !result.isOutdated ||
+                _continueDespiteOutdated) {
+              return const AuthGate();
+            }
+
+            return Scaffold(
+              body: Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text(
+                        'Outdated App Build Detected',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF1E2026),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Text(
+                        result.message,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                          color: Color(0xFF8E929C),
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      Text(
+                        'Installed: ${result.currentVersion}\nExpected at least: ${result.requiredVersion}',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          color: Colors.black87,
+                          height: 1.35,
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      ElevatedButton(
+                        onPressed: _recheck,
+                        child: const Text('Recheck Version'),
+                      ),
+                      const SizedBox(height: 8),
+                      TextButton(
+                        onPressed: () {
+                          setState(() {
+                            _continueDespiteOutdated = true;
+                          });
+                        },
+                        child: const Text('Continue Anyway'),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ),
-          );
-        }
-
-        final AppVersionCheckResult result = snapshot.data!;
-        if (!result.enabled || !result.isOutdated || _continueDespiteOutdated) {
-          return const AuthGate();
-        }
-
-        return Scaffold(
-          body: Center(
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Text(
-                    'Outdated App Build Detected',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.w700,
-                      color: Color(0xFF1E2026),
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  Text(
-                    result.message,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500,
-                      color: Color(0xFF8E929C),
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  Text(
-                    'Installed: ${result.currentVersion}\nExpected at least: ${result.requiredVersion}',
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      fontSize: 13,
-                      color: Colors.black87,
-                      height: 1.35,
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  ElevatedButton(
-                    onPressed: _recheck,
-                    child: const Text('Recheck Version'),
-                  ),
-                  const SizedBox(height: 8),
-                  TextButton(
-                    onPressed: () {
-                      setState(() {
-                        _continueDespiteOutdated = true;
-                      });
-                    },
-                    child: const Text('Continue Anyway'),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        );
-      },
+            );
+          },
     );
   }
 }

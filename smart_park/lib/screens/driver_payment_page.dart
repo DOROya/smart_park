@@ -660,7 +660,10 @@ class _PaymentCheckoutPageState extends State<PaymentCheckoutPage> {
       _openingCheckout = true;
     });
     final Uri uri = Uri.parse(widget.checkoutUrl);
-    final bool launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    final bool launched = await launchUrl(
+      uri,
+      mode: LaunchMode.externalApplication,
+    );
     if (!mounted) {
       return;
     }

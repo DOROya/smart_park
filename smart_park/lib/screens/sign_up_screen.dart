@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
 import '../widgets/auth_widgets.dart';
+import '../widgets/smartpark_ui.dart';
 import 'sign_in_screen.dart';
 import 'select_role_screen.dart';
 import 'welcome_screen.dart';
@@ -24,6 +25,13 @@ class _SignUpScreenState extends State<SignUpScreen> {
   static final RegExp _numberRegex = RegExp(r'\d');
 
   bool _obscurePassword = true;
+
+  @override
+  void initState() {
+    super.initState();
+    // Rebuild so the password checklist ticks off as the user types.
+    _passwordController.addListener(() => setState(() {}));
+  }
 
   @override
   void dispose() {
@@ -112,8 +120,45 @@ class _SignUpScreenState extends State<SignUpScreen> {
     );
   }
 
+  Widget _requirement(String label, bool met) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: Row(
+        children: [
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            width: 18,
+            height: 18,
+            decoration: BoxDecoration(
+              color: met ? spEntryColor : const Color(0xFFE4E7EF),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              Icons.check_rounded,
+              size: 12,
+              color: met ? Colors.white : Colors.transparent,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: met ? spEntryColor : AppTheme.textMuted,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final String password = _passwordController.text;
+
     return AuthShell(
       showBack: true,
       onBackPressed: () {
@@ -124,160 +169,102 @@ class _SignUpScreenState extends State<SignUpScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const SizedBox(height: 10),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            decoration: BoxDecoration(
-              color: const Color(0xFFF0F3F8),
-              borderRadius: BorderRadius.circular(999),
-              border: Border.all(color: const Color(0xFFDCE2EC)),
-            ),
-            child: const Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  Icons.person_add_alt_1_rounded,
-                  size: 16,
-                  color: Color(0xFF3C465B),
-                ),
-                SizedBox(width: 6),
-                Text(
-                  'New account setup',
-                  style: TextStyle(
-                    color: Color(0xFF3C465B),
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ],
-            ),
+          const AuthBadge(
+            icon: Icons.person_add_alt_1_rounded,
+            label: 'Step 1 of 3 · Your details',
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 14),
           const AuthHeader(
             first: 'Let\'s ',
             accent: 'Start.',
-            subtitle: 'Fill in any details that are missing.',
+            subtitle: 'Create your SmartPark account.',
           ),
-          const SizedBox(height: 22),
-          Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: const Color(0xFFE4E7EF)),
-              boxShadow: const [
-                BoxShadow(
-                  color: Color(0x11000000),
-                  blurRadius: 8,
-                  offset: Offset(0, 3),
-                ),
-              ],
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Basic Information',
-                  style: TextStyle(
-                    color: AppTheme.textDark,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                AuthTextField(
-                  label: 'First Name',
-                  hint: 'Enter your first name',
-                  controller: _firstNameController,
-                ),
-                const SizedBox(height: 14),
-                AuthTextField(
-                  label: 'Last Name',
-                  hint: 'Enter your last name',
-                  controller: _lastNameController,
-                ),
-                const SizedBox(height: 14),
-                AuthTextField(
-                  label: 'Email Address',
-                  hint: 'Enter your email',
-                  controller: _emailController,
-                ),
-                const SizedBox(height: 14),
-                AuthTextField(
-                  label: 'Password',
-                  hint: 'Enter your password',
-                  controller: _passwordController,
-                  obscureText: _obscurePassword,
-                  suffixIcon: IconButton(
-                    onPressed: () {
-                      setState(() {
-                        _obscurePassword = !_obscurePassword;
-                      });
-                    },
-                    icon: Icon(
-                      _obscurePassword
-                          ? Icons.visibility_off_rounded
-                          : Icons.visibility_rounded,
+          const SizedBox(height: 24),
+          AuthFormCard(
+            icon: Icons.badge_outlined,
+            title: 'Basic Information',
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: AuthTextField(
+                      label: 'First Name',
+                      hint: 'Juan',
+                      textInputAction: TextInputAction.next,
+                      controller: _firstNameController,
                     ),
                   ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 12),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: const Color(0xFFF1F4F9),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: const Color(0xFFE4E7EF)),
-            ),
-            child: const Text(
-              'Password should be at least 8 characters with one uppercase letter and one number.',
-              style: TextStyle(
-                color: Color(0xFF596173),
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-          const SizedBox(height: 28),
-          PrimaryAuthButton(text: 'Next', onPressed: _goToRoleSelection),
-          const SizedBox(height: 12),
-          Center(
-            child: Text.rich(
-              TextSpan(
-                style: const TextStyle(
-                  color: Color(0xFF8E929C),
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
-                ),
-                children: [
-                  const TextSpan(text: 'Already have an account? '),
-                  WidgetSpan(
-                    alignment: PlaceholderAlignment.middle,
-                    child: GestureDetector(
-                      onTap: () {
-                        Navigator.of(context).pushReplacement(
-                          MaterialPageRoute<void>(
-                            builder: (_) => const SignInScreen(),
-                          ),
-                        );
-                      },
-                      child: const Text(
-                        'Sign In',
-                        style: TextStyle(
-                          color: Color(0xFF20222A),
-                          fontSize: 14,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: AuthTextField(
+                      label: 'Last Name',
+                      hint: 'Dela Cruz',
+                      textInputAction: TextInputAction.next,
+                      controller: _lastNameController,
                     ),
                   ),
                 ],
               ),
-            ),
+              const SizedBox(height: 14),
+              AuthTextField(
+                label: 'Email Address',
+                hint: 'you@example.com',
+                icon: Icons.alternate_email_rounded,
+                keyboardType: TextInputType.emailAddress,
+                textInputAction: TextInputAction.next,
+                controller: _emailController,
+              ),
+              const SizedBox(height: 14),
+              AuthTextField(
+                label: 'Password',
+                hint: 'Create a password',
+                icon: Icons.lock_outline_rounded,
+                textInputAction: TextInputAction.done,
+                controller: _passwordController,
+                obscureText: _obscurePassword,
+                suffixIcon: IconButton(
+                  tooltip: _obscurePassword ? 'Show password' : 'Hide password',
+                  onPressed: () {
+                    setState(() {
+                      _obscurePassword = !_obscurePassword;
+                    });
+                  },
+                  icon: Icon(
+                    _obscurePassword
+                        ? Icons.visibility_off_rounded
+                        : Icons.visibility_rounded,
+                    size: 20,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 4),
+              _requirement(
+                'At least 8 characters',
+                password.trim().length >= 8,
+              ),
+              _requirement(
+                'One uppercase letter',
+                _uppercaseRegex.hasMatch(password),
+              ),
+              _requirement('One number', _numberRegex.hasMatch(password)),
+            ],
+          ),
+          const SizedBox(height: 24),
+          PrimaryAuthButton(
+            text: 'Next',
+            icon: Icons.arrow_forward_rounded,
+            onPressed: _goToRoleSelection,
+          ),
+          const SizedBox(height: 10),
+          AuthSwitchPrompt(
+            question: 'Already have an account?',
+            action: 'Sign In',
+            onTap: () {
+              Navigator.of(context).pushReplacement(
+                MaterialPageRoute<void>(builder: (_) => const SignInScreen()),
+              );
+            },
           ),
         ],
       ),

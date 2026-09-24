@@ -12,9 +12,15 @@ void main() {
       ),
     );
 
-    expect(find.text('Welcome to SmartPark.'), findsOneWidget);
-    expect(find.text('Choose how you want to continue.'), findsOneWidget);
+    expect(
+      find.text('Welcome to SmartPark.', findRichText: true),
+      findsOneWidget,
+    );
+    expect(
+      find.text('Find, pay for, and manage parking in one app.'),
+      findsOneWidget,
+    );
     expect(find.text('Login'), findsOneWidget);
-    expect(find.text('Sign Up'), findsOneWidget);
+    expect(find.text('Create an Account'), findsOneWidget);
   });
 }

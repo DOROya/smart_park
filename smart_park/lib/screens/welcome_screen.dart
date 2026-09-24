@@ -10,17 +10,13 @@ class WelcomeScreen extends StatelessWidget {
 
   void _openLogin(BuildContext context) {
     Navigator.of(context).pushReplacement(
-      MaterialPageRoute<void>(
-        builder: (_) => const SignInScreen(),
-      ),
+      MaterialPageRoute<void>(builder: (_) => const SignInScreen()),
     );
   }
 
   void _openSignUp(BuildContext context) {
     Navigator.of(context).pushReplacement(
-      MaterialPageRoute<void>(
-        builder: (_) => const SignUpScreen(),
-      ),
+      MaterialPageRoute<void>(builder: (_) => const SignUpScreen()),
     );
   }
 
@@ -30,108 +26,70 @@ class WelcomeScreen extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const SizedBox(height: 10),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            decoration: BoxDecoration(
-              color: const Color(0xFFF0F3F8),
-              borderRadius: BorderRadius.circular(999),
-              border: Border.all(color: const Color(0xFFDCE2EC)),
-            ),
-            child: const Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  Icons.local_parking_rounded,
-                  size: 16,
-                  color: Color(0xFF3C465B),
-                ),
-                SizedBox(width: 6),
-                Text(
-                  'Smart parking starts here',
-                  style: TextStyle(
-                    color: Color(0xFF3C465B),
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ],
-            ),
+          const AuthBadge(
+            icon: Icons.local_parking_rounded,
+            label: 'Smart parking starts here',
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 14),
           const AuthHeader(
             first: 'Welcome ',
             accent: 'to SmartPark.',
-            subtitle: 'Choose how you want to continue.',
+            subtitle: 'Find, pay for, and manage parking in one app.',
           ),
-          const SizedBox(height: 22),
+          const SizedBox(height: 24),
           Container(
             width: double.infinity,
-            padding: const EdgeInsets.all(14),
+            padding: const EdgeInsets.all(18),
             decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: const Color(0xFFE4E7EF)),
-              boxShadow: const [
-                BoxShadow(
-                  color: Color(0x11000000),
-                  blurRadius: 8,
-                  offset: Offset(0, 3),
-                ),
-              ],
+              gradient: const LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: <Color>[Color(0xFFFFEAA8), Color(0xFFF7C846)],
+              ),
+              borderRadius: BorderRadius.circular(20),
             ),
             child: const Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  'Continue as',
-                  style: TextStyle(
-                    color: AppTheme.textDark,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                SizedBox(height: 10),
                 _WelcomePoint(
-                  icon: Icons.flash_on_rounded,
-                  text: 'Driver: find nearby parking and get QR tickets fast.',
+                  icon: Icons.map_rounded,
+                  title: 'Drivers',
+                  text: 'Find nearby parking and get a QR ticket in seconds.',
                 ),
-                SizedBox(height: 8),
+                SizedBox(height: 14),
                 _WelcomePoint(
-                  icon: Icons.apartment_rounded,
-                  text:
-                      'Owner/Staff/Admin: manage facilities, users, and payments.',
+                  icon: Icons.storefront_rounded,
+                  title: 'Parking owners',
+                  text: 'Run your facility, staff, and earnings in one place.',
+                ),
+                SizedBox(height: 14),
+                _WelcomePoint(
+                  icon: Icons.qr_code_scanner_rounded,
+                  title: 'Staff',
+                  text: 'Scan tickets at the gate and track who is inside.',
                 ),
               ],
             ),
           ),
-          const SizedBox(height: 20),
-          // Primary actions for entering the onboarding flow.
+          const SizedBox(height: 24),
           PrimaryAuthButton(
             text: 'Login',
+            icon: Icons.arrow_forward_rounded,
             onPressed: () => _openLogin(context),
           ),
           const SizedBox(height: 12),
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton(
-              onPressed: () => _openSignUp(context),
-              style: OutlinedButton.styleFrom(
-                minimumSize: const Size.fromHeight(52),
-                side: const BorderSide(color: Color(0xFFD9DCE4)),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(30),
-                ),
-                foregroundColor: const Color(0xFF2B3241),
-                textStyle: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              child: const Text('Sign Up'),
+          SecondaryAuthButton(
+            text: 'Create an Account',
+            onPressed: () => _openSignUp(context),
+          ),
+          const SizedBox(height: 16),
+          const Center(
+            child: Text(
+              'Staff sign in with the username from their parking owner.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
             ),
           ),
-          const SizedBox(height: 6),
         ],
       ),
     );
@@ -139,9 +97,14 @@ class WelcomeScreen extends StatelessWidget {
 }
 
 class _WelcomePoint extends StatelessWidget {
-  const _WelcomePoint({required this.icon, required this.text});
+  const _WelcomePoint({
+    required this.icon,
+    required this.title,
+    required this.text,
+  });
 
   final IconData icon;
+  final String title;
   final String text;
 
   @override
@@ -150,23 +113,36 @@ class _WelcomePoint extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Container(
-          width: 22,
-          height: 22,
+          width: 38,
+          height: 38,
           decoration: BoxDecoration(
-            color: const Color(0xFFF1F4F9),
-            borderRadius: BorderRadius.circular(7),
+            color: const Color(0x55FFFFFF),
+            borderRadius: BorderRadius.circular(12),
           ),
-          child: Icon(icon, size: 14, color: const Color(0xFF46546E)),
+          child: Icon(icon, size: 20, color: const Color(0xFF1F2532)),
         ),
-        const SizedBox(width: 8),
+        const SizedBox(width: 12),
         Expanded(
-          child: Text(
-            text,
-            style: const TextStyle(
-              color: Color(0xFF596173),
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-            ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w800,
+                  color: Color(0xFF1F2532),
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                text,
+                style: const TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w500,
+                  color: Color(0xFF3D4658),
+                ),
+              ),
+            ],
           ),
         ),
       ],

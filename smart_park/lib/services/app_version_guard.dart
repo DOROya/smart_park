@@ -92,7 +92,9 @@ class _VersionParts {
     final int minor = _toInt(semverParts, 1);
     final int patch = _toInt(semverParts, 2);
 
-    final int build = plusParts.length > 1 ? int.tryParse(plusParts[1]) ?? 0 : 0;
+    final int build = plusParts.length > 1
+        ? int.tryParse(plusParts[1]) ?? 0
+        : 0;
     return _VersionParts(
       major: major,
       minor: minor,

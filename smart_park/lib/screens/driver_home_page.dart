@@ -3,11 +3,13 @@ import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import '../services/permission_service.dart';
 import '../theme/app_theme.dart';
+import '../widgets/smartpark_ui.dart';
 import 'driver/services/driver_establishment_service.dart';
 import 'driver/widgets/driver_home_section.dart';
 import 'driver/widgets/driver_profile_section.dart';
@@ -54,6 +56,10 @@ class _DriverHomePageState extends State<DriverHomePage>
 
   bool _profileSeeded = false;
 
+  /// Where the location label was last reverse-geocoded, so live GPS updates
+  /// only look the place name up again after moving a few hundred meters.
+  Position? _labelPosition;
+
   @override
   void initState() {
     super.initState();
@@ -90,7 +96,9 @@ class _DriverHomePageState extends State<DriverHomePage>
     if (!mounted) {
       return;
     }
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   void _seedProfileControllers(Map<String, dynamic>? data) {
@@ -99,12 +107,13 @@ class _DriverHomePageState extends State<DriverHomePage>
     }
 
     _profileSeeded = true;
-    _profileFirstNameController.text =
-        ((data?['firstName'] as String?) ?? '').trim();
-    _profileLastNameController.text =
-        ((data?['lastName'] as String?) ?? '').trim();
+    _profileFirstNameController.text = ((data?['firstName'] as String?) ?? '')
+        .trim();
+    _profileLastNameController.text = ((data?['lastName'] as String?) ?? '')
+        .trim();
     _profileEmailController.text =
-        ((data?['email'] as String?) ?? FirebaseAuth.instance.currentUser?.email ??
+        ((data?['email'] as String?) ??
+                FirebaseAuth.instance.currentUser?.email ??
                 '')
             .trim();
   }
@@ -134,14 +143,15 @@ class _DriverHomePageState extends State<DriverHomePage>
     });
 
     try {
-      await FirebaseFirestore.instance.collection('users').doc(uid).update(
-        <String, dynamic>{
-          'firstName': firstName,
-          'lastName': lastName,
-          'email': email,
-          'updatedAt': FieldValue.serverTimestamp(),
-        },
-      );
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(uid)
+          .update(<String, dynamic>{
+            'firstName': firstName,
+            'lastName': lastName,
+            'email': email,
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
       _showSnackBar('Profile updated.');
     } finally {
       if (mounted) {
@@ -214,8 +224,8 @@ class _DriverHomePageState extends State<DriverHomePage>
   }
 
   Future<void> _initializeDriverPermissions() async {
-    final bool locationGranted =
-        await _permissionService.ensureDriverLocationPermission(context);
+    final bool locationGranted = await _permissionService
+        .ensureDriverLocationPermission(context);
 
     if (!mounted || !locationGranted) {
       if (mounted) {
@@ -243,27 +253,73 @@ class _DriverHomePageState extends State<DriverHomePage>
 
   void _startLiveLocationUpdates() {
     _positionSubscription?.cancel();
-    _positionSubscription = Geolocator.getPositionStream(
-      locationSettings: const LocationSettings(
-        accuracy: LocationAccuracy.best,
-        distanceFilter: 8,
-      ),
-    ).listen((Position position) {
-      if (!mounted) {
-        return;
-      }
+    _positionSubscription =
+        Geolocator.getPositionStream(
+          locationSettings: const LocationSettings(
+            accuracy: LocationAccuracy.best,
+            distanceFilter: 8,
+          ),
+        ).listen((Position position) {
+          if (!mounted) {
+            return;
+          }
 
-      setState(() {
-        _currentPosition = position;
-        _locationLabel =
-            '${position.latitude.toStringAsFixed(4)}, ${position.longitude.toStringAsFixed(4)}';
-      });
+          _setPosition(position);
+        });
+  }
+
+  void _setPosition(Position position) {
+    setState(() {
+      _currentPosition = position;
     });
+    final Position? last = _labelPosition;
+    if (last == null ||
+        Geolocator.distanceBetween(
+              last.latitude,
+              last.longitude,
+              position.latitude,
+              position.longitude,
+            ) >
+            300) {
+      _labelPosition = position;
+      unawaited(_updateLocationLabel(position));
+    }
+  }
+
+  /// Shows a readable place (e.g. "Makati, Metro Manila") instead of raw
+  /// coordinates, falling back to coordinates if lookup fails.
+  Future<void> _updateLocationLabel(Position position) async {
+    String label =
+        '${position.latitude.toStringAsFixed(4)}, ${position.longitude.toStringAsFixed(4)}';
+    try {
+      final List<Placemark> places = await placemarkFromCoordinates(
+        position.latitude,
+        position.longitude,
+      );
+      if (places.isNotEmpty) {
+        final Placemark place = places.first;
+        final List<String> parts = <String>[
+          (place.subLocality ?? '').trim(),
+          (place.locality ?? '').trim(),
+          (place.administrativeArea ?? '').trim(),
+        ].where((String part) => part.isNotEmpty).toSet().take(2).toList();
+        if (parts.isNotEmpty) {
+          label = parts.join(', ');
+        }
+      }
+    } catch (_) {
+      // Keep the coordinate label.
+    }
+    if (mounted) {
+      setState(() {
+        _locationLabel = label;
+      });
+    }
   }
 
   Future<void> _refreshCurrentLocation() async {
-    final bool locationGranted =
-        await _permissionService.ensureDriverLocationPermission(context);
+    final bool locationGranted = await _permissionService
+        .ensureDriverLocationPermission(context);
     if (!mounted || !locationGranted) {
       return;
     }
@@ -307,11 +363,8 @@ class _DriverHomePageState extends State<DriverHomePage>
       return;
     }
 
-    setState(() {
-      _currentPosition = position;
-      _locationLabel =
-          '${position.latitude.toStringAsFixed(4)}, ${position.longitude.toStringAsFixed(4)}';
-    });
+    _labelPosition = null;
+    _setPosition(position);
 
     await _mapController?.animateCamera(
       CameraUpdate.newLatLng(LatLng(position.latitude, position.longitude)),
@@ -392,7 +445,8 @@ class _DriverHomePageState extends State<DriverHomePage>
   void _openEstablishmentDetails(String establishmentId) {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => EstablishmentDetailPage(establishmentId: establishmentId),
+        builder: (_) =>
+            EstablishmentDetailPage(establishmentId: establishmentId),
       ),
     );
   }
@@ -444,107 +498,110 @@ class _DriverHomePageState extends State<DriverHomePage>
   Widget build(BuildContext context) {
     return FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
       future: _userFuture,
-      builder: (
-        BuildContext context,
-        AsyncSnapshot<DocumentSnapshot<Map<String, dynamic>>> snapshot,
-      ) {
-        final Map<String, dynamic>? data = snapshot.data?.data();
-        final String firstName = (data?['firstName'] as String?) ?? '';
-        final String lastName = (data?['lastName'] as String?) ?? '';
-        final String fullName = '$firstName $lastName'.trim();
+      builder:
+          (
+            BuildContext context,
+            AsyncSnapshot<DocumentSnapshot<Map<String, dynamic>>> snapshot,
+          ) {
+            final Map<String, dynamic>? data = snapshot.data?.data();
+            final String firstName = ((data?['firstName'] as String?) ?? '')
+                .trim();
+            final String greeting = spGreeting(DateTime.now());
 
-        _seedProfileControllers(data);
+            _seedProfileControllers(data);
 
-        return Scaffold(
-          appBar: AppBar(
-            elevation: 0,
-            backgroundColor: Colors.white,
-            titleSpacing: 16,
-            actions: [
-              IconButton(
-                onPressed: _refreshCurrentLocation,
-                icon: const Icon(Icons.my_location_rounded),
-                tooltip: 'Refresh location',
-              ),
-            ],
-            title: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  fullName.isEmpty ? 'Hello, Driver!' : 'Hello, $fullName!',
-                  style: const TextStyle(
-                    color: AppTheme.textDark,
-                    fontSize: 17,
-                    fontWeight: FontWeight.w700,
+            return Scaffold(
+              appBar: AppBar(
+                elevation: 0,
+                scrolledUnderElevation: 0,
+                backgroundColor: Colors.white,
+                titleSpacing: 16,
+                automaticallyImplyLeading: false,
+                actions: [
+                  IconButton(
+                    onPressed: _refreshCurrentLocation,
+                    icon: const Icon(Icons.my_location_rounded),
+                    tooltip: 'Refresh location',
                   ),
-                ),
-                const SizedBox(height: 2),
-                Row(
+                ],
+                title: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Icon(
-                      Icons.place_rounded,
-                      size: 14,
-                      color: AppTheme.textMuted,
-                    ),
-                    const SizedBox(width: 4),
-                    Flexible(
-                      child: Text(
-                        _locationLabel,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: AppTheme.textMuted,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w500,
-                        ),
+                    Text(
+                      firstName.isEmpty ? greeting : '$greeting, $firstName',
+                      style: const TextStyle(
+                        color: AppTheme.textDark,
+                        fontSize: 17,
+                        fontWeight: FontWeight.w700,
                       ),
+                    ),
+                    const SizedBox(height: 2),
+                    Row(
+                      children: [
+                        const Icon(
+                          Icons.place_rounded,
+                          size: 14,
+                          color: spEntryColor,
+                        ),
+                        const SizedBox(width: 4),
+                        Flexible(
+                          child: Text(
+                            _locationLabel,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: AppTheme.textMuted,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
-              ],
-            ),
-          ),
-          body: _buildBodyByIndex(),
-          bottomNavigationBar: BottomNavigationBar(
-            currentIndex: _selectedIndex,
-            selectedItemColor: const Color(0xFF22252C),
-            unselectedItemColor: const Color(0xFF6C727F),
-            showSelectedLabels: true,
-            showUnselectedLabels: true,
-            type: BottomNavigationBarType.fixed,
-            selectedLabelStyle: const TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-            ),
-            unselectedLabelStyle: const TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w500,
-            ),
-            onTap: (int index) {
-              setState(() {
-                _selectedIndex = index;
-              });
-            },
-            items: const [
-              BottomNavigationBarItem(
-                icon: Icon(Icons.home_outlined),
-                activeIcon: Icon(Icons.home_rounded),
-                label: 'Homepage',
               ),
-              BottomNavigationBarItem(
-                icon: Icon(Icons.receipt_long_outlined),
-                activeIcon: Icon(Icons.receipt_long_rounded),
-                label: 'Ticket History',
+              body: _buildBodyByIndex(),
+              bottomNavigationBar: BottomNavigationBar(
+                currentIndex: _selectedIndex,
+                selectedItemColor: const Color(0xFF22252C),
+                unselectedItemColor: const Color(0xFF6C727F),
+                showSelectedLabels: true,
+                showUnselectedLabels: true,
+                type: BottomNavigationBarType.fixed,
+                selectedLabelStyle: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                ),
+                unselectedLabelStyle: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                ),
+                onTap: (int index) {
+                  setState(() {
+                    _selectedIndex = index;
+                  });
+                },
+                items: const [
+                  BottomNavigationBarItem(
+                    icon: Icon(Icons.home_outlined),
+                    activeIcon: Icon(Icons.home_rounded),
+                    label: 'Home',
+                  ),
+                  BottomNavigationBarItem(
+                    icon: Icon(Icons.receipt_long_outlined),
+                    activeIcon: Icon(Icons.receipt_long_rounded),
+                    label: 'Tickets',
+                  ),
+                  BottomNavigationBarItem(
+                    icon: Icon(Icons.person_outlined),
+                    activeIcon: Icon(Icons.person_rounded),
+                    label: 'Profile',
+                  ),
+                ],
               ),
-              BottomNavigationBarItem(
-                icon: Icon(Icons.person_outlined),
-                activeIcon: Icon(Icons.person_rounded),
-                label: 'User Profile',
-              ),
-            ],
-          ),
-        );
-      },
+            );
+          },
     );
   }
 }

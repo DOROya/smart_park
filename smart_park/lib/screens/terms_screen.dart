@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
+import '../theme/app_theme.dart';
 import '../widgets/auth_widgets.dart';
+import '../widgets/smartpark_ui.dart';
 import 'verify_email_screen.dart';
 
 class TermsScreen extends StatefulWidget {
@@ -84,46 +86,69 @@ class _TermsScreenState extends State<TermsScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const SizedBox(height: 18),
+          const AuthBadge(
+            icon: Icons.description_outlined,
+            label: 'Step 3 of 3 · Terms',
+          ),
+          const SizedBox(height: 14),
           const AuthHeader(
             first: 'Terms ',
             accent: 'and Conditions.',
             subtitle: 'Please review and agree before continuing.',
           ),
-          const SizedBox(height: 26),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: const Color(0xFFE1E3E8)),
-            ),
-            child: Text(
-              _getPlaceholderContent(),
-              style: const TextStyle(
-                fontSize: 14,
-                color: Colors.black87,
-                height: 1.5,
+          const SizedBox(height: 24),
+          AuthFormCard(
+            icon: Icons.gavel_rounded,
+            title: '${widget.role} Terms',
+            children: [
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF6F7FA),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  _getPlaceholderContent(),
+                  style: const TextStyle(
+                    fontSize: 13.5,
+                    color: AppTheme.textDark,
+                    height: 1.5,
+                  ),
+                ),
               ),
-            ),
+            ],
           ),
           const SizedBox(height: 14),
-          CheckboxListTile(
-            value: _agreed,
-            onChanged: (value) {
-              setState(() {
-                _agreed = value ?? false;
-              });
-            },
-            title: const Text(
-              "I have read and agree to the Terms and Conditions.",
-              style: TextStyle(fontSize: 14),
+          Material(
+            color: _agreed ? const Color(0xFFFFF7DD) : Colors.white,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+              side: BorderSide(color: _agreed ? AppTheme.accent : spCardBorder),
             ),
-            controlAffinity: ListTileControlAffinity.leading,
+            clipBehavior: Clip.antiAlias,
+            child: CheckboxListTile(
+              value: _agreed,
+              onChanged: (value) {
+                setState(() {
+                  _agreed = value ?? false;
+                });
+              },
+              activeColor: const Color(0xFFB58A10),
+              title: const Text(
+                'I have read and agree to the Terms and Conditions.',
+                style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600),
+              ),
+              controlAffinity: ListTileControlAffinity.leading,
+            ),
           ),
-          const SizedBox(height: 28),
-          PrimaryAuthButton(text: 'Next', onPressed: _goToVerifyEmail),
+          const SizedBox(height: 24),
+          PrimaryAuthButton(
+            text: 'Create Account',
+            icon: Icons.arrow_forward_rounded,
+            enabled: _agreed,
+            onPressed: _goToVerifyEmail,
+          ),
         ],
       ),
     );
