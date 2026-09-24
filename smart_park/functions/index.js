@@ -19,20 +19,14 @@ setGlobalOptions({ region: "asia-southeast1", maxInstances: 10 });
 
 const PAYMONGO_SECRET_KEY = defineSecret("PAYMONGO_SECRET_KEY");
 
-// Reject callable requests without a valid App Check token. Leave this off
-// until the Android and iOS apps are registered under Firebase console >
-// App Check (and debug tokens added for dev devices), then set
-// ENFORCE_APP_CHECK=true in functions/.env and redeploy.
-const enforceAppCheck = process.env.ENFORCE_APP_CHECK === "true";
-
 exports.createParkingCheckout = onCall(
-  { secrets: [PAYMONGO_SECRET_KEY], enforceAppCheck },
+  { secrets: [PAYMONGO_SECRET_KEY] },
   (request) =>
     checkout.createParkingCheckout(request, PAYMONGO_SECRET_KEY.value()),
 );
 
 exports.confirmParkingCheckout = onCall(
-  { secrets: [PAYMONGO_SECRET_KEY], enforceAppCheck },
+  { secrets: [PAYMONGO_SECRET_KEY] },
   (request) =>
     checkout.confirmParkingCheckout(request, PAYMONGO_SECRET_KEY.value()),
 );
@@ -62,7 +56,7 @@ exports.updateOccupancy = onDocumentWritten("transactions/{transactionId}", asyn
  * again only if the totals ever look wrong.
  */
 exports.rebuildDailyStats = onCall(
-  { timeoutSeconds: 300, memory: "512MiB", enforceAppCheck },
+  { timeoutSeconds: 300, memory: "512MiB" },
   async (request) => {
     if (!request.auth) {
       throw new HttpsError("unauthenticated", "Please sign in again.");
