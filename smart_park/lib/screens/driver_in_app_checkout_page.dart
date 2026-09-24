@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
-import '../services/paymongo_test_service.dart';
 import '../theme/app_theme.dart';
 
 class DriverInAppCheckoutPage extends StatefulWidget {
@@ -11,14 +10,15 @@ class DriverInAppCheckoutPage extends StatefulWidget {
     super.key,
     required this.establishmentName,
     required this.checkoutUrl,
-    this.checkoutLinkId,
-    this.payMongoService,
+    this.checkPaid,
   });
 
   final String establishmentName;
   final String checkoutUrl;
-  final String? checkoutLinkId;
-  final PayMongoTestService? payMongoService;
+
+  /// Asks the server whether this checkout has been paid. Without it the
+  /// page can only detect payment from PayMongo's success redirect.
+  final Future<bool> Function()? checkPaid;
 
   @override
   State<DriverInAppCheckoutPage> createState() =>
@@ -101,7 +101,7 @@ class _DriverInAppCheckoutPageState extends State<DriverInAppCheckoutPage> {
   }
 
   void _startBackgroundPolling() {
-    if (widget.checkoutLinkId == null || widget.payMongoService == null) {
+    if (widget.checkPaid == null) {
       return;
     }
 
@@ -109,21 +109,23 @@ class _DriverInAppCheckoutPageState extends State<DriverInAppCheckoutPage> {
     // page's first timer tick (e.g. a fast test-mode authorization).
     unawaited(_checkPaymentStatus(silent: true));
 
-    _pollTimer = Timer.periodic(const Duration(seconds: 2), (_) async {
+    _pollTimer = Timer.periodic(const Duration(seconds: 4), (_) async {
       await _checkPaymentStatus(silent: true);
     });
   }
 
   bool _checkSuccessUrl(String url) {
     final String lower = url.toLowerCase();
-    if (lower.contains('payment-success') || lower.contains('paymongo.com/success')) {
+    if (lower.contains('payment-success') ||
+        lower.contains('paymongo.com/success')) {
       _pollTimer?.cancel();
       if (mounted) {
         Navigator.of(context).pop(true);
       }
       return true;
     }
-    if (lower.contains('payment-cancel') || lower.contains('paymongo.com/cancel')) {
+    if (lower.contains('payment-cancel') ||
+        lower.contains('paymongo.com/cancel')) {
       _pollTimer?.cancel();
       if (mounted) {
         Navigator.of(context).pop(false);
@@ -134,10 +136,9 @@ class _DriverInAppCheckoutPageState extends State<DriverInAppCheckoutPage> {
   }
 
   Future<bool> _checkPaymentStatus({bool silent = false}) async {
-    final String? linkId = widget.checkoutLinkId;
-    final PayMongoTestService? service = widget.payMongoService;
+    final Future<bool> Function()? checkPaid = widget.checkPaid;
 
-    if (linkId == null || service == null) {
+    if (checkPaid == null) {
       if (!silent && mounted) {
         Navigator.of(context).pop(null);
       }
@@ -159,8 +160,7 @@ class _DriverInAppCheckoutPageState extends State<DriverInAppCheckoutPage> {
     }
 
     try {
-      final PayMongoCheckoutLink link = await service.getCheckoutLink(linkId);
-      if (link.isPaid) {
+      if (await checkPaid()) {
         _pollTimer?.cancel();
         if (mounted) {
           Navigator.of(context).pop(true);
@@ -306,14 +306,14 @@ class _DriverInAppCheckoutPageState extends State<DriverInAppCheckoutPage> {
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
               decoration: const BoxDecoration(
                 color: Colors.white,
-                border: Border(
-                  top: BorderSide(color: Color(0xFFE2E5EC)),
-                ),
+                border: Border(top: BorderSide(color: Color(0xFFE2E5EC))),
               ),
               child: SizedBox(
                 width: double.infinity,
                 child: ElevatedButton.icon(
-                  onPressed: _checkingStatus ? null : () => _checkPaymentStatus(),
+                  onPressed: _checkingStatus
+                      ? null
+                      : () => _checkPaymentStatus(),
                   icon: _checkingStatus
                       ? const SizedBox(
                           width: 18,
@@ -334,10 +334,10 @@ class _DriverInAppCheckoutPageState extends State<DriverInAppCheckoutPage> {
                     ),
                   ),
                   label: Text(
-                    _checkingStatus ? 'Checking status...' : 'I Have Completed Payment',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w800,
-                    ),
+                    _checkingStatus
+                        ? 'Checking status...'
+                        : 'I Have Completed Payment',
+                    style: const TextStyle(fontWeight: FontWeight.w800),
                   ),
                 ),
               ),

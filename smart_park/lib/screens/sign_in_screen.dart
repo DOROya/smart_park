@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
-import '../theme/app_theme.dart';
+import '../services/email_rate_limiter.dart';
 import '../widgets/auth_widgets.dart';
 import '../utils/staff_credentials.dart';
 import 'role_based_home_page.dart';
@@ -24,6 +24,7 @@ class _SignInScreenState extends State<SignInScreen> {
 
   bool _obscurePassword = true;
   bool _isSigningIn = false;
+  bool _sendingReset = false;
 
   @override
   void dispose() {
@@ -67,7 +68,9 @@ class _SignInScreenState extends State<SignInScreen> {
           .timeout(const Duration(seconds: 20));
 
       final User? user = userCredential.user;
-      if (user != null && !user.emailVerified && !isStaffAuthEmail(user.email)) {
+      if (user != null &&
+          !user.emailVerified &&
+          !isStaffAuthEmail(user.email)) {
         if (!mounted) {
           return;
         }
@@ -121,6 +124,49 @@ class _SignInScreenState extends State<SignInScreen> {
     }
   }
 
+  Future<void> _sendPasswordReset() async {
+    final String input = _emailController.text.trim();
+    if (input.isEmpty || !input.contains('@')) {
+      _showSnackBar(
+        input.isEmpty
+            ? 'Enter your email above, then tap Forgot Password.'
+            : 'Staff accounts are reset by your parking owner.',
+      );
+      return;
+    }
+    const String rateLimitAction = 'password-reset';
+    final Duration wait = EmailRateLimiter.remaining(rateLimitAction, input);
+    if (wait > Duration.zero) {
+      _showSnackBar(
+        'A reset link was already sent. Please wait '
+        '${EmailRateLimiter.describe(wait)} before requesting another.',
+      );
+      return;
+    }
+    if (_sendingReset) return;
+    _sendingReset = true;
+    try {
+      await FirebaseAuth.instance.sendPasswordResetEmail(email: input);
+      EmailRateLimiter.recordSend(rateLimitAction, input);
+      if (mounted) {
+        _showSnackBar('Password reset link sent to $input.');
+      }
+    } on FirebaseAuthException catch (error) {
+      if (error.code == 'too-many-requests') {
+        EmailRateLimiter.recordSend(rateLimitAction, input);
+      }
+      if (mounted) {
+        _showSnackBar(
+          error.code == 'too-many-requests'
+              ? EmailRateLimiter.tooManyRequestsMessage
+              : error.message ?? 'Unable to send reset email.',
+        );
+      }
+    } finally {
+      _sendingReset = false;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return AuthShell(
@@ -133,154 +179,82 @@ class _SignInScreenState extends State<SignInScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          const AuthBadge(icon: Icons.lock_rounded, label: 'Secure access'),
           const SizedBox(height: 14),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            decoration: BoxDecoration(
-              color: const Color(0xFFF0F3F8),
-              borderRadius: BorderRadius.circular(999),
-              border: Border.all(color: const Color(0xFFDCE2EC)),
-            ),
-            child: const Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  Icons.security_rounded,
-                  size: 16,
-                  color: Color(0xFF3C465B),
-                ),
-                SizedBox(width: 6),
-                Text(
-                  'Secure access',
-                  style: TextStyle(
-                    color: Color(0xFF3C465B),
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
           const AuthHeader(
             first: 'Hello ',
             accent: 'Again!',
-            subtitle: 'Enter your credentials to continue.',
+            subtitle: 'Sign in to continue parking smarter.',
           ),
-          const SizedBox(height: 22),
-          Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: const Color(0xFFE4E7EF)),
-              boxShadow: const [
-                BoxShadow(
-                  color: Color(0x11000000),
-                  blurRadius: 8,
-                  offset: Offset(0, 3),
-                ),
-              ],
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Sign in details',
-                  style: TextStyle(
-                    color: AppTheme.textDark,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
+          const SizedBox(height: 24),
+          AuthFormCard(
+            icon: Icons.person_outline_rounded,
+            title: 'Sign in details',
+            children: [
+              AuthTextField(
+                label: 'Email or Staff Username',
+                hint: 'you@example.com',
+                icon: Icons.alternate_email_rounded,
+                keyboardType: TextInputType.emailAddress,
+                textInputAction: TextInputAction.next,
+                controller: _emailController,
+              ),
+              const SizedBox(height: 14),
+              AuthTextField(
+                label: 'Password',
+                hint: 'Enter your password',
+                icon: Icons.lock_outline_rounded,
+                textInputAction: TextInputAction.done,
+                controller: _passwordController,
+                obscureText: _obscurePassword,
+                suffixIcon: IconButton(
+                  tooltip: _obscurePassword ? 'Show password' : 'Hide password',
+                  onPressed: () {
+                    setState(() {
+                      _obscurePassword = !_obscurePassword;
+                    });
+                  },
+                  icon: Icon(
+                    _obscurePassword
+                        ? Icons.visibility_off_rounded
+                        : Icons.visibility_rounded,
+                    size: 20,
                   ),
-                ),
-                const SizedBox(height: 12),
-                AuthTextField(
-                  label: 'Email or Staff Username',
-                  hint: 'Enter your email or staff username',
-                  controller: _emailController,
-                ),
-                const SizedBox(height: 16),
-                AuthTextField(
-                  label: 'Password',
-                  hint: 'Enter your password',
-                  controller: _passwordController,
-                  obscureText: _obscurePassword,
-                  suffixIcon: IconButton(
-                    onPressed: () {
-                      setState(() {
-                        _obscurePassword = !_obscurePassword;
-                      });
-                    },
-                    icon: Icon(
-                      _obscurePassword
-                          ? Icons.visibility_off_rounded
-                          : Icons.visibility_rounded,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 14),
-          Align(
-            alignment: Alignment.centerRight,
-            child: TextButton(
-              onPressed: () {},
-              style: TextButton.styleFrom(
-                foregroundColor: const Color(0xFF404552),
-                textStyle: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
                 ),
               ),
-              child: const Text('Forgot Password?'),
-            ),
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton(
+                  onPressed: _sendPasswordReset,
+                  style: TextButton.styleFrom(
+                    foregroundColor: const Color(0xFF404552),
+                    textStyle: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  child: const Text('Forgot Password?'),
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 22),
           PrimaryAuthButton(
             text: 'Login',
+            icon: Icons.arrow_forward_rounded,
             onPressed: _signIn,
             isLoading: _isSigningIn,
           ),
-          const SizedBox(height: 14),
-          Center(
-            child: Text.rich(
-              TextSpan(
-                style: const TextStyle(
-                  color: Color(0xFF8E929C),
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
-                ),
-                children: [
-                  const TextSpan(text: 'No account yet? '),
-                  WidgetSpan(
-                    alignment: PlaceholderAlignment.middle,
-                    child: GestureDetector(
-                      onTap: () {
-                        Navigator.of(context).push(
-                          MaterialPageRoute<void>(
-                            builder: (_) => const SignUpScreen(),
-                          ),
-                        );
-                      },
-                      child: const Text(
-                        'Create one',
-                        style: TextStyle(
-                          color: Color(0xFF20222A),
-                          fontSize: 14,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
+          const SizedBox(height: 10),
+          AuthSwitchPrompt(
+            question: 'No account yet?',
+            action: 'Create one',
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute<void>(builder: (_) => const SignUpScreen()),
+              );
+            },
           ),
-          const SizedBox(height: 18),
-          const DividerLabel(text: 'or do it via other accounts'),
-          const SizedBox(height: 18),
-          const SocialButtonsRow(),
         ],
       ),
     );

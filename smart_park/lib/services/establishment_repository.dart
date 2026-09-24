@@ -18,32 +18,50 @@ class EstablishmentRepository {
   DocumentReference<Map<String, dynamic>> _userRef(String ownerId) =>
       FirebaseFirestore.instance.collection('users').doc(ownerId);
 
-  Future<String> saveFacility({
+  /// Creates or updates a facility. On update, the review status is left
+  /// untouched unless [FacilityRegistrationData.requiresReview] says the edit
+  /// must be re-verified, in which case the facility goes back to `pending`.
+  /// [failedDocumentUploads] counts picked documents that did not reach
+  /// Storage, so the caller can tell the owner instead of failing silently.
+  Future<
+    ({
+      String establishmentId,
+      bool submittedForReview,
+      int failedDocumentUploads,
+    })
+  >
+  saveFacility({
     required String ownerId,
     required Map<String, dynamic> ownerData,
     required FacilityRegistrationData formData,
     String? establishmentId,
+    String? previousStatus,
   }) async {
     final bool isCreate = establishmentId == null;
-    final String savedId =
-        establishmentId ?? _establishments.doc().id;
+    final bool resubmit =
+        !isCreate && formData.requiresReview(previousStatus: previousStatus);
+    final String savedId = establishmentId ?? _establishments.doc().id;
 
-    final Map<String, dynamic> establishmentPayload =
-        formData.toEstablishmentFirestore(
-      ownerId: ownerId,
-      ownerData: ownerData,
-      establishmentId: savedId,
-    );
-    final Map<String, dynamic> detailsPayload =
-        formData.toEstablishmentDetailsFirestore(establishmentId: savedId);
+    final Map<String, dynamic> establishmentPayload = formData
+        .toEstablishmentFirestore(
+          ownerId: ownerId,
+          ownerData: ownerData,
+          establishmentId: savedId,
+        );
+    final Map<String, dynamic> detailsPayload = formData
+        .toEstablishmentDetailsFirestore(establishmentId: savedId);
 
     if (!isCreate) {
-      detailsPayload
-        ..remove('slots')
-        ..remove('status')
-        ..remove('rejectionReason')
-        ..remove('reviewedAt')
-        ..remove('reviewedBy');
+      detailsPayload.remove('slots');
+      if (resubmit) {
+        detailsPayload['resubmittedAt'] = FieldValue.serverTimestamp();
+      } else {
+        detailsPayload
+          ..remove('status')
+          ..remove('rejectionReason')
+          ..remove('reviewedAt')
+          ..remove('reviewedBy');
+      }
     }
 
     final WriteBatch batch = FirebaseFirestore.instance.batch();
@@ -63,7 +81,11 @@ class EstablishmentRepository {
         'createdAt': FieldValue.serverTimestamp(),
       });
     } else {
-      batch.set(establishmentRef, establishmentPayload, SetOptions(merge: true));
+      batch.set(
+        establishmentRef,
+        establishmentPayload,
+        SetOptions(merge: true),
+      );
       batch.set(detailsRef, detailsPayload, SetOptions(merge: true));
     }
 
@@ -74,7 +96,8 @@ class EstablishmentRepository {
 
     await batch.commit();
 
-    if (formData.newPhotoFiles.isNotEmpty || formData.keepPhotoUrls.isNotEmpty) {
+    if (formData.newPhotoFiles.isNotEmpty ||
+        formData.keepPhotoUrls.isNotEmpty) {
       await _storageService.uploadFacilityImages(
         establishmentId: savedId,
         newImageFiles: formData.newPhotoFiles,
@@ -86,6 +109,31 @@ class EstablishmentRepository {
       await _storageService.deleteFacilityImage(removedUrl);
     }
 
-    return savedId;
+    int failedDocumentUploads = 0;
+    if (formData.newDocumentFiles.isNotEmpty ||
+        formData.keepDocumentUrls.isNotEmpty) {
+      final List<String>? savedDocumentUrls = await _storageService
+          .uploadBusinessDocuments(
+            establishmentId: savedId,
+            newDocumentFiles: formData.newDocumentFiles,
+            keepDocumentUrls: formData.keepDocumentUrls,
+          );
+      final int expectedCount =
+          (formData.keepDocumentUrls.length + formData.newDocumentFiles.length)
+              .clamp(0, ParkingStorageService.maxBusinessDocuments);
+      failedDocumentUploads = savedDocumentUrls == null
+          ? formData.newDocumentFiles.length
+          : expectedCount - savedDocumentUrls.length;
+    }
+
+    for (final String removedUrl in formData.removedDocumentUrls) {
+      await _storageService.deleteFacilityImage(removedUrl);
+    }
+
+    return (
+      establishmentId: savedId,
+      submittedForReview: isCreate || resubmit,
+      failedDocumentUploads: failedDocumentUploads,
+    );
   }
 }

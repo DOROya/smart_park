@@ -8,13 +8,22 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../../models/facility_registration_data.dart';
+import '../../../services/operating_hours.dart';
 import '../../../services/parking_storage_service.dart';
 import '../../../theme/app_theme.dart';
+import 'facility_review_status_banner.dart';
 
 class FacilityRegistrationPage extends StatefulWidget {
-  const FacilityRegistrationPage({super.key, this.facilityData});
+  const FacilityRegistrationPage({super.key, this.facilityData, this.onSave});
 
   final Map<String, dynamic>? facilityData;
+
+  /// Persists the form. Returns the facility as re-read after saving (or null
+  /// if the save failed). When set, editing an existing facility stays on this
+  /// page after Save and reloads from the returned data; registering a new
+  /// facility still closes the page. Without it, Save pops with the form data.
+  final Future<Map<String, dynamic>?> Function(FacilityRegistrationData data)?
+  onSave;
 
   @override
   State<FacilityRegistrationPage> createState() =>
@@ -24,24 +33,38 @@ class FacilityRegistrationPage extends StatefulWidget {
 class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
   static const LatLng _fallbackCenter = LatLng(14.5995, 120.9842);
 
+  late Map<String, dynamic>? _facilityData = widget.facilityData;
+
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
 
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _addressController = TextEditingController();
-  final TextEditingController _hoursController = TextEditingController();
+  bool _open24Hours = false;
+  int? _openMinutes;
+  int? _closeMinutes;
   final TextEditingController _policiesController = TextEditingController();
 
-  final TextEditingController _rateCarInitialController = TextEditingController();
-  final TextEditingController _rateCarSucceedingHourController = TextEditingController();
-  final TextEditingController _rateCarSucceedingDailyController = TextEditingController();
-  final TextEditingController _rateCarWeeklyController = TextEditingController();
-  final TextEditingController _rateCarMonthlyController = TextEditingController();
+  final TextEditingController _rateCarInitialController =
+      TextEditingController();
+  final TextEditingController _rateCarSucceedingHourController =
+      TextEditingController();
+  final TextEditingController _rateCarSucceedingDailyController =
+      TextEditingController();
+  final TextEditingController _rateCarWeeklyController =
+      TextEditingController();
+  final TextEditingController _rateCarMonthlyController =
+      TextEditingController();
 
-  final TextEditingController _rateMotorInitialController = TextEditingController();
-  final TextEditingController _rateMotorSucceedingHourController = TextEditingController();
-  final TextEditingController _rateMotorSucceedingDailyController = TextEditingController();
-  final TextEditingController _rateMotorWeeklyController = TextEditingController();
-  final TextEditingController _rateMotorMonthlyController = TextEditingController();
+  final TextEditingController _rateMotorInitialController =
+      TextEditingController();
+  final TextEditingController _rateMotorSucceedingHourController =
+      TextEditingController();
+  final TextEditingController _rateMotorSucceedingDailyController =
+      TextEditingController();
+  final TextEditingController _rateMotorWeeklyController =
+      TextEditingController();
+  final TextEditingController _rateMotorMonthlyController =
+      TextEditingController();
 
   final TextEditingController _slotCarController = TextEditingController();
   final TextEditingController _slotMotorController = TextEditingController();
@@ -62,6 +85,19 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
 
   int get _totalPhotoCount => _existingPhotoUrls.length + _newPhotoFiles.length;
 
+  final List<String> _existingDocumentUrls = <String>[];
+  final List<String> _removedDocumentUrls = <String>[];
+  final List<File> _newDocumentFiles = <File>[];
+
+  int get _totalDocumentCount =>
+      _existingDocumentUrls.length + _newDocumentFiles.length;
+
+  bool get _documentsChanged =>
+      _newDocumentFiles.isNotEmpty || _removedDocumentUrls.isNotEmpty;
+
+  String? get _reviewStatus =>
+      (_facilityData?['status'] as String?)?.toLowerCase();
+
   @override
   void initState() {
     super.initState();
@@ -74,7 +110,6 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
     _mapController?.dispose();
     _nameController.dispose();
     _addressController.dispose();
-    _hoursController.dispose();
     _policiesController.dispose();
 
     _rateCarInitialController.dispose();
@@ -95,12 +130,14 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
   }
 
   void _seedFromExistingData() {
-    final Map<String, dynamic> data =
-        widget.facilityData ?? <String, dynamic>{};
+    final Map<String, dynamic> data = _facilityData ?? <String, dynamic>{};
 
     _nameController.text = (data['name'] as String?)?.trim() ?? '';
     _addressController.text = (data['address'] as String?)?.trim() ?? '';
-    _hoursController.text = (data['operatingHours'] as String?)?.trim() ?? '';
+    final OperatingHours hours = OperatingHours.parse(data);
+    _open24Hours = hours.allDay;
+    _openMinutes = hours.openMinutes;
+    _closeMinutes = hours.closeMinutes;
     _policiesController.text = (data['policies'] as String?)?.trim() ?? '';
 
     _allowLongTermRates = (data['allowLongTermRates'] as bool?) ?? false;
@@ -119,12 +156,17 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
       TextEditingController monthlyCtrl,
     ) {
       if (val is Map) {
-        initCtrl.text =
-            (val['initial'] ?? val['hourly'] ?? val['rates'] ?? '').toString().trim();
-        succHCtrl.text =
-            (val['succeedingHour'] ?? val['succeeding_hour'] ?? '').toString().trim();
+        initCtrl.text = (val['initial'] ?? val['hourly'] ?? val['rates'] ?? '')
+            .toString()
+            .trim();
+        succHCtrl.text = (val['succeedingHour'] ?? val['succeeding_hour'] ?? '')
+            .toString()
+            .trim();
         succDCtrl.text =
-            (val['succeedingDaily'] ?? val['succeeding_daily'] ?? val['daily'] ?? '')
+            (val['succeedingDaily'] ??
+                    val['succeeding_daily'] ??
+                    val['daily'] ??
+                    '')
                 .toString()
                 .trim();
         weeklyCtrl.text = (val['weekly'] ?? '').toString().trim();
@@ -156,9 +198,9 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
     );
 
     final Map<String, dynamic> slots =
-      (data['slotCounts'] as Map<String, dynamic>?) ??
-      (data['slots'] as Map<String, dynamic>?) ??
-      <String, dynamic>{};
+        (data['slotCounts'] as Map<String, dynamic>?) ??
+        (data['slots'] as Map<String, dynamic>?) ??
+        <String, dynamic>{};
     _slotCarController.text = ((slots['car'] as num?) ?? 0).toString();
     _slotMotorController.text = ((slots['motorcycle'] as num?) ?? 0).toString();
 
@@ -174,10 +216,17 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
       _mapHint = 'Tap map to adjust your facility pin.';
     }
 
-    final List<dynamic> photoUrls = (data['photoUrls'] as List<dynamic>?) ?? <dynamic>[];
+    final List<dynamic> photoUrls =
+        (data['photoUrls'] as List<dynamic>?) ?? <dynamic>[];
     _existingPhotoUrls
       ..clear()
       ..addAll(photoUrls.whereType<String>());
+
+    final List<dynamic> documentUrls =
+        (data['businessDocumentUrls'] as List<dynamic>?) ?? <dynamic>[];
+    _existingDocumentUrls
+      ..clear()
+      ..addAll(documentUrls.whereType<String>());
   }
 
   Future<void> _initializeMapCenter() async {
@@ -342,7 +391,100 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
     });
   }
 
-  void _handleSave() {
+  Future<void> _pickDocument() async {
+    if (_totalDocumentCount >= ParkingStorageService.maxBusinessDocuments) {
+      _showSnackBar(
+        'You can only add up to ${ParkingStorageService.maxBusinessDocuments} business documents.',
+      );
+      return;
+    }
+
+    final ImageSource? source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      builder: (BuildContext sheetContext) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.photo_camera_rounded),
+                title: const Text('Take a photo'),
+                onTap: () => Navigator.of(sheetContext).pop(ImageSource.camera),
+              ),
+              ListTile(
+                leading: const Icon(Icons.photo_library_rounded),
+                title: const Text('Choose from gallery'),
+                onTap: () =>
+                    Navigator.of(sheetContext).pop(ImageSource.gallery),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+    if (source == null) {
+      return;
+    }
+
+    // Higher quality than facility photos so document text stays legible.
+    final XFile? picked = await _imagePicker.pickImage(
+      source: source,
+      imageQuality: 90,
+    );
+    if (picked == null || !mounted) {
+      return;
+    }
+
+    setState(() {
+      _newDocumentFiles.add(File(picked.path));
+    });
+  }
+
+  void _removeExistingDocument(String url) {
+    setState(() {
+      _existingDocumentUrls.remove(url);
+      _removedDocumentUrls.add(url);
+    });
+  }
+
+  void _removeNewDocument(File file) {
+    setState(() {
+      _newDocumentFiles.remove(file);
+    });
+  }
+
+  Future<bool> _confirmReapproval() async {
+    final bool? confirmed = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return AlertDialog(
+          title: const Text('Re-approval required'),
+          content: const Text(
+            'You changed your business documents. Your facility will go back '
+            'to Pending Review and be hidden from drivers until an admin '
+            'approves it again.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppTheme.accent,
+                foregroundColor: const Color(0xFF22252C),
+              ),
+              child: const Text('Submit for Review'),
+            ),
+          ],
+        );
+      },
+    );
+    return confirmed ?? false;
+  }
+
+  Future<void> _handleSave() async {
     if (_saving) {
       return;
     }
@@ -356,6 +498,11 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
       return;
     }
 
+    if (!_open24Hours && (_openMinutes == null || _closeMinutes == null)) {
+      _showSnackBar('Set the opening and closing times.');
+      return;
+    }
+
     if (_totalPhotoCount < 1) {
       _showSnackBar('Add at least 1 facility photo.');
       return;
@@ -364,6 +511,24 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
     if (_totalPhotoCount > ParkingStorageService.maxPhotosPerEstablishment) {
       _showSnackBar('You can only add up to 3 facility photos.');
       return;
+    }
+
+    if (_totalDocumentCount < 1) {
+      _showSnackBar('Add at least 1 business document as proof of ownership.');
+      return;
+    }
+
+    if (_totalDocumentCount > ParkingStorageService.maxBusinessDocuments) {
+      _showSnackBar(
+        'You can only add up to ${ParkingStorageService.maxBusinessDocuments} business documents.',
+      );
+      return;
+    }
+
+    if (_reviewStatus == 'approved' && _documentsChanged) {
+      if (!await _confirmReapproval() || !mounted) {
+        return;
+      }
     }
 
     setState(() {
@@ -396,7 +561,12 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
     final FacilityRegistrationData data = FacilityRegistrationData(
       name: _nameController.text.trim(),
       address: _addressController.text.trim(),
-      operatingHours: _hoursController.text.trim(),
+      hours: _open24Hours
+          ? const OperatingHours.allDay()
+          : OperatingHours(
+              openMinutes: _openMinutes,
+              closeMinutes: _closeMinutes,
+            ),
       policies: _policiesController.text.trim(),
       rates: <String, dynamic>{
         'car': buildVehicleRateMap(
@@ -422,9 +592,43 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
       keepPhotoUrls: List<String>.from(_existingPhotoUrls),
       newPhotoFiles: List<File>.from(_newPhotoFiles),
       removedPhotoUrls: List<String>.from(_removedPhotoUrls),
+      keepDocumentUrls: List<String>.from(_existingDocumentUrls),
+      newDocumentFiles: List<File>.from(_newDocumentFiles),
+      removedDocumentUrls: List<String>.from(_removedDocumentUrls),
     );
 
-    Navigator.of(context).pop(data);
+    if (widget.onSave == null) {
+      Navigator.of(context).pop(data);
+      return;
+    }
+
+    final bool isCreate = _facilityData == null;
+    try {
+      final Map<String, dynamic>? saved = await widget.onSave!(data);
+      if (!mounted || saved == null) {
+        return;
+      }
+      if (isCreate) {
+        Navigator.of(context).pop();
+        return;
+      }
+      // Stay on the page: reload from what was saved so uploaded files become
+      // existing URLs and the review status banner is current.
+      setState(() {
+        _facilityData = saved;
+        _newPhotoFiles.clear();
+        _removedPhotoUrls.clear();
+        _newDocumentFiles.clear();
+        _removedDocumentUrls.clear();
+        _seedFromExistingData();
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _saving = false;
+        });
+      }
+    }
   }
 
   Widget _sectionCard({
@@ -496,20 +700,11 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
     );
   }
 
-  Widget _doubleFields({
-    required Widget first,
-    required Widget second,
-  }) {
+  Widget _doubleFields({required Widget first, required Widget second}) {
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
         if (constraints.maxWidth < 680) {
-          return Column(
-            children: [
-              first,
-              const SizedBox(height: 8),
-              second,
-            ],
-          );
+          return Column(children: [first, const SizedBox(height: 8), second]);
         }
 
         return Row(
@@ -552,6 +747,129 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
           ],
         );
       },
+    );
+  }
+
+  Future<void> _pickTime({required bool opening}) async {
+    final int initial =
+        (opening ? _openMinutes : _closeMinutes) ??
+        (opening ? 6 * 60 : 22 * 60);
+    final TimeOfDay? picked = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay(hour: initial ~/ 60, minute: initial % 60),
+      helpText: opening ? 'Opening time' : 'Closing time',
+    );
+    if (picked == null || !mounted) return;
+    setState(() {
+      final int minutes = picked.hour * 60 + picked.minute;
+      if (opening) {
+        _openMinutes = minutes;
+      } else {
+        _closeMinutes = minutes;
+      }
+    });
+  }
+
+  Widget _buildTimeButton({required bool opening}) {
+    final int? minutes = opening ? _openMinutes : _closeMinutes;
+    return InkWell(
+      onTap: _open24Hours ? null : () => _pickTime(opening: opening),
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: _open24Hours
+              ? const Color(0xFFF1F2F5)
+              : const Color(0xFFF8F9FC),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xFFE4E7EF)),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              opening ? Icons.wb_sunny_outlined : Icons.nightlight_outlined,
+              size: 18,
+              color: AppTheme.textMuted,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    opening ? 'Opens' : 'Closes',
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: AppTheme.textMuted,
+                    ),
+                  ),
+                  Text(
+                    minutes == null
+                        ? 'Set time'
+                        : OperatingHours.format12h(minutes),
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: minutes == null || _open24Hours
+                          ? AppTheme.textMuted
+                          : AppTheme.textDark,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildOperatingHoursField() {
+    final OperatingHours hours = OperatingHours(
+      openMinutes: _openMinutes,
+      closeMinutes: _closeMinutes,
+    );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            const Expanded(
+              child: Text(
+                'Operating Hours',
+                style: TextStyle(
+                  color: AppTheme.textDark,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            const Text(
+              'Open 24 hours',
+              style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
+            ),
+            Switch(
+              value: _open24Hours,
+              activeThumbColor: AppTheme.accent,
+              onChanged: (bool value) => setState(() => _open24Hours = value),
+            ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        Row(
+          children: [
+            Expanded(child: _buildTimeButton(opening: true)),
+            const SizedBox(width: 10),
+            Expanded(child: _buildTimeButton(opening: false)),
+          ],
+        ),
+        if (!_open24Hours && hours.overnight) ...[
+          const SizedBox(height: 6),
+          const Text(
+            'Closes after midnight (overnight).',
+            style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
+          ),
+        ],
+      ],
     );
   }
 
@@ -600,10 +918,7 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
               borderRadius: BorderRadius.circular(12),
               borderSide: const BorderSide(color: AppTheme.accent, width: 1.4),
             ),
-            hintStyle: const TextStyle(
-              color: Color(0xFF9AA0AE),
-              fontSize: 12,
-            ),
+            hintStyle: const TextStyle(color: Color(0xFF9AA0AE), fontSize: 12),
           ),
         ),
       ],
@@ -806,6 +1121,67 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
     );
   }
 
+  Widget _buildDocumentsSection() {
+    final bool canAddMore =
+        _totalDocumentCount < ParkingStorageService.maxBusinessDocuments;
+
+    return _sectionCard(
+      title: 'Business Documents',
+      subtitle:
+          'Required. Upload clear photos of your business permit, DTI/SEC '
+          'registration, or BIR certificate for admin verification.',
+      icon: Icons.verified_user_rounded,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              for (final String url in _existingDocumentUrls)
+                _buildPhotoThumbnail(
+                  image: Image.network(url, fit: BoxFit.cover),
+                  onRemove: () => _removeExistingDocument(url),
+                ),
+              for (final File file in _newDocumentFiles)
+                _buildPhotoThumbnail(
+                  image: Image.file(file, fit: BoxFit.cover),
+                  onRemove: () => _removeNewDocument(file),
+                ),
+              if (canAddMore)
+                InkWell(
+                  onTap: _pickDocument,
+                  borderRadius: BorderRadius.circular(12),
+                  child: Container(
+                    width: 92,
+                    height: 92,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF8F9FC),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: const Color(0xFFE4E7EF)),
+                    ),
+                    child: const Icon(
+                      Icons.note_add_rounded,
+                      color: Color(0xFF737A88),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            '$_totalDocumentCount / ${ParkingStorageService.maxBusinessDocuments} documents added',
+            style: const TextStyle(
+              color: Color(0xFF737A88),
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildVehicleRateGroup({
     required String title,
     required IconData icon,
@@ -879,16 +1255,21 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
             succDCtrl: _rateMotorSucceedingDailyController,
           ),
           const SizedBox(height: 16),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-            decoration: BoxDecoration(
-              color: const Color(0xFFF8F9FC),
+          // Material (not a coloured Container) so the tile's ink splash
+          // paints on this background instead of being hidden behind it.
+          Material(
+            color: const Color(0xFFF8F9FC),
+            shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: const Color(0xFFE4E7EF)),
+              side: const BorderSide(color: Color(0xFFE4E7EF)),
             ),
+            clipBehavior: Clip.antiAlias,
             child: SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              activeColor: AppTheme.accent,
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 4,
+              ),
+              activeThumbColor: AppTheme.accent,
               title: const Text(
                 'Allow Long-Term Parking (Weekly & Monthly)',
                 style: TextStyle(
@@ -899,10 +1280,7 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
               ),
               subtitle: const Text(
                 'By default, only hourly & daily rates are enabled.',
-                style: TextStyle(
-                  color: AppTheme.textMuted,
-                  fontSize: 11,
-                ),
+                style: TextStyle(color: AppTheme.textMuted, fontSize: 11),
               ),
               value: _allowLongTermRates,
               onChanged: (bool val) {
@@ -980,7 +1358,7 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
 
   @override
   Widget build(BuildContext context) {
-    final String pageTitle = widget.facilityData == null
+    final String pageTitle = _facilityData == null
         ? 'Register Facility'
         : 'Update Facility';
 
@@ -1061,10 +1439,22 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
                       'Complete the establishment details and pin its location on the map.',
                       style: TextStyle(color: AppTheme.textMuted),
                     ),
+                    if (_facilityData != null) ...[
+                      const SizedBox(height: 12),
+                      FacilityReviewStatusBanner(
+                        status: _reviewStatus,
+                        rejectionReason:
+                            _facilityData?['rejectionReason'] as String?,
+                        hint: _reviewStatus == 'approved'
+                            ? 'Changing business documents will require re-approval.'
+                            : null,
+                      ),
+                    ],
                     const SizedBox(height: 16),
                     _sectionCard(
                       title: 'Basic Information',
-                      subtitle: 'Set your establishment identity and operating window.',
+                      subtitle:
+                          'Set your establishment identity and operating window.',
                       icon: Icons.badge_rounded,
                       child: Column(
                         children: [
@@ -1080,16 +1470,14 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
                             controller: _addressController,
                           ),
                           const SizedBox(height: 10),
-                          _buildInputField(
-                            label: 'Operating Hours',
-                            hint: 'e.g. 6:00 AM - 10:00 PM',
-                            controller: _hoursController,
-                          ),
+                          _buildOperatingHoursField(),
                         ],
                       ),
                     ),
                     const SizedBox(height: 10),
                     _buildPhotosSection(),
+                    const SizedBox(height: 10),
+                    _buildDocumentsSection(),
                     const SizedBox(height: 10),
                     _buildMapCard(),
                     const SizedBox(height: 10),
@@ -1097,7 +1485,8 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
                     const SizedBox(height: 10),
                     _sectionCard(
                       title: 'Policies',
-                      subtitle: 'State parking rules and reminders for customers.',
+                      subtitle:
+                          'State parking rules and reminders for customers.',
                       icon: Icons.rule_rounded,
                       child: _buildInputField(
                         label: 'Policies',
@@ -1120,7 +1509,7 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
             Expanded(
               child: OutlinedButton(
                 onPressed: _saving ? null : () => Navigator.of(context).pop(),
-                child: const Text('Cancel'),
+                child: Text(_facilityData == null ? 'Cancel' : 'Close'),
               ),
             ),
             const SizedBox(width: 12),

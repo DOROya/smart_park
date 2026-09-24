@@ -2,6 +2,7 @@ library;
 
 // ignore_for_file: file_names, invalid_use_of_protected_member
 
+import 'dart:async';
 import 'dart:math';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -12,11 +13,16 @@ import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import '../models/facility_registration_data.dart';
 import '../theme/app_theme.dart';
 import '../services/establishment_repository.dart';
+import '../services/platform_fees.dart';
 import '../utils/staff_credentials.dart';
+import '../widgets/smartpark_ui.dart';
 import 'parking_owner/widgets/facility_registration_dialog.dart';
+import 'parking_owner/widgets/facility_review_status_banner.dart';
 import 'sign_in_screen.dart';
 
 part 'parking_owner/parking_owner_home_fragments.dart';
+part 'parking_owner/parking_owner_commissions.dart';
+part 'parking_owner/parking_owner_gate_activity.dart';
 
 class ParkingOwnerHomePage extends StatefulWidget {
   const ParkingOwnerHomePage({super.key, this.role = 'parking owner'});
@@ -27,7 +33,8 @@ class ParkingOwnerHomePage extends StatefulWidget {
   State<ParkingOwnerHomePage> createState() => _ParkingOwnerHomePageState();
 }
 
-class _ParkingOwnerHomePageState extends State<ParkingOwnerHomePage> {
+class _ParkingOwnerHomePageState extends State<ParkingOwnerHomePage>
+    with SpStreamCache<ParkingOwnerHomePage> {
   late Future<DocumentSnapshot<Map<String, dynamic>>> _userFuture;
   final EstablishmentRepository _establishmentRepository =
       const EstablishmentRepository();
@@ -35,6 +42,7 @@ class _ParkingOwnerHomePageState extends State<ParkingOwnerHomePage> {
   int _selectedIndex = 0;
   bool _addingStaff = false;
   bool _savingProfile = false;
+  bool _railExtended = false;
 
   final GlobalKey<FormState> _staffFormKey = GlobalKey<FormState>();
   final TextEditingController _staffNameController = TextEditingController();
@@ -51,6 +59,8 @@ class _ParkingOwnerHomePageState extends State<ParkingOwnerHomePage> {
   void initState() {
     super.initState();
     _userFuture = _fetchUserDocument();
+    unawaited(_migrateLegacyStaffDocs());
+    unawaited(_migrateBusinessDocumentUrls());
   }
 
   @override
@@ -80,6 +90,81 @@ class _ParkingOwnerHomePageState extends State<ParkingOwnerHomePage> {
         .collection('users')
         .doc(uid)
         .set(mergedData, SetOptions(merge: true));
+  }
+
+  /// Staff records used to get random document ids. Security rules look a
+  /// staff member up by `staff_accounts/{their uid}`, so move any old record
+  /// to that id. Only the owner may write their staff records, so this runs
+  /// here rather than on the staff member's device.
+  Future<void> _migrateLegacyStaffDocs() async {
+    final String? ownerId = FirebaseAuth.instance.currentUser?.uid;
+    if (ownerId == null) return;
+    try {
+      final CollectionReference<Map<String, dynamic>> staff = FirebaseFirestore
+          .instance
+          .collection('staff_accounts');
+      final QuerySnapshot<Map<String, dynamic>> snapshot = await staff
+          .where('ownerId', isEqualTo: ownerId)
+          .get();
+      final WriteBatch batch = FirebaseFirestore.instance.batch();
+      int moved = 0;
+      for (final QueryDocumentSnapshot<Map<String, dynamic>> doc
+          in snapshot.docs) {
+        final String staffUid = ((doc.data()['userId'] as String?) ?? '')
+            .trim();
+        if (staffUid.isEmpty || staffUid == doc.id) continue;
+        batch.set(staff.doc(staffUid), doc.data());
+        batch.delete(doc.reference);
+        moved++;
+      }
+      if (moved > 0) await batch.commit();
+    } catch (error) {
+      debugPrint('ParkingOwnerHomePage: staff record migration failed: $error');
+    }
+  }
+
+  /// Business document URLs used to sit on `establishment_details`, which
+  /// every driver can read. Move them to the owner/admin-only
+  /// `establishment_private` doc.
+  Future<void> _migrateBusinessDocumentUrls() async {
+    final String? ownerId = FirebaseAuth.instance.currentUser?.uid;
+    if (ownerId == null) return;
+    final FirebaseFirestore db = FirebaseFirestore.instance;
+    try {
+      final QuerySnapshot<Map<String, dynamic>> owned = await db
+          .collection('establishments')
+          .where('ownerId', isEqualTo: ownerId)
+          .get();
+      for (final QueryDocumentSnapshot<Map<String, dynamic>> est
+          in owned.docs) {
+        final DocumentReference<Map<String, dynamic>> detailsRef = db
+            .collection('establishment_details')
+            .doc(est.id);
+        final Map<String, dynamic>? details = (await detailsRef.get()).data();
+        if (details == null || !details.containsKey('businessDocumentUrls')) {
+          continue;
+        }
+        final WriteBatch batch = db.batch();
+        batch.set(
+          db.collection('establishment_private').doc(est.id),
+          <String, dynamic>{
+            'establishmentID': est.id,
+            'businessDocumentUrls': details['businessDocumentUrls'],
+            'businessDocumentsUpdatedAt':
+                details['businessDocumentsUpdatedAt'] ??
+                FieldValue.serverTimestamp(),
+          },
+          SetOptions(merge: true),
+        );
+        batch.update(detailsRef, <String, dynamic>{
+          'businessDocumentUrls': FieldValue.delete(),
+          'businessDocumentsUpdatedAt': FieldValue.delete(),
+        });
+        await batch.commit();
+      }
+    } catch (error) {
+      debugPrint('ParkingOwnerHomePage: document URL migration failed: $error');
+    }
   }
 
   Future<DocumentSnapshot<Map<String, dynamic>>> _fetchUserDocument() async {
@@ -230,8 +315,7 @@ class _ParkingOwnerHomePageState extends State<ParkingOwnerHomePage> {
 
       final String staffName = _staffNameController.text.trim();
       final String prefix = await _ensureOwnerStaffPrefix(ownerId);
-      final String baseUsername =
-          '${prefix}_${_slugifyStaffName(staffName)}';
+      final String baseUsername = '${prefix}_${_slugifyStaffName(staffName)}';
       final String generatedPassword = _generateRandomPassword();
 
       staffCreationApp = await Firebase.initializeApp(
@@ -267,19 +351,23 @@ class _ParkingOwnerHomePageState extends State<ParkingOwnerHomePage> {
       }
       await credential!.user!.updateDisplayName(staffName);
 
-      await FirebaseFirestore.instance.collection('staff_accounts').add({
-        'userId': staffUid,
-        'ownerId': ownerId,
-        'facilityId': facilityId,
-        'establishmentID': facilityId,
-        'name': staffName,
-        'username': username,
-        'email': staffUsernameToAuthEmail(username),
-        'role': 'staff',
-        'isOnline': false,
-        'createdAt': FieldValue.serverTimestamp(),
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
+      // Keyed by the staff member's uid so security rules can find it.
+      await FirebaseFirestore.instance
+          .collection('staff_accounts')
+          .doc(staffUid)
+          .set({
+            'userId': staffUid,
+            'ownerId': ownerId,
+            'facilityId': facilityId,
+            'establishmentID': facilityId,
+            'name': staffName,
+            'username': username,
+            'email': staffUsernameToAuthEmail(username),
+            'role': 'staff',
+            'isOnline': false,
+            'createdAt': FieldValue.serverTimestamp(),
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
 
       _staffNameController.clear();
       if (!mounted) return;
@@ -350,12 +438,45 @@ class _ParkingOwnerHomePageState extends State<ParkingOwnerHomePage> {
     );
   }
 
-  Future<void> _removeStaff(String staffDocId) async {
-    await FirebaseFirestore.instance
-        .collection('staff_accounts')
-        .doc(staffDocId)
-        .delete();
-    _showSnackBar('Staff account removed.');
+  Future<void> _removeStaff(String staffDocId, String staffName) async {
+    final bool? confirmed = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return AlertDialog(
+          title: const Text('Remove staff?'),
+          content: Text(
+            '$staffName will be removed from your staff list. '
+            'This cannot be undone.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              style: TextButton.styleFrom(
+                foregroundColor: const Color(0xFFB14141),
+              ),
+              child: const Text('Remove'),
+            ),
+          ],
+        );
+      },
+    );
+    if (confirmed != true) {
+      return;
+    }
+
+    try {
+      await FirebaseFirestore.instance
+          .collection('staff_accounts')
+          .doc(staffDocId)
+          .delete();
+      _showSnackBar('Staff account removed.');
+    } catch (error) {
+      _showSnackBar('Unable to remove staff: $error');
+    }
   }
 
   Future<void> _saveProfile(String ownerId, String role) async {
@@ -395,21 +516,29 @@ class _ParkingOwnerHomePageState extends State<ParkingOwnerHomePage> {
         FirebaseFirestore.instance
             .collection('establishments')
             .doc(establishmentId);
-    final DocumentReference<Map<String, dynamic>> detailsRef =
-        FirebaseFirestore.instance
-            .collection('establishment_details')
-            .doc(establishmentId);
+    final DocumentReference<Map<String, dynamic>> detailsRef = FirebaseFirestore
+        .instance
+        .collection('establishment_details')
+        .doc(establishmentId);
+
+    final DocumentReference<Map<String, dynamic>> privateRef = FirebaseFirestore
+        .instance
+        .collection('establishment_private')
+        .doc(establishmentId);
 
     final List<DocumentSnapshot<Map<String, dynamic>>> snapshots =
         await Future.wait(<Future<DocumentSnapshot<Map<String, dynamic>>>>[
           establishmentRef.get(),
           detailsRef.get(),
+          privateRef.get(),
         ]);
 
     final Map<String, dynamic> establishmentData =
         snapshots[0].data() ?? <String, dynamic>{};
     final Map<String, dynamic> detailsData =
         snapshots[1].data() ?? <String, dynamic>{};
+    final Map<String, dynamic> privateData =
+        snapshots[2].data() ?? <String, dynamic>{};
 
     if (establishmentData.isEmpty && detailsData.isEmpty) {
       return null;
@@ -418,6 +547,7 @@ class _ParkingOwnerHomePageState extends State<ParkingOwnerHomePage> {
     return <String, dynamic>{
       ...establishmentData,
       ...detailsData,
+      ...privateData,
       'establishmentID': establishmentId,
     };
   }
@@ -449,41 +579,68 @@ class _ParkingOwnerHomePageState extends State<ParkingOwnerHomePage> {
       }
     }
 
-    final Map<String, dynamic>? facilityData =
-      await _loadFacilityData(establishmentId);
+    final Map<String, dynamic>? facilityData = await _loadFacilityData(
+      establishmentId,
+    );
 
     if (!mounted) {
       return;
     }
 
-    final FacilityRegistrationData? formData = await navigator.push<
-      FacilityRegistrationData
-    >(
-      MaterialPageRoute<FacilityRegistrationData>(
-        builder: (_) => FacilityRegistrationPage(facilityData: facilityData),
+    String? savedEstablishmentId = facilityData == null
+        ? null
+        : establishmentId;
+    Map<String, dynamic>? currentData = facilityData;
+
+    Future<Map<String, dynamic>?> save(
+      FacilityRegistrationData formData,
+    ) async {
+      final ({
+        String establishmentId,
+        bool submittedForReview,
+        int failedDocumentUploads,
+      })
+      result;
+      try {
+        result = await _establishmentRepository.saveFacility(
+          ownerId: ownerId,
+          ownerData: ownerData,
+          formData: formData,
+          establishmentId: savedEstablishmentId,
+          previousStatus: currentData?['status'] as String?,
+        );
+      } catch (error) {
+        _showSnackBar('Unable to save facility: $error');
+        return null;
+      }
+
+      final bool wasCreate = savedEstablishmentId == null;
+      savedEstablishmentId = result.establishmentId;
+      currentData = await _loadFacilityData(result.establishmentId);
+
+      if (mounted) {
+        setState(() {
+          _userFuture = _fetchUserDocument();
+        });
+        _showSnackBar(
+          result.failedDocumentUploads > 0
+              ? '${result.failedDocumentUploads} business document(s) failed '
+                    'to upload. Add them again and save.'
+              : wasCreate
+              ? 'Facility registered and submitted for admin review.'
+              : result.submittedForReview
+              ? 'Facility updated and resubmitted for admin review.'
+              : 'Facility updated.',
+        );
+      }
+      return currentData;
+    }
+
+    await navigator.push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) =>
+            FacilityRegistrationPage(facilityData: facilityData, onSave: save),
       ),
-    );
-
-    if (formData == null || !mounted) {
-      return;
-    }
-
-    await _establishmentRepository.saveFacility(
-      ownerId: ownerId,
-      ownerData: ownerData,
-      formData: formData,
-      establishmentId: facilityData == null ? null : establishmentId,
-    );
-
-    if (!mounted) {
-      return;
-    }
-
-    setState(() {
-      _userFuture = _fetchUserDocument();
-    });
-    _showSnackBar(
-      establishmentId.isEmpty ? 'Facility registered.' : 'Facility updated.',
     );
   }
 
@@ -510,105 +667,122 @@ class _ParkingOwnerHomePageState extends State<ParkingOwnerHomePage> {
 
         _seedProfileControllers(ownerData);
 
+        final bool isTablet = spIsTablet(context);
+        final Widget body = _buildBody(
+          ownerId: ownerId,
+          ownerData: ownerData,
+          role: role,
+        );
+
         return Scaffold(
           appBar: AppBar(
-            toolbarHeight: 72,
             backgroundColor: Colors.white,
             elevation: 0,
-            titleSpacing: 16,
-            surfaceTintColor: Colors.white,
-            shape: const Border(
-              bottom: BorderSide(color: Color(0xFFE7E9EF)),
-            ),
-            actions: [
-              IconButton(
-                onPressed: _signOut,
-                tooltip: 'Sign out',
-                icon: const Icon(
-                  Icons.logout_rounded,
-                  color: Color(0xFF3B4252),
-                ),
-              ),
-            ],
-            title: const Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            scrolledUnderElevation: 0,
+            automaticallyImplyLeading: false,
+            leading: isTablet
+                ? SpMenuToggleButton(
+                    extended: _railExtended,
+                    onPressed: () =>
+                        setState(() => _railExtended = !_railExtended),
+                  )
+                : null,
+            titleSpacing: isTablet ? 0 : null,
+            actions: [_buildProfileAvatarButton(), const SizedBox(width: 12)],
+            title: const Row(
+              mainAxisSize: MainAxisSize.min,
               children: [
+                Icon(Icons.local_parking_rounded, color: AppTheme.textDark),
+                SizedBox(width: 8),
                 Text(
-                  'Owner Dashboard',
+                  'SmartPark',
                   style: TextStyle(
                     color: AppTheme.textDark,
                     fontWeight: FontWeight.w700,
-                    fontSize: 17,
-                  ),
-                ),
-                SizedBox(height: 2),
-                Text(
-                  'Manage your facility, staff, and commissions.',
-                  style: TextStyle(
-                    color: AppTheme.textMuted,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
                   ),
                 ),
               ],
             ),
           ),
-          body: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
-            child: _buildBody(
-              ownerId: ownerId,
-              ownerData: ownerData,
-              role: role,
-            ),
-          ),
-            bottomNavigationBar: BottomNavigationBar(
-            currentIndex: _selectedIndex,
-            backgroundColor: Colors.white,
-            elevation: 10,
-            selectedItemColor: const Color(0xFF22252C),
-            unselectedItemColor: const Color(0xFF6C727F),
-            showSelectedLabels: true,
-            showUnselectedLabels: true,
-            type: BottomNavigationBarType.fixed,
-            selectedLabelStyle: const TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-            ),
-            unselectedLabelStyle: const TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w500,
-            ),
-            onTap: (index) => setState(() => _selectedIndex = index),
-            items: const [
-              BottomNavigationBarItem(
-                icon: Icon(Icons.apartment_outlined),
-                activeIcon: Icon(Icons.apartment_rounded),
-                label: 'Facility',
-              ),
-              BottomNavigationBarItem(
-                icon: Icon(Icons.badge_outlined),
-                activeIcon: Icon(Icons.badge_rounded),
-                label: 'Staff',
-              ),
-              BottomNavigationBarItem(
-                icon: Icon(Icons.directions_car_outlined),
-                activeIcon: Icon(Icons.directions_car_rounded),
-                label: 'Activity',
-              ),
-              BottomNavigationBarItem(
-                icon: Icon(Icons.payments_outlined),
-                activeIcon: Icon(Icons.payments_rounded),
-                label: 'Commissions',
-              ),
-              BottomNavigationBarItem(
-                icon: Icon(Icons.person_outlined),
-                activeIcon: Icon(Icons.person_rounded),
-                label: 'User Profile',
-              ),
-            ],
-          ),
+          body: isTablet
+              ? SpRailLayout(
+                  rail: SpNavRail(
+                    items: _navItems,
+                    selectedIndex: _selectedIndex,
+                    onSelected: (index) =>
+                        setState(() => _selectedIndex = index),
+                    extended: _railExtended,
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(24, 12, 24, 24),
+                    child: body,
+                  ),
+                )
+              : Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
+                  child: body,
+                ),
+          bottomNavigationBar: isTablet
+              ? null
+              : BottomNavigationBar(
+                  currentIndex: _selectedIndex,
+                  backgroundColor: Colors.white,
+                  elevation: 10,
+                  selectedItemColor: const Color(0xFF22252C),
+                  unselectedItemColor: const Color(0xFF6C727F),
+                  showSelectedLabels: true,
+                  showUnselectedLabels: true,
+                  type: BottomNavigationBarType.fixed,
+                  selectedLabelStyle: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                  unselectedLabelStyle: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                  ),
+                  onTap: (index) => setState(() => _selectedIndex = index),
+                  items: [
+                    for (final (
+                          IconData icon,
+                          IconData activeIcon,
+                          String label,
+                        )
+                        in _navItems)
+                      BottomNavigationBarItem(
+                        icon: Icon(icon),
+                        activeIcon: Icon(activeIcon),
+                        label: label,
+                      ),
+                  ],
+                ),
         );
       },
+    );
+  }
+
+  static const List<(IconData, IconData, String)> _navItems =
+      <(IconData, IconData, String)>[
+        (Icons.apartment_outlined, Icons.apartment_rounded, 'Facility'),
+        (Icons.badge_outlined, Icons.badge_rounded, 'Staff'),
+        (
+          Icons.directions_car_outlined,
+          Icons.directions_car_rounded,
+          'Activity',
+        ),
+        (Icons.payments_outlined, Icons.payments_rounded, 'Finance'),
+        (Icons.person_outlined, Icons.person_rounded, 'Profile'),
+      ];
+
+  /// App bar shortcut to the Profile tab, where the owner signs out.
+  Widget _buildProfileAvatarButton() {
+    final String name =
+        '${_profileFirstNameController.text} ${_profileLastNameController.text}'
+            .trim();
+    return SpAccountAvatarButton(
+      active: _selectedIndex == 4,
+      onTap: () => setState(() => _selectedIndex = 4),
+      child: Text(name.isEmpty ? 'P' : _initials(name)),
     );
   }
 }

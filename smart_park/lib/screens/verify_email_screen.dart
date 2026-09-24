@@ -1,7 +1,12 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
+import '../services/email_rate_limiter.dart';
+import '../theme/app_theme.dart';
+import '../widgets/auth_widgets.dart';
 import 'role_based_home_page.dart';
 import 'sign_in_screen.dart';
 
@@ -30,14 +35,49 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
   static const String _parkingOwnerRole = 'Parking Owner';
   static const String _adminRole = 'admin';
 
+  static const String _rateLimitAction = 'verify';
+
   bool _sendingVerification = false;
+  bool _checking = false;
+  Duration _resendWait = Duration.zero;
+  Timer? _resendTimer;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _sendVerificationEmail();
+      // Coming back to this screen within the cooldown should not trigger
+      // another email; the countdown shows when the next one is allowed.
+      _sendVerificationEmail(silentIfThrottled: true);
     });
+  }
+
+  @override
+  void dispose() {
+    _resendTimer?.cancel();
+    super.dispose();
+  }
+
+  String get _rateLimitEmail =>
+      FirebaseAuth.instance.currentUser?.email ?? widget.email ?? '';
+
+  /// Refreshes [_resendWait] and ticks it down once a second until zero.
+  void _syncResendCooldown() {
+    _resendTimer?.cancel();
+    void tick() {
+      final Duration wait = EmailRateLimiter.remaining(
+        _rateLimitAction,
+        _rateLimitEmail,
+      );
+      if (!mounted) return;
+      setState(() => _resendWait = wait);
+      if (wait == Duration.zero) _resendTimer?.cancel();
+    }
+
+    tick();
+    if (_resendWait > Duration.zero) {
+      _resendTimer = Timer.periodic(const Duration(seconds: 1), (_) => tick());
+    }
   }
 
   void _showSnackBar(String message) {
@@ -78,8 +118,22 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
     return createdUser;
   }
 
-  Future<void> _sendVerificationEmail() async {
+  Future<void> _sendVerificationEmail({bool silentIfThrottled = false}) async {
     if (_sendingVerification) {
+      return;
+    }
+
+    final Duration wait = EmailRateLimiter.remaining(
+      _rateLimitAction,
+      _rateLimitEmail,
+    );
+    if (wait > Duration.zero) {
+      _syncResendCooldown();
+      if (!silentIfThrottled) {
+        _showSnackBar(
+          'Please wait ${EmailRateLimiter.describe(wait)} before requesting another email.',
+        );
+      }
       return;
     }
 
@@ -94,9 +148,13 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
       return;
     }
 
-    _sendingVerification = true;
+    setState(() => _sendingVerification = true);
     try {
       await user.sendEmailVerification();
+      EmailRateLimiter.recordSend(
+        _rateLimitAction,
+        user.email ?? _rateLimitEmail,
+      );
       if (!mounted) {
         return;
       }
@@ -105,9 +163,18 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
       if (!mounted) {
         return;
       }
-      _showSnackBar(error.message ?? 'Unable to send verification email.');
+      if (error.code == 'too-many-requests') {
+        // Firebase is throttling this account; hold the button off too.
+        EmailRateLimiter.recordSend(_rateLimitAction, _rateLimitEmail);
+        _showSnackBar(EmailRateLimiter.tooManyRequestsMessage);
+      } else {
+        _showSnackBar(error.message ?? 'Unable to send verification email.');
+      }
     } finally {
-      _sendingVerification = false;
+      if (mounted) {
+        setState(() => _sendingVerification = false);
+        _syncResendCooldown();
+      }
     }
   }
 
@@ -176,6 +243,20 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
   }
 
   Future<void> _checkVerification() async {
+    if (_checking) {
+      return;
+    }
+    setState(() => _checking = true);
+    try {
+      await _checkVerificationInner();
+    } finally {
+      if (mounted) {
+        setState(() => _checking = false);
+      }
+    }
+  }
+
+  Future<void> _checkVerificationInner() async {
     final User? user = FirebaseAuth.instance.currentUser;
     if (user == null) {
       if (!mounted) {
@@ -227,55 +308,91 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        elevation: 0,
-        actions: [
-          TextButton(onPressed: _signOut, child: const Text('Sign Out')),
-        ],
+    final String email =
+        (widget.email ?? FirebaseAuth.instance.currentUser?.email ?? '').trim();
+
+    return AuthShell(
+      trailing: TextButton.icon(
+        onPressed: _signOut,
+        icon: const Icon(Icons.logout_rounded, size: 18),
+        label: const Text('Sign Out'),
+        style: TextButton.styleFrom(foregroundColor: const Color(0xFFAF2E2E)),
       ),
-      body: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text(
-                'Please verify your email before continuing.',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w700,
-                  color: Color(0xFF1E2026),
-                ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SizedBox(height: 8),
+          Center(
+            child: Container(
+              width: 88,
+              height: 88,
+              decoration: BoxDecoration(
+                color: AppTheme.accent.withValues(alpha: 0.25),
+                shape: BoxShape.circle,
               ),
-              const SizedBox(height: 12),
+              child: const Icon(
+                Icons.mark_email_unread_rounded,
+                size: 42,
+                color: Color(0xFF8A6A0C),
+              ),
+            ),
+          ),
+          const SizedBox(height: 22),
+          const AuthHeader(
+            first: 'Check your ',
+            accent: 'inbox.',
+            subtitle: 'Verify your email to finish setting up your account.',
+          ),
+          const SizedBox(height: 20),
+          AuthFormCard(
+            icon: Icons.alternate_email_rounded,
+            title: 'Verification link sent',
+            children: [
+              if (email.isNotEmpty) ...[
+                Text(
+                  email,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w800,
+                    color: AppTheme.textDark,
+                  ),
+                ),
+                const SizedBox(height: 8),
+              ],
               Text(
                 widget.password == null
-                    ? 'We sent a verification link to your inbox. Open it and then come back here.'
-                    : 'We created your account and sent a verification link to your inbox. Open it and then come back here.',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
-                  color: Color(0xFF8E929C),
+                    ? 'Open the link in the email we sent, then come back and tap the button below.'
+                    : 'Your account is created. Open the link in the email we sent, then come back and tap the button below.',
+                style: const TextStyle(
+                  fontSize: 13,
+                  height: 1.45,
+                  color: AppTheme.textMuted,
                 ),
               ),
-              const SizedBox(height: 20),
-              TextButton(
-                onPressed: _sendVerificationEmail,
-                child: const Text('Resend verification email'),
-              ),
-              const SizedBox(height: 12),
-              ElevatedButton(
-                onPressed: _checkVerification,
-                child: const Text('I Verified My Email'),
+              const SizedBox(height: 8),
+              const Text(
+                "Can't find it? Check your spam folder.",
+                style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
               ),
             ],
           ),
-        ),
+          const SizedBox(height: 24),
+          PrimaryAuthButton(
+            text: 'I Verified My Email',
+            icon: Icons.check_rounded,
+            isLoading: _checking,
+            onPressed: _checkVerification,
+          ),
+          const SizedBox(height: 12),
+          SecondaryAuthButton(
+            text: _resendWait > Duration.zero
+                ? 'Resend Email in ${EmailRateLimiter.describe(_resendWait)}'
+                : 'Resend Email',
+            isLoading: _sendingVerification,
+            onPressed: _resendWait > Duration.zero
+                ? null
+                : () => _sendVerificationEmail(),
+          ),
+        ],
       ),
     );
   }

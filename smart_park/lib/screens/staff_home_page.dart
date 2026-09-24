@@ -6,9 +6,12 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
+import '../services/parking_pricing.dart';
 import '../services/permission_service.dart';
 import '../theme/app_theme.dart';
+import '../widgets/smartpark_ui.dart';
 import 'sign_in_screen.dart';
+import 'staff/walk_in_panel.dart';
 
 part 'staff/staff_home_page_fragments.dart';
 
@@ -47,12 +50,11 @@ class _GateScanResult {
 
   bool get isAllowed => decision == 'ALLOWED';
   bool get isDenied => decision == 'DENIED';
-  bool get hasOvertime =>
-      (overtimeHours ?? 0) > 0 && (overtimeAmount ?? 0) > 0;
+  bool get hasOvertime => (overtimeHours ?? 0) > 0 && (overtimeAmount ?? 0) > 0;
 }
 
 class _StaffHomePageState extends State<StaffHomePage>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, SpStreamCache<StaffHomePage> {
   final PermissionService _permissionService = const PermissionService();
 
   late Future<DocumentSnapshot<Map<String, dynamic>>> _userFuture;
@@ -180,7 +182,8 @@ class _StaffHomePageState extends State<StaffHomePage>
     }
 
     setState(() {
-      _assignedFacilityId = (userDoc.data()?['establishmentID'] as String?) ??
+      _assignedFacilityId =
+          (userDoc.data()?['establishmentID'] as String?) ??
           (userDoc.data()?['facilityId'] as String?);
       _ownerId = userDoc.data()?['ownerId'] as String?;
     });
@@ -200,7 +203,8 @@ class _StaffHomePageState extends State<StaffHomePage>
   Future<void> _showChangePasswordDialog() {
     return showDialog<void>(
       context: context,
-      builder: (BuildContext dialogContext) => const _StaffChangePasswordDialog(),
+      builder: (BuildContext dialogContext) =>
+          const _StaffChangePasswordDialog(),
     );
   }
 
@@ -215,66 +219,21 @@ class _StaffHomePageState extends State<StaffHomePage>
       return;
     }
 
-    await FirebaseFirestore.instance.collection('StaffActivityLogs').add(
-      <String, dynamic>{
-        'staffID': staffId,
-        'ownerId': _ownerId,
-        'establishmentID': _assignedFacilityId,
-        'facilityId': _assignedFacilityId,
-        'action': action,
-        'date': FieldValue.serverTimestamp(),
-        'transactionId': transactionId,
-        if (activityLogId != null && activityLogId.isNotEmpty)
-          'activityLogId': activityLogId,
-        if (vehiclePlate != null && vehiclePlate.isNotEmpty)
-          'vehiclePlate': vehiclePlate,
-      },
-    );
-  }
-
-  double? _parseMoney(dynamic value) {
-    if (value is num) {
-      return value.toDouble();
-    }
-    if (value is String) {
-      return double.tryParse(value.replaceAll(RegExp(r'[^0-9.]'), ''));
-    }
-    return null;
-  }
-
-  double? _resolveOvertimeRate(
-    Map<String, dynamic>? rates,
-    String vehicleType,
-  ) {
-    if (rates == null) {
-      return null;
-    }
-    final dynamic vehicle =
-        rates[vehicleType] ?? rates[vehicleType.toLowerCase()];
-    if (vehicle is Map) {
-      final Map<String, dynamic> vehicleRates = vehicle.map<String, dynamic>(
-        (dynamic key, dynamic item) =>
-            MapEntry<String, dynamic>(key.toString(), item),
-      );
-      final double? succeeding =
-          _parseMoney(vehicleRates['succeedingHour']) ??
-          _parseMoney(vehicleRates['succeeding_hour']);
-      if (succeeding != null) {
-        return succeeding;
-      }
-      return _parseMoney(vehicleRates['hourly']) ??
-          _parseMoney(vehicleRates['initial']);
-    }
-    return _parseMoney(vehicle);
-  }
-
-  int _overtimeHoursFrac(Duration elapsed, int includedHours) {
-    const Duration grace = Duration(minutes: 5);
-    final Duration billable = elapsed - Duration(hours: includedHours) - grace;
-    if (billable.inSeconds <= 0) {
-      return 0;
-    }
-    return (billable.inSeconds / 3600).ceil();
+    await FirebaseFirestore.instance
+        .collection('StaffActivityLogs')
+        .add(<String, dynamic>{
+          'staffID': staffId,
+          'ownerId': _ownerId,
+          'establishmentID': _assignedFacilityId,
+          'facilityId': _assignedFacilityId,
+          'action': action,
+          'date': FieldValue.serverTimestamp(),
+          'transactionId': transactionId,
+          if (activityLogId != null && activityLogId.isNotEmpty)
+            'activityLogId': activityLogId,
+          if (vehiclePlate != null && vehiclePlate.isNotEmpty)
+            'vehiclePlate': vehiclePlate,
+        });
   }
 
   void _presentGateResult(_GateScanResult result) {
@@ -327,26 +286,27 @@ class _StaffHomePageState extends State<StaffHomePage>
       return null;
     }
     final DocumentReference<Map<String, dynamic>> logRef =
-        await FirebaseFirestore.instance.collection('activity_logs').add(
-      <String, dynamic>{
-        'establishmentID': _assignedFacilityId,
-        'facilityId': _assignedFacilityId,
-        'ownerId': _ownerId,
-        'staffId': staffId,
-        'staffEmail': (FirebaseAuth.instance.currentUser?.email ?? '').trim(),
-        'vehiclePlate': vehiclePlate,
-        'scanType': scanType,
-        'gateMode': scanType,
-        'status': 'DENIED',
-        'decision': 'DENIED',
-        'decisionReason': decisionReason,
-        'timestamp': FieldValue.serverTimestamp(),
-        'createdAt': FieldValue.serverTimestamp(),
-        'isActive': false,
-        if (transactionId != null && transactionId.isNotEmpty)
-          'transactionId': transactionId,
-      },
-    );
+        await FirebaseFirestore.instance
+            .collection('activity_logs')
+            .add(<String, dynamic>{
+              'establishmentID': _assignedFacilityId,
+              'facilityId': _assignedFacilityId,
+              'ownerId': _ownerId,
+              'staffId': staffId,
+              'staffEmail': (FirebaseAuth.instance.currentUser?.email ?? '')
+                  .trim(),
+              'vehiclePlate': vehiclePlate,
+              'scanType': scanType,
+              'gateMode': scanType,
+              'status': 'DENIED',
+              'decision': 'DENIED',
+              'decisionReason': decisionReason,
+              'timestamp': FieldValue.serverTimestamp(),
+              'createdAt': FieldValue.serverTimestamp(),
+              'isActive': false,
+              if (transactionId != null && transactionId.isNotEmpty)
+                'transactionId': transactionId,
+            });
     await _logStaffAction(
       action: 'scan_$scanType',
       transactionId: transactionId ?? logRef.id,
@@ -364,13 +324,15 @@ class _StaffHomePageState extends State<StaffHomePage>
     }
     final String? facilityId = _assignedFacilityId;
     if (facilityId == null || facilityId.isEmpty) {
-      _presentGateResult(_GateScanResult(
-        decision: 'DENIED',
-        vehiclePlate: '--',
-        scanType: _gateMode,
-        timestamp: DateTime.now(),
-        reason: 'Staff is not assigned to a facility yet.',
-      ));
+      _presentGateResult(
+        _GateScanResult(
+          decision: 'DENIED',
+          vehiclePlate: '--',
+          scanType: _gateMode,
+          timestamp: DateTime.now(),
+          reason: 'Staff is not assigned to a facility yet.',
+        ),
+      );
       return;
     }
     Map<String, dynamic>? payload;
@@ -390,13 +352,15 @@ class _StaffHomePageState extends State<StaffHomePage>
         vehiclePlate: 'unreadable',
         decisionReason: 'QR is not a SmartPark ticket.',
       );
-      _presentGateResult(_GateScanResult(
-        decision: 'DENIED',
-        vehiclePlate: '--',
-        scanType: _gateMode,
-        timestamp: DateTime.now(),
-        reason: 'Not a SmartPark ticket QR.',
-      ));
+      _presentGateResult(
+        _GateScanResult(
+          decision: 'DENIED',
+          vehiclePlate: '--',
+          scanType: _gateMode,
+          timestamp: DateTime.now(),
+          reason: 'Not a SmartPark ticket QR.',
+        ),
+      );
       return;
     }
     final String txId = ((payload['transactionId'] as String?) ?? '').trim();
@@ -407,13 +371,15 @@ class _StaffHomePageState extends State<StaffHomePage>
         vehiclePlate: pPlate,
         decisionReason: 'Ticket payload missing transaction id.',
       );
-      _presentGateResult(_GateScanResult(
-        decision: 'DENIED',
-        vehiclePlate: pPlate,
-        scanType: _gateMode,
-        timestamp: DateTime.now(),
-        reason: 'Ticket is unreadable. Use plate lookup.',
-      ));
+      _presentGateResult(
+        _GateScanResult(
+          decision: 'DENIED',
+          vehiclePlate: pPlate,
+          scanType: _gateMode,
+          timestamp: DateTime.now(),
+          reason: 'Ticket is unreadable. Use plate lookup.',
+        ),
+      );
       return;
     }
     final String ticketKey = '$_gateMode|$txId';
@@ -425,37 +391,46 @@ class _StaffHomePageState extends State<StaffHomePage>
       return;
     }
     try {
-      final DocumentSnapshot<Map<String, dynamic>> snap =
-          await FirebaseFirestore.instance
-              .collection('transactions')
-              .doc(txId)
-              .get();
-      if (!snap.exists) {
+      DocumentSnapshot<Map<String, dynamic>>? snap;
+      try {
+        snap = await FirebaseFirestore.instance
+            .collection('transactions')
+            .doc(txId)
+            .get();
+      } on FirebaseException catch (error) {
+        // Staff may only read their own facility's tickets, so a ticket from
+        // another facility (or a made-up id) is denied rather than returned.
+        if (error.code != 'permission-denied') rethrow;
+        snap = null;
+      }
+      if (snap == null || !snap.exists) {
         await _logDeniedScan(
           scanType: _gateMode,
           vehiclePlate: pPlate,
           decisionReason: 'Ticket does not exist.',
           transactionId: txId,
         );
-        _presentGateResult(_GateScanResult(
-          decision: 'DENIED',
-          vehiclePlate: pPlate,
-          scanType: _gateMode,
-          timestamp: now,
-          transactionId: txId,
-          reason: 'Ticket not found.',
-        ));
+        _presentGateResult(
+          _GateScanResult(
+            decision: 'DENIED',
+            vehiclePlate: pPlate,
+            scanType: _gateMode,
+            timestamp: now,
+            transactionId: txId,
+            reason: 'Ticket not found for this facility.',
+          ),
+        );
         return;
       }
       final Map<String, dynamic> ticket = snap.data() ?? <String, dynamic>{};
       final String status = ((ticket['status'] as String?) ?? '').toLowerCase();
-      final String tFac = ((ticket['establishmentId'] as String?) ??
-              (ticket['establishmentID'] as String?) ??
-              '')
-          .trim();
-      final String plate = (((ticket['vehiclePlate'] as String?) ?? pPlate))
-          .trim()
-          .isEmpty
+      final String tFac =
+          ((ticket['establishmentId'] as String?) ??
+                  (ticket['establishmentID'] as String?) ??
+                  '')
+              .trim();
+      final String plate =
+          (((ticket['vehiclePlate'] as String?) ?? pPlate)).trim().isEmpty
           ? '--'
           : (((ticket['vehiclePlate'] as String?) ?? pPlate)).trim();
       if (tFac != facilityId) {
@@ -465,14 +440,16 @@ class _StaffHomePageState extends State<StaffHomePage>
           decisionReason: 'Ticket belongs to another facility.',
           transactionId: txId,
         );
-        _presentGateResult(_GateScanResult(
-          decision: 'DENIED',
-          vehiclePlate: plate,
-          scanType: _gateMode,
-          timestamp: now,
-          transactionId: txId,
-          reason: 'Ticket issued for another facility.',
-        ));
+        _presentGateResult(
+          _GateScanResult(
+            decision: 'DENIED',
+            vehiclePlate: plate,
+            scanType: _gateMode,
+            timestamp: now,
+            transactionId: txId,
+            reason: 'Ticket issued for another facility.',
+          ),
+        );
         return;
       }
       if (status != 'paid') {
@@ -482,14 +459,16 @@ class _StaffHomePageState extends State<StaffHomePage>
           decisionReason: 'Ticket not paid ($status).',
           transactionId: txId,
         );
-        _presentGateResult(_GateScanResult(
-          decision: 'DENIED',
-          vehiclePlate: plate,
-          scanType: _gateMode,
-          timestamp: now,
-          transactionId: txId,
-          reason: 'Payment not confirmed.',
-        ));
+        _presentGateResult(
+          _GateScanResult(
+            decision: 'DENIED',
+            vehiclePlate: plate,
+            scanType: _gateMode,
+            timestamp: now,
+            transactionId: txId,
+            reason: 'Payment not confirmed.',
+          ),
+        );
         return;
       }
       if (_gateMode == 'entry') {
@@ -514,14 +493,16 @@ class _StaffHomePageState extends State<StaffHomePage>
         );
       }
     } catch (_) {
-      _presentGateResult(_GateScanResult(
-        decision: 'ERROR',
-        vehiclePlate: '--',
-        scanType: _gateMode,
-        timestamp: now,
-        transactionId: txId,
-        reason: 'Verification failed. Retry.',
-      ));
+      _presentGateResult(
+        _GateScanResult(
+          decision: 'ERROR',
+          vehiclePlate: '--',
+          scanType: _gateMode,
+          timestamp: now,
+          transactionId: txId,
+          reason: 'Verification failed. Retry.',
+        ),
+      );
     }
   }
 
@@ -534,8 +515,8 @@ class _StaffHomePageState extends State<StaffHomePage>
     required String ticketKey,
     required DateTime scannedAt,
   }) async {
-    final String entryStatus =
-        ((ticket['entryStatus'] as String?) ?? '').toLowerCase();
+    final String entryStatus = ((ticket['entryStatus'] as String?) ?? '')
+        .toLowerCase();
     if (entryStatus == 'checked_in' || entryStatus == 'inside') {
       await _logDeniedScan(
         scanType: 'entry',
@@ -543,14 +524,16 @@ class _StaffHomePageState extends State<StaffHomePage>
         decisionReason: 'Ticket already checked in.',
         transactionId: transactionId,
       );
-      _presentGateResult(_GateScanResult(
-        decision: 'DENIED',
-        vehiclePlate: plate,
-        scanType: 'entry',
-        timestamp: scannedAt,
-        transactionId: transactionId,
-        reason: 'Already inside. Do not admit twice.',
-      ));
+      _presentGateResult(
+        _GateScanResult(
+          decision: 'DENIED',
+          vehiclePlate: plate,
+          scanType: 'entry',
+          timestamp: scannedAt,
+          transactionId: transactionId,
+          reason: 'Already inside. Do not admit twice.',
+        ),
+      );
       return;
     }
     if (entryStatus == 'checked_out' || entryStatus == 'exited') {
@@ -560,20 +543,26 @@ class _StaffHomePageState extends State<StaffHomePage>
         decisionReason: 'Ticket already used.',
         transactionId: transactionId,
       );
-      _presentGateResult(_GateScanResult(
-        decision: 'DENIED',
-        vehiclePlate: plate,
-        scanType: 'entry',
-        timestamp: scannedAt,
-        transactionId: transactionId,
-        reason: 'Ticket already completed a stay.',
-      ));
+      _presentGateResult(
+        _GateScanResult(
+          decision: 'DENIED',
+          vehiclePlate: plate,
+          scanType: 'entry',
+          timestamp: scannedAt,
+          transactionId: transactionId,
+          reason: 'Ticket already completed a stay.',
+        ),
+      );
       return;
     }
-    final DocumentReference<Map<String, dynamic>> ticketRef =
-        FirebaseFirestore.instance.collection('transactions').doc(transactionId);
-    final DocumentReference<Map<String, dynamic>> logRef =
-        FirebaseFirestore.instance.collection('activity_logs').doc();
+    final DocumentReference<Map<String, dynamic>> ticketRef = FirebaseFirestore
+        .instance
+        .collection('transactions')
+        .doc(transactionId);
+    final DocumentReference<Map<String, dynamic>> logRef = FirebaseFirestore
+        .instance
+        .collection('activity_logs')
+        .doc();
     final WriteBatch batch = FirebaseFirestore.instance.batch();
     batch.set(ticketRef, <String, dynamic>{
       'entryStatus': 'checked_in',
@@ -608,14 +597,16 @@ class _StaffHomePageState extends State<StaffHomePage>
       activityLogId: logRef.id,
       vehiclePlate: plate,
     );
-    _presentGateResult(_GateScanResult(
-      decision: 'ALLOWED',
-      vehiclePlate: plate,
-      scanType: 'entry',
-      timestamp: scannedAt,
-      transactionId: transactionId,
-      reason: 'Paid ticket verified. Admit vehicle.',
-    ));
+    _presentGateResult(
+      _GateScanResult(
+        decision: 'ALLOWED',
+        vehiclePlate: plate,
+        scanType: 'entry',
+        timestamp: scannedAt,
+        transactionId: transactionId,
+        reason: 'Paid ticket verified. Admit vehicle.',
+      ),
+    );
   }
 
   Future<void> _processExitScan({
@@ -627,8 +618,8 @@ class _StaffHomePageState extends State<StaffHomePage>
     required String ticketKey,
     required DateTime scannedAt,
   }) async {
-    final String entryStatus =
-        ((ticket['entryStatus'] as String?) ?? '').toLowerCase();
+    final String entryStatus = ((ticket['entryStatus'] as String?) ?? '')
+        .toLowerCase();
     if (entryStatus == 'checked_out' || entryStatus == 'exited') {
       await _logDeniedScan(
         scanType: 'exit',
@@ -636,17 +627,20 @@ class _StaffHomePageState extends State<StaffHomePage>
         decisionReason: 'Ticket already checked out.',
         transactionId: transactionId,
       );
-      _presentGateResult(_GateScanResult(
-        decision: 'DENIED',
-        vehiclePlate: plate,
-        scanType: 'exit',
-        timestamp: scannedAt,
-        transactionId: transactionId,
-        reason: 'Already exited.',
-      ));
+      _presentGateResult(
+        _GateScanResult(
+          decision: 'DENIED',
+          vehiclePlate: plate,
+          scanType: 'exit',
+          timestamp: scannedAt,
+          transactionId: transactionId,
+          reason: 'Already exited.',
+        ),
+      );
       return;
     }
-    final DateTime? entryAt = _parseActivityTimestamp(ticket['entryAt']) ??
+    final DateTime? entryAt =
+        _parseActivityTimestamp(ticket['entryAt']) ??
         _parseActivityTimestamp(ticket['createdAt']);
     if ((entryStatus != 'checked_in' && entryStatus != 'inside') &&
         entryAt == null) {
@@ -656,14 +650,16 @@ class _StaffHomePageState extends State<StaffHomePage>
         decisionReason: 'No recorded entry scan.',
         transactionId: transactionId,
       );
-      _presentGateResult(_GateScanResult(
-        decision: 'DENIED',
-        vehiclePlate: plate,
-        scanType: 'exit',
-        timestamp: scannedAt,
-        transactionId: transactionId,
-        reason: 'No entry on record. Verify first.',
-      ));
+      _presentGateResult(
+        _GateScanResult(
+          decision: 'DENIED',
+          vehiclePlate: plate,
+          scanType: 'exit',
+          timestamp: scannedAt,
+          transactionId: transactionId,
+          reason: 'No entry on record. Verify first.',
+        ),
+      );
       return;
     }
 
@@ -689,24 +685,36 @@ class _StaffHomePageState extends State<StaffHomePage>
       rates = null;
     }
 
-    final String vType =
-        (((ticket['vehicleType'] as String?) ?? 'car')).trim().toLowerCase();
-    final double? rate = _resolveOvertimeRate(rates, vType);
-    const int includedHours = 2;
-    final int extraHours = _overtimeHoursFrac(elapsed, includedHours);
+    final String vType = (((ticket['vehicleType'] as String?) ?? 'car'))
+        .trim()
+        .toLowerCase();
+    final double? rate = resolveOvertimeRate(rates, vType);
+    // Overtime starts after the time the driver paid for, not always
+    // after the base stay.
+    final int includedHours = includedStayHours(
+      plan: ((ticket['plan'] as String?) ?? 'base').trim().toLowerCase(),
+      duration: ticketDuration(ticket),
+    );
+    final int extraHours = overtimeHours(elapsed, includedHours);
     final double amount = rate == null ? 0 : extraHours * rate;
     final bool cashDue = extraHours > 0 && amount > 0;
-    final String oStatus =
-        extraHours <= 0 ? 'none' : (cashDue ? 'cash_due' : 'rate_unresolved');
-    final DocumentReference<Map<String, dynamic>> ticketRef =
-        FirebaseFirestore.instance.collection('transactions').doc(transactionId);
-    final DocumentReference<Map<String, dynamic>> exitRef =
-        FirebaseFirestore.instance.collection('activity_logs').doc();
+    final String oStatus = extraHours <= 0
+        ? 'none'
+        : (cashDue ? 'cash_due' : 'rate_unresolved');
+    final DocumentReference<Map<String, dynamic>> ticketRef = FirebaseFirestore
+        .instance
+        .collection('transactions')
+        .doc(transactionId);
+    final DocumentReference<Map<String, dynamic>> exitRef = FirebaseFirestore
+        .instance
+        .collection('activity_logs')
+        .doc();
     QueryDocumentSnapshot<Map<String, dynamic>>? openEntry;
     try {
       final QuerySnapshot<Map<String, dynamic>> q = await FirebaseFirestore
           .instance
           .collection('activity_logs')
+          .where('establishmentID', isEqualTo: facilityId)
           .where('transactionId', isEqualTo: transactionId)
           .where('scanType', isEqualTo: 'entry')
           .where('isActive', isEqualTo: true)
@@ -743,7 +751,7 @@ class _StaffHomePageState extends State<StaffHomePage>
       'status': 'ALLOWED',
       'decision': 'ALLOWED',
       'decisionReason': extraHours <= 0
-          ? 'Within 2-hour base.'
+          ? 'Within paid time.'
           : (cashDue ? 'Overtime: collect cash.' : 'Overtime: rate missing.'),
       'timestamp': FieldValue.serverTimestamp(),
       'createdAt': FieldValue.serverTimestamp(),
@@ -773,43 +781,51 @@ class _StaffHomePageState extends State<StaffHomePage>
       activityLogId: exitRef.id,
       vehiclePlate: plate,
     );
-    _presentGateResult(_GateScanResult(
-      decision: 'ALLOWED',
-      vehiclePlate: plate,
-      scanType: 'exit',
-      timestamp: scannedAt,
-      transactionId: transactionId,
-      elapsed: elapsed,
-      billableHours: includedHours + extraHours,
-      overtimeHours: extraHours.toDouble(),
-      overtimeAmount: amount,
-      reason: extraHours <= 0
-          ? 'Within 2-hour base. Release.'
-          : (cashDue ? 'Overtime: collect cash first.' : 'Overtime: confirm.'),
-    ));
+    _presentGateResult(
+      _GateScanResult(
+        decision: 'ALLOWED',
+        vehiclePlate: plate,
+        scanType: 'exit',
+        timestamp: scannedAt,
+        transactionId: transactionId,
+        elapsed: elapsed,
+        billableHours: includedHours + extraHours,
+        overtimeHours: extraHours.toDouble(),
+        overtimeAmount: amount,
+        reason: extraHours <= 0
+            ? 'Within 2-hour base. Release.'
+            : (cashDue
+                  ? 'Overtime: collect cash first.'
+                  : 'Overtime: confirm.'),
+      ),
+    );
   }
 
   Future<void> _lookupByPlate(String rawPlate) async {
     final String plate = rawPlate.trim();
     if (plate.isEmpty) {
-      _presentGateResult(_GateScanResult(
-        decision: 'ERROR',
-        vehiclePlate: '--',
-        scanType: _gateMode,
-        timestamp: DateTime.now(),
-        reason: 'Type the plate before lookup.',
-      ));
+      _presentGateResult(
+        _GateScanResult(
+          decision: 'ERROR',
+          vehiclePlate: '--',
+          scanType: _gateMode,
+          timestamp: DateTime.now(),
+          reason: 'Type the plate before lookup.',
+        ),
+      );
       return;
     }
     final String? facilityId = _assignedFacilityId;
     if (facilityId == null || facilityId.isEmpty) {
-      _presentGateResult(_GateScanResult(
-        decision: 'DENIED',
-        vehiclePlate: plate,
-        scanType: _gateMode,
-        timestamp: DateTime.now(),
-        reason: 'Staff not assigned to a facility.',
-      ));
+      _presentGateResult(
+        _GateScanResult(
+          decision: 'DENIED',
+          vehiclePlate: plate,
+          scanType: _gateMode,
+          timestamp: DateTime.now(),
+          reason: 'Staff not assigned to a facility.',
+        ),
+      );
       return;
     }
     _isProcessingScan = true;
@@ -817,31 +833,42 @@ class _StaffHomePageState extends State<StaffHomePage>
       final QuerySnapshot<Map<String, dynamic>> matches =
           await FirebaseFirestore.instance
               .collection('transactions')
-              .where('vehiclePlate', isEqualTo: plate)
+              .where('establishmentId', isEqualTo: facilityId)
+              // New tickets store the plate upper-cased; older ones as typed.
+              .where(
+                'vehiclePlate',
+                whereIn: <String>{plate, plate.toUpperCase()}.toList(),
+              )
               .limit(10)
               .get();
-      final List<QueryDocumentSnapshot<Map<String, dynamic>>> mine =
-          matches.docs.where((QueryDocumentSnapshot<Map<String, dynamic>> d) {
-        final Map<String, dynamic> m = d.data();
-        final String f = ((m['establishmentId'] as String?) ??
-                (m['establishmentID'] as String?) ??
-                '')
-            .trim();
-        return f == facilityId;
-      }).toList();
+      final List<QueryDocumentSnapshot<Map<String, dynamic>>> mine = matches
+          .docs
+          .where((QueryDocumentSnapshot<Map<String, dynamic>> d) {
+            final Map<String, dynamic> m = d.data();
+            final String f =
+                ((m['establishmentId'] as String?) ??
+                        (m['establishmentID'] as String?) ??
+                        '')
+                    .trim();
+            // Walk-ins are checked out from the Walk-ins panel instead.
+            return f == facilityId && m['source'] != 'walk_in';
+          })
+          .toList();
       if (mine.isEmpty) {
         await _logDeniedScan(
           scanType: _gateMode,
           vehiclePlate: plate,
           decisionReason: 'Plate lookup: no ticket here.',
         );
-        _presentGateResult(_GateScanResult(
-          decision: 'DENIED',
-          vehiclePlate: plate,
-          scanType: _gateMode,
-          timestamp: DateTime.now(),
-          reason: 'No ticket for this plate here.',
-        ));
+        _presentGateResult(
+          _GateScanResult(
+            decision: 'DENIED',
+            vehiclePlate: plate,
+            scanType: _gateMode,
+            timestamp: DateTime.now(),
+            reason: 'No ticket for this plate here.',
+          ),
+        );
         return;
       }
       QueryDocumentSnapshot<Map<String, dynamic>>? chosen;
@@ -860,28 +887,34 @@ class _StaffHomePageState extends State<StaffHomePage>
           decisionReason: 'Plate lookup: ticket unpaid.',
           transactionId: chosen.id,
         );
-        _presentGateResult(_GateScanResult(
-          decision: 'DENIED',
+        _presentGateResult(
+          _GateScanResult(
+            decision: 'DENIED',
+            vehiclePlate: plate,
+            scanType: _gateMode,
+            timestamp: DateTime.now(),
+            transactionId: chosen.id,
+            reason: 'Ticket for plate is unpaid.',
+          ),
+        );
+        return;
+      }
+      await _handleScanPayload(
+        jsonEncode(<String, dynamic>{
+          'transactionId': chosen.id,
+          'vehiclePlate': plate,
+        }),
+      );
+    } catch (_) {
+      _presentGateResult(
+        _GateScanResult(
+          decision: 'ERROR',
           vehiclePlate: plate,
           scanType: _gateMode,
           timestamp: DateTime.now(),
-          transactionId: chosen.id,
-          reason: 'Ticket for plate is unpaid.',
-        ));
-        return;
-      }
-      await _handleScanPayload(jsonEncode(<String, dynamic>{
-        'transactionId': chosen.id,
-        'vehiclePlate': plate,
-      }));
-    } catch (_) {
-      _presentGateResult(_GateScanResult(
-        decision: 'ERROR',
-        vehiclePlate: plate,
-        scanType: _gateMode,
-        timestamp: DateTime.now(),
-        reason: 'Lookup failed. Retry.',
-      ));
+          reason: 'Lookup failed. Retry.',
+        ),
+      );
     }
   }
 
@@ -928,77 +961,79 @@ class _StaffHomePageState extends State<StaffHomePage>
   Widget build(BuildContext context) {
     return FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
       future: _userFuture,
-      builder: (
-        BuildContext context,
-        AsyncSnapshot<DocumentSnapshot<Map<String, dynamic>>> snapshot,
-      ) {
-        final Map<String, dynamic> userData = snapshot.data?.data() ??
-            <String, dynamic>{'firstName': 'Staff', 'role': 'Guard'};
+      builder:
+          (
+            BuildContext context,
+            AsyncSnapshot<DocumentSnapshot<Map<String, dynamic>>> snapshot,
+          ) {
+            final Map<String, dynamic> userData =
+                snapshot.data?.data() ??
+                <String, dynamic>{'firstName': 'Staff', 'role': 'Guard'};
 
-        return Scaffold(
-          appBar: AppBar(
-            backgroundColor: Colors.white,
-            elevation: 0,
-            title: const Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.local_parking_rounded, color: AppTheme.textDark),
-                SizedBox(width: 8),
-                Text(
-                  'SmartPark',
-                  style: TextStyle(
-                    color: AppTheme.textDark,
-                    fontWeight: FontWeight.w700,
-                  ),
+            return Scaffold(
+              appBar: AppBar(
+                backgroundColor: Colors.white,
+                elevation: 0,
+                title: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.local_parking_rounded, color: AppTheme.textDark),
+                    SizedBox(width: 8),
+                    Text(
+                      'SmartPark',
+                      style: TextStyle(
+                        color: AppTheme.textDark,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
-            actions: [
-              IconButton(
-                onPressed: _showChangePasswordDialog,
-                icon: const Icon(Icons.settings_rounded),
-                tooltip: 'Change Password',
+                actions: [
+                  IconButton(
+                    onPressed: _showChangePasswordDialog,
+                    icon: const Icon(Icons.settings_rounded),
+                    tooltip: 'Change Password',
+                  ),
+                  IconButton(
+                    onPressed: _signOut,
+                    icon: const Icon(Icons.logout_rounded),
+                    tooltip: 'Sign Out',
+                  ),
+                ],
               ),
-              IconButton(
-                onPressed: _signOut,
-                icon: const Icon(Icons.logout_rounded),
-                tooltip: 'Sign Out',
+              body: _buildBody(userData),
+              bottomNavigationBar: BottomNavigationBar(
+                currentIndex: _selectedNavIndex,
+                selectedItemColor: const Color(0xFF22252C),
+                unselectedItemColor: const Color(0xFF6C727F),
+                showSelectedLabels: true,
+                showUnselectedLabels: true,
+                type: BottomNavigationBarType.fixed,
+                selectedLabelStyle: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                ),
+                unselectedLabelStyle: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                ),
+                onTap: (int index) {
+                  setState(() {
+                    _selectedNavIndex = index;
+                  });
+                },
+                items: [
+                  _navItem(icon: Icons.dashboard_rounded, label: 'Dashboard'),
+                  _navItem(
+                    icon: Icons.qr_code_scanner_rounded,
+                    label: 'QR Scanning',
+                    emphasized: true,
+                  ),
+                  _navItem(icon: Icons.history_rounded, label: 'History'),
+                ],
               ),
-            ],
-          ),
-          body: _buildBody(userData),
-          bottomNavigationBar: BottomNavigationBar(
-            currentIndex: _selectedNavIndex,
-            selectedItemColor: const Color(0xFF22252C),
-            unselectedItemColor: const Color(0xFF6C727F),
-            showSelectedLabels: true,
-            showUnselectedLabels: true,
-            type: BottomNavigationBarType.fixed,
-            selectedLabelStyle: const TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-            ),
-            unselectedLabelStyle: const TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w500,
-            ),
-            onTap: (int index) {
-              setState(() {
-                _selectedNavIndex = index;
-              });
-            },
-            items: [
-              _navItem(icon: Icons.dashboard_rounded, label: 'Dashboard'),
-              _navItem(
-                icon: Icons.qr_code_scanner_rounded,
-                label: 'QR Scanning',
-                emphasized: true,
-              ),
-              _navItem(icon: Icons.history_rounded, label: 'History'),
-            ],
-          ),
-        );
-      },
+            );
+          },
     );
   }
 }
@@ -1017,8 +1052,7 @@ class _StaffChangePasswordDialog extends StatefulWidget {
 class _StaffChangePasswordDialogState
     extends State<_StaffChangePasswordDialog> {
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
-  final TextEditingController _newPasswordController =
-      TextEditingController();
+  final TextEditingController _newPasswordController = TextEditingController();
   final TextEditingController _confirmPasswordController =
       TextEditingController();
 
@@ -1079,10 +1113,7 @@ class _StaffChangePasswordDialogState
       errorBorder: border.copyWith(
         borderSide: const BorderSide(color: Colors.redAccent),
       ),
-      contentPadding: const EdgeInsets.symmetric(
-        horizontal: 14,
-        vertical: 14,
-      ),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
     );
   }
 
@@ -1110,9 +1141,9 @@ class _StaffChangePasswordDialogState
 
       if (!mounted) return;
       Navigator.of(context).pop();
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Password updated.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Password updated.')));
     } on FirebaseAuthException catch (error) {
       setState(() {
         _errorMessage = error.code == 'requires-recent-login'

@@ -1,15 +1,21 @@
-import 'dart:convert';
-
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart' show LatLng;
+import 'package:url_launcher/url_launcher.dart';
 
 import 'driver_payment_page.dart';
 import 'driver_vehicle_selection_page.dart';
 import 'driver_in_app_checkout_page.dart';
 import 'driver_paid_ticket_page.dart';
-import '../services/paymongo_test_service.dart';
+import '../services/parking_checkout_service.dart';
 import '../theme/app_theme.dart';
+import '../widgets/smartpark_ui.dart';
+import 'driver/services/driver_establishment_service.dart';
+import '../services/operating_hours.dart';
+
+part 'establishment_detail/rate_display.dart';
 
 class EstablishmentDetailPage extends StatefulWidget {
   const EstablishmentDetailPage({super.key, required this.establishmentId});
@@ -21,13 +27,14 @@ class EstablishmentDetailPage extends StatefulWidget {
       _EstablishmentDetailPageState();
 }
 
-class _EstablishmentDetailPageState extends State<EstablishmentDetailPage> {
-  static const PayMongoTestService _payMongoService =
-      PayMongoTestService.fromEnvironment();
+class _EstablishmentDetailPageState extends State<EstablishmentDetailPage>
+    with SpStreamCache<EstablishmentDetailPage> {
+  final ParkingCheckoutService _checkoutService = ParkingCheckoutService();
 
   late final DocumentReference<Map<String, dynamic>> _establishmentRef;
   late final DocumentReference<Map<String, dynamic>> _establishmentDetailsRef;
   bool _generatingTicket = false;
+  int _photoIndex = 0;
 
   @override
   void initState() {
@@ -112,15 +119,6 @@ class _EstablishmentDetailPageState extends State<EstablishmentDetailPage> {
     return 0;
   }
 
-  Future<Map<String, dynamic>> _loadDriverProfile(String driverId) async {
-    final DocumentSnapshot<Map<String, dynamic>> snapshot =
-        await FirebaseFirestore.instance
-            .collection('users')
-            .doc(driverId)
-            .get();
-    return snapshot.data() ?? <String, dynamic>{};
-  }
-
   void _showSnackBar(String message) {
     if (!mounted) {
       return;
@@ -130,6 +128,58 @@ class _EstablishmentDetailPageState extends State<EstablishmentDetailPage> {
     ).showSnackBar(SnackBar(content: Text(message)));
   }
 
+  Future<void> _openInMaps(Map<String, dynamic> data) async {
+    final LatLng? point = DriverEstablishmentService.extractLatLng(data);
+    final String query = point == null
+        ? Uri.encodeComponent(_readText(data['address'], fallback: ''))
+        : '${point.latitude},${point.longitude}';
+    if (query.isEmpty) {
+      _showSnackBar('No location available for this establishment.');
+      return;
+    }
+    final Uri uri = Uri.parse(
+      'https://www.google.com/maps/search/?api=1&query=$query',
+    );
+    if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+      _showSnackBar('Unable to open maps.');
+    }
+  }
+
+  /// Lowest base rate across vehicle types, e.g. "P50", or null.
+  String? _lowestBaseRate(Map<String, dynamic> data, List<String> keys) {
+    double? lowest;
+    String? label;
+    for (final String key in keys) {
+      final String amount = _getQuickRateData(data, key).hourlyAmount;
+      final double? value = double.tryParse(
+        amount.replaceAll(RegExp(r'[^0-9.]'), ''),
+      );
+      if (value != null && value > 0 && (lowest == null || value < lowest)) {
+        lowest = value;
+        label = amount;
+      }
+    }
+    return label;
+  }
+
+  List<String> _rateVehicleKeys(Map<String, dynamic> data) {
+    final Map<String, dynamic> slotCounts = _asStringMap(data['slotCounts']);
+    final Map<String, dynamic> ratesByType = _asStringMap(data['ratesByType']);
+    final Map<String, dynamic> rates = _asStringMap(data['rates']);
+    if (_vehicleKeys(slotCounts).isNotEmpty) return _vehicleKeys(slotCounts);
+    if (ratesByType.isNotEmpty) return ratesByType.keys.toList();
+    if (rates.isNotEmpty) return rates.keys.toList();
+    return <String>['car', 'motorcycle'];
+  }
+
+  Widget _photoPlaceholder(IconData icon) => Container(
+    color: const Color(0xFFE9EDF3),
+    alignment: Alignment.center,
+    child: Icon(icon, size: 54, color: const Color(0xFF737A88)),
+  );
+
+  /// Rounded photo header (swipeable when there are several photos) with
+  /// the name, address, open status and rating overlaid.
   Widget _buildTopSummary(Map<String, dynamic> data) {
     final String name = _readText(
       data['name'],
@@ -137,113 +187,179 @@ class _EstablishmentDetailPageState extends State<EstablishmentDetailPage> {
     );
     final String address = _readText(data['address']);
     final double rating = ((data['rating'] as num?) ?? 0).toDouble();
+    final bool openNow = DriverEstablishmentService.isOpenNow(data);
     final List<String> photoUrls = _extractPhotoUrls(data);
 
     return ClipRRect(
       borderRadius: BorderRadius.circular(20),
       child: SizedBox(
-        height: 208,
+        height: 200,
         width: double.infinity,
         child: Stack(
           fit: StackFit.expand,
           children: [
-            if (photoUrls.isNotEmpty)
+            if (photoUrls.isEmpty)
+              _photoPlaceholder(Icons.local_parking_rounded)
+            else if (photoUrls.length == 1)
               Image.network(
                 photoUrls.first,
                 fit: BoxFit.cover,
-                errorBuilder: (context, error, stackTrace) => Container(
-                  color: const Color(0xFFE9EDF3),
-                  alignment: Alignment.center,
-                  child: const Icon(
-                    Icons.local_parking_rounded,
-                    size: 54,
-                    color: Color(0xFF737A88),
-                  ),
-                ),
+                errorBuilder: (context, error, stackTrace) =>
+                    _photoPlaceholder(Icons.local_parking_rounded),
               )
             else
-              Container(
-                color: const Color(0xFFE9EDF3),
-                alignment: Alignment.center,
-                child: const Icon(
-                  Icons.local_parking_rounded,
-                  size: 54,
-                  color: Color(0xFF737A88),
+              PageView.builder(
+                itemCount: photoUrls.length,
+                onPageChanged: (int index) =>
+                    setState(() => _photoIndex = index),
+                itemBuilder: (BuildContext context, int index) => Image.network(
+                  photoUrls[index],
+                  fit: BoxFit.cover,
+                  errorBuilder: (context, error, stackTrace) =>
+                      _photoPlaceholder(Icons.broken_image_rounded),
                 ),
               ),
-            const DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: <Color>[Color(0x00000000), Color(0xD9000000)],
+            const IgnorePointer(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: <Color>[Color(0x00000000), Color(0xD9000000)],
+                    stops: <double>[0.35, 1],
+                  ),
+                ),
+              ),
+            ),
+            Positioned(
+              top: 12,
+              left: 12,
+              child: IgnorePointer(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.circle,
+                        size: 9,
+                        color: openNow ? spEntryColor : spDeniedColor,
+                      ),
+                      const SizedBox(width: 5),
+                      Text(
+                        openNow ? 'Open now' : 'Closed',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: openNow ? spEntryColor : spDeniedColor,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
             Positioned(
               left: 16,
               right: 16,
-              bottom: 15,
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+              bottom: 14,
+              child: IgnorePointer(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
-                        Text(
-                          name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 22,
-                            fontWeight: FontWeight.w800,
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 22,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                              const SizedBox(height: 3),
+                              Text(
+                                address,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: Color(0xFFE8EAF0),
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
-                        const SizedBox(height: 3),
-                        Text(
-                          address,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: Color(0xFFE8EAF0),
-                            fontSize: 12,
+                        if (rating > 0) ...[
+                          const SizedBox(width: 12),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 9,
+                              vertical: 6,
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0xEFFFFFFF),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Row(
+                              children: [
+                                const Icon(
+                                  Icons.star_rounded,
+                                  color: Color(0xFFF3AF00),
+                                  size: 17,
+                                ),
+                                const SizedBox(width: 3),
+                                Text(
+                                  rating.toStringAsFixed(1),
+                                  style: const TextStyle(
+                                    color: AppTheme.textDark,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
-                        ),
+                        ],
                       ],
                     ),
-                  ),
-                  const SizedBox(width: 12),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 9,
-                      vertical: 6,
-                    ),
-                    decoration: BoxDecoration(
-                      color: const Color(0xEFFFFFFF),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(
-                          Icons.star_rounded,
-                          color: Color(0xFFF3AF00),
-                          size: 17,
-                        ),
-                        const SizedBox(width: 3),
-                        Text(
-                          rating.toStringAsFixed(1),
-                          style: const TextStyle(
-                            color: AppTheme.textDark,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
+                    if (photoUrls.length > 1) ...[
+                      const SizedBox(height: 10),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          for (int i = 0; i < photoUrls.length; i++)
+                            AnimatedContainer(
+                              duration: const Duration(milliseconds: 200),
+                              margin: const EdgeInsets.symmetric(horizontal: 3),
+                              width: i == _photoIndex ? 18 : 7,
+                              height: 7,
+                              decoration: BoxDecoration(
+                                color: i == _photoIndex
+                                    ? Colors.white
+                                    : const Color(0x99FFFFFF),
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ],
+                  ],
+                ),
               ),
             ),
           ],
@@ -252,453 +368,457 @@ class _EstablishmentDetailPageState extends State<EstablishmentDetailPage> {
     );
   }
 
-  Widget _buildHorizontalOverviewCards(Map<String, dynamic> data) {
-    final Map<String, dynamic> slotCounts = _asStringMap(data['slotCounts']);
-    final Map<String, dynamic> activeSlots = _asStringMap(data['slots']);
-    final List<String> vehicleKeys = _vehicleKeys(slotCounts);
-
-    final List<Widget> cardItems = <Widget>[];
-
-    for (final String key in vehicleKeys) {
-      cardItems.add(
-        _OverviewStatusCard(
-          icon: _vehicleIcon(key),
-          label: _vehicleLabel(key),
-          value:
-              '${_vehicleCount(activeSlots, key)}/${_vehicleCount(slotCounts, key)}',
-        ),
-      );
-    }
-
-    cardItems.add(
-      _OverviewStatusCard(
-        icon: Icons.schedule_rounded,
-        label: 'Hours',
-        value: _readText(data['operatingHours'], fallback: '--'),
-      ),
-    );
-
+  Widget _buildHoursRow(Map<String, dynamic> data) {
+    final OperatingHours hours = OperatingHours.parse(data);
+    final bool open = hours.isOpenAt(DateTime.now());
+    final String detail = !hours.isSet || hours.allDay
+        ? ''
+        : open
+        ? 'Closes at ${OperatingHours.format12h(hours.closeMinutes!)}'
+        : 'Opens at ${OperatingHours.format12h(hours.openMinutes!)}';
     return Row(
       children: [
-        for (int i = 0; i < cardItems.length; i++) ...[
-          if (i > 0) const SizedBox(width: 8),
-          Expanded(child: cardItems[i]),
-        ],
+        const Icon(Icons.schedule_rounded, size: 18, color: AppTheme.textMuted),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                hours.isSet ? hours.label : _readText(data['operatingHours']),
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: AppTheme.textDark,
+                ),
+              ),
+              if (detail.isNotEmpty)
+                Text(
+                  detail,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: AppTheme.textMuted,
+                  ),
+                ),
+            ],
+          ),
+        ),
+        if (hours.isSet)
+          SpChip(
+            label: open ? 'Open now' : 'Closed',
+            color: open ? spEntryColor : spDeniedColor,
+          ),
       ],
     );
   }
 
-  Widget _buildQuickRatesSection(Map<String, dynamic> data) {
+  Widget _buildInfoCard(Map<String, dynamic> data) {
+    return SpSectionCard(
+      icon: Icons.info_outline_rounded,
+      title: 'Location & Hours',
+      child: Column(
+        children: [
+          _buildHoursRow(data),
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 10),
+            child: Divider(height: 1, color: Color(0xFFEDEFF3)),
+          ),
+          Row(
+            children: [
+              const Icon(
+                Icons.location_on_outlined,
+                size: 18,
+                color: AppTheme.textMuted,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  _readText(data['address']),
+                  style: const TextStyle(
+                    fontSize: 13,
+                    color: AppTheme.textDark,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              OutlinedButton.icon(
+                onPressed: () => _openInMaps(data),
+                icon: const Icon(Icons.directions_rounded, size: 18),
+                label: const Text('Directions'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: spExitColor,
+                  side: const BorderSide(color: spCardBorder),
+                  visualDensity: VisualDensity.compact,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCapacityTiles(Map<String, dynamic> data) {
     final Map<String, dynamic> slotCounts = _asStringMap(data['slotCounts']);
-    final Map<String, dynamic> ratesByType = _asStringMap(data['ratesByType']);
-    final Map<String, dynamic> rates = _asStringMap(data['rates']);
-    final List<String> vehicleKeys = _vehicleKeys(slotCounts).isNotEmpty
-        ? _vehicleKeys(slotCounts)
-        : (ratesByType.isNotEmpty
-            ? ratesByType.keys.toList()
-            : (rates.isNotEmpty ? rates.keys.toList() : <String>['car', 'motorcycle']));
-
-    final List<Widget> rateCards = <Widget>[];
-
-    for (final String key in vehicleKeys) {
-      final _QuickRateData rateData = _getQuickRateData(data, key);
-
-      rateCards.add(
-        _QuickRateCard(
-          icon: _vehicleIcon(key),
-          label: _vehicleLabel(key),
-          hourlyAmount: rateData.hourlyAmount,
-          hourlyUnit: rateData.hourlyUnit,
-          succeedingHourText: rateData.succeedingHourText,
-          dailyText: rateData.dailyText,
-        ),
-      );
-    }
-
-    if (rateCards.isEmpty) {
+    final List<String> keys = _vehicleKeys(slotCounts);
+    if (keys.isEmpty) {
       return const SizedBox.shrink();
     }
+    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+      stream: SpOccupancy.watch(widget.establishmentId),
+      builder:
+          (
+            BuildContext context,
+            AsyncSnapshot<DocumentSnapshot<Map<String, dynamic>>> snapshot,
+          ) {
+            final SpOccupancy? live = SpOccupancy.fromDoc(snapshot.data);
+            final List<Widget> tiles = <Widget>[
+              for (final String key in keys)
+                () {
+                  final int capacity = _vehicleCount(slotCounts, key);
+                  final int free = live == null
+                      ? capacity
+                      : (capacity - live.of(key)).clamp(0, capacity);
+                  return SpStatTile(
+                    icon: _vehicleIcon(key),
+                    color: key == 'motorcycle' ? spEntryColor : spExitColor,
+                    label: '${_vehicleLabel(key)} slots',
+                    caption: live == null
+                        ? 'Total capacity'
+                        : 'Available of $capacity',
+                    value: '$free',
+                  );
+                }(),
+            ];
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                for (int i = 0; i < tiles.length; i++) ...[
+                  if (i > 0) const SizedBox(width: 10),
+                  Expanded(child: tiles[i]),
+                ],
+              ],
+            );
+          },
+    );
+  }
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          'QUICK RATES',
-          style: TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w800,
-            letterSpacing: 0.8,
-            color: AppTheme.textDark,
+  Widget _rateRow(String label, String value, {bool strong = false}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 7),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              label,
+              style: const TextStyle(fontSize: 13, color: AppTheme.textMuted),
+            ),
           ),
-        ),
-        const SizedBox(height: 10),
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: strong ? 18 : 14,
+              fontWeight: FontWeight.w800,
+              color: AppTheme.textDark,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRatesCard(Map<String, dynamic> data, String key) {
+    final _QuickRateData quick = _getQuickRateData(data, key);
+    final Map<String, _RateDetailCell> grid = <String, _RateDetailCell>{
+      for (final _RateDetailCell cell in _getRateGridCells(data, key))
+        cell.label: cell,
+    };
+    final String succeedingHour = (quick.succeedingHourText ?? '')
+        .replaceAll(' succeeding', '')
+        .replaceFirst('+', '');
+    String gridValue(String label) {
+      final String amount = grid[label]?.amount ?? '';
+      return amount.isEmpty || amount == '₱0' ? '' : amount;
+    }
+
+    final List<Widget> rows = <Widget>[
+      _rateRow(
+        'Base rate · first $spBaseStayLabel',
+        quick.hourlyAmount == 'N/A'
+            ? 'Not set'
+            : quick.hourlyAmount.replaceFirst('P', '₱'),
+        strong: true,
+      ),
+      if (succeedingHour.isNotEmpty)
+        _rateRow('Each succeeding hour', succeedingHour.replaceFirst('P', '₱')),
+      if (gridValue('DAILY').isNotEmpty) _rateRow('Daily', gridValue('DAILY')),
+      if (gridValue('WEEKLY').isNotEmpty)
+        _rateRow('Weekly', gridValue('WEEKLY')),
+      if (gridValue('MONTHLY').isNotEmpty)
+        _rateRow('Monthly', gridValue('MONTHLY')),
+    ];
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: SpSectionCard(
+        icon: _vehicleIcon(key),
+        title: _vehicleLabel(key),
+        child: Column(
           children: [
-            for (int i = 0; i < rateCards.length; i++) ...[
-              if (i > 0) const SizedBox(width: 10),
-              Expanded(child: rateCards[i]),
+            for (int i = 0; i < rows.length; i++) ...[
+              if (i > 0) const Divider(height: 1, color: Color(0xFFEDEFF3)),
+              rows[i],
             ],
           ],
         ),
-      ],
+      ),
     );
   }
 
-  Widget _buildPhotoGallery(Map<String, dynamic> data) {
-    final List<String> photoUrls = _extractPhotoUrls(data).skip(1).toList();
-
-    if (photoUrls.isEmpty) {
+  Widget _buildMorePhotos(Map<String, dynamic> data) {
+    final List<String> photoUrls = _extractPhotoUrls(data);
+    if (photoUrls.length < 2) {
       return const SizedBox.shrink();
     }
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          'More Facility Photos',
-          style: TextStyle(
-            fontWeight: FontWeight.w700,
-            color: AppTheme.textDark,
-          ),
-        ),
-        const SizedBox(height: 8),
+        const SpSectionLabel('Photos'),
+        const SizedBox(height: 10),
         SizedBox(
-          height: 160,
+          height: 110,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
             itemCount: photoUrls.length,
-            separatorBuilder: (BuildContext context, int index) =>
-                const SizedBox(width: 10),
+            separatorBuilder: (_, _) => const SizedBox(width: 10),
             itemBuilder: (BuildContext context, int index) {
-              return ClipRRect(
-                borderRadius: BorderRadius.circular(16),
-                child: Image.network(
-                  photoUrls[index],
-                  width: 220,
-                  height: 160,
-                  fit: BoxFit.cover,
-                  loadingBuilder: (context, child, progress) {
-                    if (progress == null) {
-                      return child;
-                    }
-                    return Container(
-                      width: 220,
-                      height: 160,
-                      color: const Color(0xFFF5F6F9),
-                      child: const Center(
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
-                    );
-                  },
-                  errorBuilder: (context, error, stackTrace) {
-                    return Container(
-                      width: 220,
-                      height: 160,
-                      color: const Color(0xFFF5F6F9),
-                      alignment: Alignment.center,
+              return GestureDetector(
+                onTap: () => _showPhoto(photoUrls[index]),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(14),
+                  child: Image.network(
+                    photoUrls[index],
+                    width: 150,
+                    height: 110,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, _, _) => Container(
+                      width: 150,
+                      height: 110,
+                      color: const Color(0xFFF1F3F7),
                       child: const Icon(
                         Icons.broken_image_rounded,
                         color: AppTheme.textMuted,
                       ),
-                    );
-                  },
+                    ),
+                  ),
                 ),
               );
             },
           ),
         ),
+        const SizedBox(height: 16),
       ],
+    );
+  }
+
+  void _showPhoto(String url) {
+    showDialog<void>(
+      context: context,
+      builder: (BuildContext viewerContext) {
+        return Dialog(
+          backgroundColor: Colors.black,
+          insetPadding: const EdgeInsets.all(12),
+          child: Stack(
+            children: [
+              InteractiveViewer(
+                maxScale: 5,
+                child: Center(child: Image.network(url, fit: BoxFit.contain)),
+              ),
+              Positioned(
+                top: 4,
+                right: 4,
+                child: IconButton(
+                  onPressed: () => Navigator.of(viewerContext).pop(),
+                  icon: const Icon(Icons.close_rounded, color: Colors.white),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 
   Widget _buildOverviewTab(Map<String, dynamic> data) {
-    final List<String> photoUrls = _extractPhotoUrls(data).skip(1).toList();
-
     return ListView(
-      padding: const EdgeInsets.only(top: 16, bottom: 24),
+      padding: const EdgeInsets.only(top: 12, bottom: 16),
       children: [
-        _buildHorizontalOverviewCards(data),
+        _buildCapacityTiles(data),
+        const SizedBox(height: 12),
+        _buildInfoCard(data),
         const SizedBox(height: 16),
-        _buildQuickRatesSection(data),
-        if (photoUrls.isNotEmpty) ...[
-          const SizedBox(height: 16),
-          _buildPhotoGallery(data),
-        ],
+        _buildMorePhotos(data),
       ],
     );
   }
 
-  Widget _buildRateCell(_RateDetailCell item) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Text(
-            item.label.toUpperCase(),
-            style: const TextStyle(
-              fontSize: 10,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 0.5,
-              color: AppTheme.textMuted,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            item.amount,
-            style: const TextStyle(
-              fontSize: 22,
-              fontWeight: FontWeight.w900,
-              color: AppTheme.textDark,
-            ),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            item.unit,
-            style: const TextStyle(
-              fontSize: 11,
-              color: AppTheme.textMuted,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildRateGrid(List<_RateDetailCell> cells) {
-    if (cells.isEmpty) {
-      return const Padding(
-        padding: EdgeInsets.all(16),
-        child: Text(
-          'No rate details configured.',
-          style: TextStyle(color: AppTheme.textMuted),
-        ),
-      );
-    }
-
-    final List<Widget> rows = <Widget>[];
-
-    for (int i = 0; i < cells.length; i += 2) {
-      final _RateDetailCell cell1 = cells[i];
-      final _RateDetailCell? cell2 =
-          (i + 1 < cells.length) ? cells[i + 1] : null;
-
-      if (i > 0) {
-        rows.add(const Divider(height: 1, color: Color(0xFFE2E5EC)));
-      }
-
-      rows.add(
-        IntrinsicHeight(
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Expanded(child: _buildRateCell(cell1)),
-              const VerticalDivider(
-                width: 1,
-                thickness: 1,
-                color: Color(0xFFE2E5EC),
-              ),
-              Expanded(
-                child: cell2 != null
-                    ? _buildRateCell(cell2)
-                    : const SizedBox.shrink(),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
-    return Column(children: rows);
-  }
-
   Widget _buildRatesTab(Map<String, dynamic> data) {
-    final Map<String, dynamic> ratesByType = _asStringMap(data['ratesByType']);
-    final Map<String, dynamic> slotCounts = _asStringMap(data['slotCounts']);
-    final Map<String, dynamic> activeSlots = _asStringMap(data['slots']);
-
-    final List<String> vehicleKeys = _vehicleKeys(slotCounts).isNotEmpty
-        ? _vehicleKeys(slotCounts)
-        : (ratesByType.isNotEmpty
-            ? ratesByType.keys.toList()
-            : <String>['motorcycle', 'car']);
-
     return ListView(
-      padding: const EdgeInsets.only(top: 16, bottom: 24),
+      padding: const EdgeInsets.only(top: 12, bottom: 16),
       children: [
-        const Text(
-          'Rates vary by vehicle type. Packages (Daily/Weekly/Monthly) are offered at a discounted rate and are subject to slot availability.',
-          style: TextStyle(
-            fontSize: 12,
-            color: AppTheme.textMuted,
-            height: 1.35,
-          ),
-        ),
-        const SizedBox(height: 16),
-        ...vehicleKeys.map((String key) {
-          final List<_RateDetailCell> cells = _getRateGridCells(data, key);
-          final int capacity = _vehicleCount(slotCounts, key);
-          final int occupied = _vehicleCount(activeSlots, key);
-          final int slotsLeft =
-              (capacity - occupied).clamp(0, capacity > 0 ? capacity : 999);
-
-          return Container(
-            margin: const EdgeInsets.only(bottom: 16),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: const Color(0xFFE2E5EC)),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
-                  child: Row(
-                    children: [
-                      Icon(_vehicleIcon(key), size: 20, color: AppTheme.textDark),
-                      const SizedBox(width: 8),
-                      Text(
-                        _vehicleLabel(key),
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w800,
-                          color: AppTheme.textDark,
-                        ),
-                      ),
-                      const Spacer(),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFFFF4CF),
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: Text(
-                          '$slotsLeft slots left',
-                          style: const TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w700,
-                            color: Color(0xFF8C6200),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const Divider(height: 1, color: Color(0xFFE2E5EC)),
-                _buildRateGrid(cells),
-              ],
-            ),
-          );
-        }),
+        for (final String key in _rateVehicleKeys(data))
+          _buildRatesCard(data, key),
       ],
     );
   }
 
   Widget _buildPolicyTab(Map<String, dynamic> data) {
-    final String policyContent = _readText(
-      data['policies'],
-      fallback: 'No policy details available yet.',
-    );
-
+    final String policies = _readText(data['policies'], fallback: '');
     return ListView(
-      padding: const EdgeInsets.only(top: 16, bottom: 24),
+      padding: const EdgeInsets.only(top: 12, bottom: 16),
       children: [
-        Container(
-          padding: const EdgeInsets.all(18),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: const Color(0xFFE2E5EC)),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Container(
-                    width: 40,
-                    height: 40,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF2F5FB),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: const Icon(
-                      Icons.shield_outlined,
-                      color: AppTheme.textDark,
-                      size: 22,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: const [
-                      Text(
-                        'Parking Policy',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w800,
-                          color: AppTheme.textDark,
-                        ),
-                      ),
-                      SizedBox(height: 2),
-                      Text(
-                        'Please read before parking',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: AppTheme.textMuted,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
+        SpSectionCard(
+          icon: Icons.shield_outlined,
+          title: 'Parking Policy',
+          subtitle: 'Please read before parking.',
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF6F7FA),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Text(
+              policies.isEmpty ? 'No policy details available yet.' : policies,
+              style: const TextStyle(
+                fontSize: 13.5,
+                height: 1.5,
+                color: AppTheme.textDark,
               ),
-              const SizedBox(height: 16),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF4F7FC),
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: IntrinsicHeight(
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Container(
-                        width: 4,
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF1E60D4),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                      ),
-                      const SizedBox(width: 14),
-                      Expanded(
-                        child: Text(
-                          policyContent,
-                          style: const TextStyle(
-                            fontSize: 13.5,
-                            height: 1.5,
-                            color: Color(0xFF2C313E),
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
+            ),
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildBody(Map<String, dynamic> data) {
+    return DefaultTabController(
+      length: 3,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+        child: Column(
+          children: [
+            _buildTopSummary(data),
+            const SizedBox(height: 12),
+            Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: spCardBorder),
+              ),
+              child: const TabBar(
+                labelColor: AppTheme.textDark,
+                unselectedLabelColor: AppTheme.textMuted,
+                indicatorColor: AppTheme.accent,
+                indicatorWeight: 3,
+                indicatorSize: TabBarIndicatorSize.tab,
+                dividerColor: Colors.transparent,
+                labelStyle: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w800,
+                ),
+                tabs: [
+                  Tab(text: 'Overview'),
+                  Tab(text: 'Rates'),
+                  Tab(text: 'Policy'),
+                ],
+              ),
+            ),
+            Expanded(
+              child: TabBarView(
+                children: [
+                  _buildOverviewTab(data),
+                  _buildRatesTab(data),
+                  _buildPolicyTab(data),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBottomBar(Map<String, dynamic> data) {
+    final String? fromRate = _lowestBaseRate(data, _rateVehicleKeys(data));
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        border: Border(top: BorderSide(color: spCardBorder)),
+      ),
+      child: SafeArea(
+        top: false,
+        child: Row(
+          children: [
+            if (fromRate != null) ...[
+              Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'From · first $spBaseStayLabel',
+                    style: TextStyle(fontSize: 11, color: AppTheme.textMuted),
+                  ),
+                  Text(
+                    fromRate.replaceFirst('P', '₱'),
+                    style: const TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w800,
+                      color: AppTheme.textDark,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(width: 16),
+            ],
+            Expanded(
+              child: ElevatedButton.icon(
+                onPressed: _generatingTicket
+                    ? null
+                    : () => _openVehicleSelection(data),
+                icon: _generatingTicket
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.local_parking_rounded),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.accent,
+                  foregroundColor: const Color(0xFF22252C),
+                  elevation: 0,
+                  minimumSize: const Size.fromHeight(50),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                ),
+                label: Text(
+                  _generatingTicket ? 'Preparing checkout...' : 'Park Here',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 15,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -744,25 +864,26 @@ class _EstablishmentDetailPageState extends State<EstablishmentDetailPage> {
           vehicleOptions: vehicleOptions,
           ratesByType: ratesByType,
           packageRates: packageRates,
-          isPayMongoConfigured: _payMongoService.isConfigured,
-          onProcessPayment: ({
-            required String vehicleType,
-            required String plateNumber,
-            required String plan,
-            required int duration,
-            required double amount,
-            required DriverPaymentMethod paymentMethod,
-          }) {
-            return _processParkingPayment(
-              establishment: establishment,
-              vehicleType: vehicleType,
-              plateNumber: plateNumber,
-              plan: plan,
-              duration: duration,
-              amount: amount,
-              paymentMethod: paymentMethod,
-            );
-          },
+          isPayMongoConfigured: true,
+          onProcessPayment:
+              ({
+                required String vehicleType,
+                required String plateNumber,
+                required String plan,
+                required int duration,
+                required double amount,
+                required DriverPaymentMethod paymentMethod,
+              }) {
+                return _processParkingPayment(
+                  establishment: establishment,
+                  vehicleType: vehicleType,
+                  plateNumber: plateNumber,
+                  plan: plan,
+                  duration: duration,
+                  amount: amount,
+                  paymentMethod: paymentMethod,
+                );
+              },
         ),
       ),
     );
@@ -796,125 +917,34 @@ class _EstablishmentDetailPageState extends State<EstablishmentDetailPage> {
     });
 
     try {
-      final Map<String, dynamic> driverProfile = await _loadDriverProfile(
-        driverId,
-      );
-      final Map<String, dynamic> slotCounts = _asStringMap(
-        establishment['slotCounts'],
-      );
-
       if (amount <= 0) {
         _showSnackBar('Selected package has no valid amount configured.');
         return false;
       }
 
-      final int amountInCentavos = (amount * 100).round();
-      final String destinationAccountId =
-          _readText(establishment['ownerId'], fallback: widget.establishmentId);
-      final int platformFeeCentavos = (amountInCentavos * 0.05).round();
-      final int estimatedProcessorFeeCentavos = estimateProcessorFeeCentavos(
-        grossAmountCentavos: amountInCentavos,
-        paymentMethodApiType: paymentMethod.apiType,
+      // The server prices the package from the establishment's own rates
+      // and opens the PayMongo checkout; the app never sees the secret key.
+      final ParkingCheckout checkout = await _checkoutService.createCheckout(
+        establishmentId: widget.establishmentId,
+        vehicleType: vehicleType,
+        plateNumber: plateNumber,
+        plan: plan,
+        duration: duration,
+        paymentMethod: paymentMethod.apiType,
       );
-      final SplitPaymentBreakdown splitBreakdown = SplitPaymentBreakdown(
-        grossAmountCentavos: amountInCentavos,
-        platformFeeCentavos: platformFeeCentavos,
-        estimatedProcessorFeeCentavos: estimatedProcessorFeeCentavos,
-        destinationAccountId: destinationAccountId,
-      );
-
-      final PayMongoCheckoutLink checkoutLink =
-          await _payMongoService.createSplitCheckoutLink(
-        amountInCentavos: amountInCentavos,
-        description:
-            'SmartPark ${_readText(establishment['name'], fallback: 'Parking')} - ${plan.toUpperCase()} ${vehicleType.toUpperCase()}',
-        destinationAccountId: destinationAccountId,
-        remarks: 'SmartPark test checkout',
-        paymentMethodTypes: <String>[paymentMethod.apiType],
-        metadata: <String, dynamic>{
-          'driverId': driverId,
-          'establishmentId': widget.establishmentId,
-          'vehicleType': vehicleType,
-          'plan': plan,
-          'duration': duration,
-          'amount': amount,
-          'selectedPaymentMethod': paymentMethod.apiType,
-        },
-      );
-
-      final DocumentReference<Map<String, dynamic>> transactionRef =
-          FirebaseFirestore.instance.collection('transactions').doc();
-
-      final String qrData = jsonEncode(<String, dynamic>{
-        'transactionId': transactionRef.id,
-        'driverId': driverId,
-        'establishmentId': widget.establishmentId,
-        'vehicleType': vehicleType,
-        'plan': plan,
-        'duration': duration,
-        'vehiclePlate': plateNumber,
-        'generatedAt': DateTime.now().toIso8601String(),
-      });
-
-      // Ticket-facing payload - deliberately excludes commission/fee
-      // breakdown, which now lives only in the `payment_splits` collection.
-      final Map<String, dynamic> payload = <String, dynamic>{
-        'driverId': driverId,
-        'driverName':
-            '${(driverProfile['firstName'] as String?) ?? ''} ${(driverProfile['lastName'] as String?) ?? ''}'
-                .trim(),
-        'driverEmail': (driverProfile['email'] as String?) ?? '',
-        'establishmentId': widget.establishmentId,
-        'establishmentName': _readText(
-          establishment['name'],
-          fallback: 'Parking Establishment',
-        ),
-        'amount': amount,
-        // Stored at the document root as well so gate staff can fall back to a
-        // manual plate lookup when a QR code cannot be read by the camera.
-        'vehiclePlate': plateNumber,
-        'qrCode': qrData,
-        'status': 'pending_payment',
-        'entryStatus': 'not_checked_in',
-        'paymentStatus': 'paymongo_link_created',
-        'paymentMethod': paymentMethod.apiType,
-        'paymongo': <String, dynamic>{
-          'linkId': checkoutLink.id,
-          'checkoutUrl': checkoutLink.checkoutUrl,
-          'referenceNumber': checkoutLink.referenceNumber,
-          'status': checkoutLink.status,
-          'redirectUrl': checkoutLink.redirectUrl,
-          'testUrl': checkoutLink.testUrl,
-          'publicKeyUsed': _payMongoService.publicKey,
-          'createdAtClient': DateTime.now().toIso8601String(),
-        },
-        'vehicleType': vehicleType,
-        'plan': plan,
-        'slotSnapshot': slotCounts,
-        'createdAtClient': Timestamp.now(),
-        'createdAt': FieldValue.serverTimestamp(),
-        'updatedAt': FieldValue.serverTimestamp(),
-      };
-
-      final DocumentReference<Map<String, dynamic>> paymentRef =
-          FirebaseFirestore.instance.collection('payments').doc();
-      final DocumentReference<Map<String, dynamic>> paymentSplitRef =
-          FirebaseFirestore.instance.collection('payment_splits').doc();
 
       if (!mounted) {
         return false;
       }
 
-      final dynamic checkoutResult = await Navigator.of(context).push<dynamic>(
+      await Navigator.of(context).push<dynamic>(
         MaterialPageRoute<dynamic>(
           builder: (_) => DriverInAppCheckoutPage(
-            establishmentName: _readText(
-              establishment['name'],
-              fallback: 'Parking Establishment',
-            ),
-            checkoutUrl: checkoutLink.checkoutUrl,
-            checkoutLinkId: checkoutLink.id,
-            payMongoService: _payMongoService,
+            establishmentName: checkout.establishmentName,
+            checkoutUrl: checkout.checkoutUrl,
+            checkPaid: () async => (await _checkoutService.confirmCheckout(
+              checkout.checkoutId,
+            )).isPaid,
           ),
         ),
       );
@@ -923,57 +953,17 @@ class _EstablishmentDetailPageState extends State<EstablishmentDetailPage> {
         return false;
       }
 
-      final PayMongoCheckoutLink refreshedLink =
-          await _payMongoService.pollCheckoutLink(checkoutLink.id, maxAttempts: 6);
-      final bool isPaid = checkoutResult == true || refreshedLink.isPaid;
-      if (!isPaid) {
+      // Whatever the web view reported, only the server's answer counts.
+      final ParkingCheckoutStatus status = await _checkoutService.pollUntilPaid(
+        checkout.checkoutId,
+      );
+      if (!status.isPaid || status.qrCode == null) {
         _showSnackBar(
-          'Payment was not confirmed. If you completed payment, check your active tickets or try again.',
+          'Payment was not confirmed. If you completed payment, your ticket '
+          'will appear in your tickets within a few minutes.',
         );
         return false;
       }
-
-      final WriteBatch confirmationBatch = FirebaseFirestore.instance.batch();
-      confirmationBatch.set(transactionRef, <String, dynamic>{
-        ...payload,
-        'status': 'paid',
-        'paymentStatus': 'paid',
-        'paymongo.status': refreshedLink.status,
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
-      confirmationBatch.set(paymentRef, <String, dynamic>{
-        'transactionId': transactionRef.id,
-        'driverId': driverId,
-        'establishmentId': widget.establishmentId,
-        'amount': amount,
-        'status': 'paid',
-        'paymentProvider': 'paymongo_test',
-        'paymongo': <String, dynamic>{
-          'linkId': checkoutLink.id,
-          'checkoutUrl': checkoutLink.checkoutUrl,
-          'referenceNumber': checkoutLink.referenceNumber,
-          'status': refreshedLink.status,
-          'redirectUrl': checkoutLink.redirectUrl,
-          'testUrl': checkoutLink.testUrl,
-        },
-        'createdAt': FieldValue.serverTimestamp(),
-        'paymongo.status': refreshedLink.status,
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
-      // Finance/commission ledger - only the parking owner's finance section
-      // and admin reporting read from this collection, never ticket history.
-      confirmationBatch.set(paymentSplitRef, <String, dynamic>{
-        'transactionId': transactionRef.id,
-        'paymentId': paymentRef.id,
-        'establishmentId': widget.establishmentId,
-        'driverId': driverId,
-        ...splitBreakdown.toMap(),
-        'paymentMethod': paymentMethod.apiType,
-        'status': 'paid',
-        'createdAt': FieldValue.serverTimestamp(),
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
-      await confirmationBatch.commit();
 
       if (!mounted) {
         return true;
@@ -982,17 +972,17 @@ class _EstablishmentDetailPageState extends State<EstablishmentDetailPage> {
       await Navigator.of(context).push<void>(
         MaterialPageRoute<void>(
           builder: (_) => DriverPaidTicketPage(
-            establishmentName: _readText(
-              establishment['name'],
-              fallback: 'Parking Establishment',
-            ),
-            amount: amount,
-            qrData: qrData,
+            establishmentName: status.establishmentName,
+            amount: status.amount,
+            qrData: status.qrCode!,
           ),
         ),
       );
 
       return true;
+    } on FirebaseFunctionsException catch (error) {
+      _showSnackBar(error.message ?? 'Failed to process payment.');
+      return false;
     } catch (error) {
       _showSnackBar('Failed to process payment: $error');
       return false;
@@ -1022,625 +1012,79 @@ class _EstablishmentDetailPageState extends State<EstablishmentDetailPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        title: const Text('Establishment Details'),
-      ),
-      body: DefaultTabController(
-        length: 3,
-        child: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-          stream: _establishmentRef.snapshots(),
-          builder:
-              (
-                BuildContext context,
-                AsyncSnapshot<DocumentSnapshot<Map<String, dynamic>>> snapshot,
-              ) {
-                return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-                  stream: _establishmentDetailsRef.snapshots(),
-                  builder:
-                      (
-                        BuildContext context,
-                        AsyncSnapshot<DocumentSnapshot<Map<String, dynamic>>>
-                        detailsSnapshot,
-                      ) {
-                        if (snapshot.connectionState ==
-                                ConnectionState.waiting ||
-                            detailsSnapshot.connectionState ==
-                                ConnectionState.waiting) {
-                          return const Center(
-                            child: CircularProgressIndicator(),
-                          );
-                        }
-
-                        if (snapshot.hasError || detailsSnapshot.hasError) {
-                          return const Center(
-                            child: Text(
-                              'Unable to load establishment details.',
-                              style: TextStyle(color: AppTheme.textMuted),
-                            ),
-                          );
-                        }
-
-                        final Map<String, dynamic> baseData =
-                            snapshot.data?.data() ?? <String, dynamic>{};
-                        final Map<String, dynamic> detailsData =
-                            detailsSnapshot.data?.data() ?? <String, dynamic>{};
-
-                        if (baseData.isEmpty && detailsData.isEmpty) {
-                          return const Center(
-                            child: Text(
-                              'Establishment not found.',
-                              style: TextStyle(color: AppTheme.textMuted),
-                            ),
-                          );
-                        }
-
-                        final Map<String, dynamic> data = <String, dynamic>{
-                          ...baseData,
-                          ...detailsData,
-                          'establishmentID': widget.establishmentId,
-                        };
-
-                        return Padding(
-                          padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-                          child: Column(
-                            children: [
-                              _buildTopSummary(data),
-                              const SizedBox(height: 14),
-                              Container(
-                                decoration: BoxDecoration(
-                                  color: Colors.white,
-                                  borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(
-                                    color: const Color(0xFFE2E5EC),
-                                  ),
-                                ),
-                                child: const TabBar(
-                                  labelColor: AppTheme.textDark,
-                                  unselectedLabelColor: AppTheme.textMuted,
-                                  indicatorColor: AppTheme.accent,
-                                  indicatorWeight: 3,
-                                  indicatorSize: TabBarIndicatorSize.tab,
-                                  labelStyle: TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w800,
-                                  ),
-                                  tabs: [
-                                    Tab(text: 'Overview'),
-                                    Tab(text: 'Rates'),
-                                    Tab(text: 'Policy'),
-                                  ],
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Expanded(
-                                child: TabBarView(
-                                  children: [
-                                    _buildOverviewTab(data),
-                                    _buildRatesTab(data),
-                                    _buildPolicyTab(data),
-                                  ],
-                                ),
-                              ),
-                              SafeArea(
-                                top: false,
-                                child: Container(
-                                  width: double.infinity,
-                                  padding: const EdgeInsets.fromLTRB(
-                                    12,
-                                    8,
-                                    12,
-                                    0,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: Colors.white,
-                                    borderRadius: BorderRadius.circular(14),
-                                    border: Border.all(
-                                      color: const Color(0xFFE2E5EC),
-                                    ),
-                                  ),
-                                  child: ElevatedButton.icon(
-                                    onPressed: _generatingTicket
-                                        ? null
-                                        : () => _openVehicleSelection(data),
-                                    icon: _generatingTicket
-                                        ? const SizedBox(
-                                            width: 18,
-                                            height: 18,
-                                            child: CircularProgressIndicator(
-                                              strokeWidth: 2,
-                                              color: Colors.white,
-                                            ),
-                                          )
-                                        : const Icon(
-                                            Icons.local_parking_rounded,
-                                          ),
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: AppTheme.accent,
-                                      foregroundColor: const Color(0xFF22252C),
-                                      elevation: 0,
-                                      minimumSize: const Size.fromHeight(48),
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(10),
-                                      ),
-                                    ),
-                                    label: Text(
-                                      _generatingTicket
-                                          ? 'Preparing checkout...'
-                                          : 'Park Here',
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.w800,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        );
-                      },
-                );
-              },
-        ),
-      ),
-    );
-  }
-}
-
-class _OverviewStatusCard extends StatelessWidget {
-  const _OverviewStatusCard({
-    required this.icon,
-    required this.label,
-    required this.value,
-  });
-
-  final IconData icon;
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFE2E5EC)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Row(
-            children: [
-              Icon(icon, size: 16, color: const Color(0xFF2D333F)),
-              const SizedBox(width: 4),
-              Expanded(
-                child: Text(
-                  label.toUpperCase(),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w700,
-                    color: AppTheme.textMuted,
-                  ),
-                ),
+    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+      stream: cachedStream('establishment', _establishmentRef.snapshots),
+      builder:
+          (
+            BuildContext context,
+            AsyncSnapshot<DocumentSnapshot<Map<String, dynamic>>> snapshot,
+          ) {
+            return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+              stream: cachedStream(
+                'details',
+                _establishmentDetailsRef.snapshots,
               ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          Text(
-            value,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w800,
-              color: AppTheme.textDark,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
+              builder:
+                  (
+                    BuildContext context,
+                    AsyncSnapshot<DocumentSnapshot<Map<String, dynamic>>>
+                    detailsSnapshot,
+                  ) {
+                    Widget message(Widget child) => Scaffold(
+                      backgroundColor: AppTheme.background,
+                      appBar: AppBar(
+                        backgroundColor: Colors.white,
+                        title: const Text('Parking Details'),
+                      ),
+                      body: Center(child: child),
+                    );
 
-String _formatGridAmount(dynamic val) {
-  if (val == null) return '';
-  String text = val.toString().trim();
-  if (text.isEmpty || text.toLowerCase() == 'not provided') return '';
+                    if (snapshot.connectionState == ConnectionState.waiting ||
+                        detailsSnapshot.connectionState ==
+                            ConnectionState.waiting) {
+                      return message(const CircularProgressIndicator());
+                    }
+                    if (snapshot.hasError || detailsSnapshot.hasError) {
+                      return message(
+                        const Text(
+                          'Unable to load establishment details.',
+                          style: TextStyle(color: AppTheme.textMuted),
+                        ),
+                      );
+                    }
 
-  final num? n = num.tryParse(text);
-  if (n != null) {
-    final String numStr =
-        (n % 1 == 0) ? n.toInt().toString() : n.toStringAsFixed(0);
-    return '₱$numStr';
-  }
+                    final Map<String, dynamic> baseData =
+                        snapshot.data?.data() ?? <String, dynamic>{};
+                    final Map<String, dynamic> detailsData =
+                        detailsSnapshot.data?.data() ?? <String, dynamic>{};
+                    if (baseData.isEmpty && detailsData.isEmpty) {
+                      return message(
+                        const Text(
+                          'Establishment not found.',
+                          style: TextStyle(color: AppTheme.textMuted),
+                        ),
+                      );
+                    }
 
-  text = text
-      .replaceAll(
-        RegExp(
-          r'/hr|/hour|per hour|/day|per day|/week|per week|/month|per month',
-          caseSensitive: false,
-        ),
-        '',
-      )
-      .trim();
+                    final Map<String, dynamic> data = <String, dynamic>{
+                      ...baseData,
+                      ...detailsData,
+                      'establishmentID': widget.establishmentId,
+                    };
 
-  if (text.toUpperCase().startsWith('PHP')) {
-    text = '₱${text.substring(3).trim()}';
-  } else if (text.toUpperCase().startsWith('P')) {
-    text = '₱${text.substring(1).trim()}';
-  } else if (!text.startsWith('₱')) {
-    text = '₱$text';
-  }
-
-  return text;
-}
-
-class _RateDetailCell {
-  const _RateDetailCell({
-    required this.label,
-    required this.amount,
-    required this.unit,
-  });
-
-  final String label;
-  final String amount;
-  final String unit;
-}
-
-dynamic _extractRateValue(
-  Map<String, dynamic> data,
-  Map<String, dynamic> vMap,
-  String vehicleKey,
-  List<String> fieldKeys,
-) {
-  for (final String k in fieldKeys) {
-    if (vMap.containsKey(k) && vMap[k] != null) {
-      final String val = vMap[k].toString().trim();
-      if (val.isNotEmpty) return val;
-    }
-  }
-
-  final Map<String, dynamic> packageRates = _asStringMap(
-    data['packageRates'] ?? data['packages'] ?? data['packagePricing'],
-  );
-
-  for (final Map<String, dynamic> source in <Map<String, dynamic>>[data, packageRates]) {
-    for (final String fieldKey in fieldKeys) {
-      if (source.containsKey(fieldKey)) {
-        final dynamic topVal = source[fieldKey];
-        if (topVal is Map) {
-          final Map<String, dynamic> topMap = _asStringMap(topVal);
-          final dynamic vehicleVal = topMap[vehicleKey] ??
-              (vehicleKey == 'motorcycle' ? topMap['motor'] : null);
-          if (vehicleVal != null && vehicleVal.toString().trim().isNotEmpty) {
-            return vehicleVal;
-          }
-        } else if (topVal != null && topVal.toString().trim().isNotEmpty) {
-          return topVal;
-        }
-      }
-    }
-  }
-
-  return null;
-}
-
-List<_RateDetailCell> _getRateGridCells(
-  Map<String, dynamic> data,
-  String vehicleKey,
-) {
-  final Map<String, dynamic> ratesByType = _asStringMap(data['ratesByType']);
-  final Map<String, dynamic> rates = _asStringMap(data['rates']);
-
-  dynamic rawVehicleValue = ratesByType[vehicleKey] ?? rates[vehicleKey];
-  Map<String, dynamic> vMap =
-      rawVehicleValue is Map
-          ? _asStringMap(rawVehicleValue)
-          : <String, dynamic>{};
-
-  dynamic rawInitial =
-      vMap['initial'] ??
-      vMap['rates'] ??
-      vMap['hourly'] ??
-      vMap['firstHours'] ??
-      rawVehicleValue;
-
-  dynamic rawDaily = _extractRateValue(
-    data,
-    vMap,
-    vehicleKey,
-    <String>[
-      'succeedingDaily',
-      'SucceedingDaily',
-      'succeeding_daily',
-      'daily',
-      'ratesByDaily',
-    ],
-  );
-
-  dynamic rawWeekly = _extractRateValue(
-    data,
-    vMap,
-    vehicleKey,
-    <String>[
-      'succeedingWeekly',
-      'SucceedingWeekly',
-      'succeeding_weekly',
-      'weekly',
-      'SucceedingWeeklyRates',
-      'succeedingWeeklyRates',
-    ],
-  );
-
-  dynamic rawMonthly = _extractRateValue(
-    data,
-    vMap,
-    vehicleKey,
-    <String>[
-      'succeedingMonthly',
-      'SucceedingMonthly',
-      'succeeding_monthly',
-      'monthly',
-      'SucceedingMonthlyRates',
-      'succeedingMonthlyRates',
-    ],
-  );
-
-  final List<_RateDetailCell> cells = <_RateDetailCell>[];
-
-  // 1. HOURLY
-  final String hourlyAmt = _formatGridAmount(rawInitial);
-  cells.add(
-    _RateDetailCell(
-      label: 'HOURLY',
-      amount: hourlyAmt.isNotEmpty ? hourlyAmt : '₱0',
-      unit: 'per hour',
-    ),
-  );
-
-  // 2. DAILY
-  final String dailyAmt = _formatGridAmount(rawDaily);
-  cells.add(
-    _RateDetailCell(
-      label: 'DAILY',
-      amount: dailyAmt.isNotEmpty ? dailyAmt : '₱0',
-      unit: 'per day',
-    ),
-  );
-
-  // 3. WEEKLY (Only displayed if explicitly provided by establishment)
-  final String weeklyAmt = _formatGridAmount(rawWeekly);
-  if (weeklyAmt.isNotEmpty && weeklyAmt != '₱0') {
-    cells.add(
-      _RateDetailCell(
-        label: 'WEEKLY',
-        amount: weeklyAmt,
-        unit: 'per week',
-      ),
-    );
-  }
-
-  // 4. MONTHLY (Only displayed if explicitly provided by establishment)
-  final String monthlyAmt = _formatGridAmount(rawMonthly);
-  if (monthlyAmt.isNotEmpty && monthlyAmt != '₱0') {
-    cells.add(
-      _RateDetailCell(
-        label: 'MONTHLY',
-        amount: monthlyAmt,
-        unit: 'per month',
-      ),
-    );
-  }
-
-  return cells;
-}
-
-class _QuickRateData {
-  const _QuickRateData({
-    required this.hourlyAmount,
-    required this.hourlyUnit,
-    this.succeedingHourText,
-    this.dailyText,
-  });
-
-  final String hourlyAmount;
-  final String hourlyUnit;
-  final String? succeedingHourText;
-  final String? dailyText;
-}
-
-_QuickRateData _getQuickRateData(Map<String, dynamic> data, String vehicleKey) {
-  final Map<String, dynamic> ratesByType = _asStringMap(data['ratesByType']);
-  final Map<String, dynamic> rates = _asStringMap(data['rates']);
-
-  final Map<String, dynamic> initialRates = _asStringMap(
-    data['initialRates'] ?? data['ratesByInitial'] ?? data['ratesByHour'],
-  );
-  final Map<String, dynamic> succeedingHourRates = _asStringMap(
-    data['succeedingHour'] ??
-        data['succeedingHourRates'] ??
-        data['ratesBySucceedingHour'],
-  );
-  final Map<String, dynamic> succeedingDailyRates = _asStringMap(
-    data['succeedingDaily'] ??
-        data['succeedingDailyRates'] ??
-        data['ratesBySucceedingDaily'] ??
-        data['ratesByDaily'],
-  );
-
-  dynamic rawVehicleValue = ratesByType[vehicleKey] ?? rates[vehicleKey];
-
-  dynamic rawInitial;
-  dynamic rawSucceedingHour;
-  dynamic rawSucceedingDaily;
-
-  if (rawVehicleValue is Map) {
-    final Map<String, dynamic> vMap = _asStringMap(rawVehicleValue);
-    rawInitial = vMap['initial'] ?? vMap['rates'] ?? vMap['hourly'] ?? vMap['firstHours'];
-    rawSucceedingHour =
-        vMap['succeedingHour'] ?? vMap['succeeding_hour'] ?? vMap['succeeding'];
-    rawSucceedingDaily =
-        vMap['succeedingDaily'] ?? vMap['succeeding_daily'] ?? vMap['daily'];
-  } else {
-    rawInitial = rawVehicleValue;
-  }
-
-  rawInitial ??= initialRates[vehicleKey] ?? rates[vehicleKey];
-  rawSucceedingHour ??= succeedingHourRates[vehicleKey];
-  rawSucceedingDaily ??= succeedingDailyRates[vehicleKey];
-
-  final String initialAmt = _formatQuickAmount(rawInitial);
-  final String succHourAmt = _formatQuickAmount(rawSucceedingHour);
-  final String succDailyAmt = _formatQuickAmount(rawSucceedingDaily);
-
-  return _QuickRateData(
-    hourlyAmount: initialAmt.isEmpty ? 'N/A' : initialAmt,
-    hourlyUnit: initialAmt.isEmpty ? '' : '/hr',
-    succeedingHourText: succHourAmt.isNotEmpty ? '+$succHourAmt/hr succeeding' : null,
-    dailyText: succDailyAmt.isNotEmpty ? '$succDailyAmt/day' : null,
-  );
-}
-
-Map<String, dynamic> _asStringMap(dynamic value) {
-  if (value is Map) {
-    return value.map<String, dynamic>(
-      (dynamic key, dynamic item) =>
-          MapEntry<String, dynamic>(key.toString(), item),
-    );
-  }
-  return <String, dynamic>{};
-}
-
-String _formatQuickAmount(dynamic val) {
-  if (val == null) return '';
-  String text = val.toString().trim();
-  if (text.isEmpty || text.toLowerCase() == 'not provided') return '';
-
-  final num? n = num.tryParse(text);
-  if (n != null) {
-    final String numStr =
-        (n % 1 == 0) ? n.toInt().toString() : n.toStringAsFixed(2);
-    return 'P$numStr';
-  }
-
-  text = text
-      .replaceAll(RegExp(r'/hr|/hour|per hour', caseSensitive: false), '')
-      .trim();
-
-  if (text.toUpperCase().startsWith('PHP')) {
-    text = 'P${text.substring(3).trim()}';
-  } else if (text.startsWith('₱')) {
-    text = 'P${text.substring(1).trim()}';
-  } else if (!text.toUpperCase().startsWith('P') &&
-      RegExp(r'^\d').hasMatch(text)) {
-    text = 'P$text';
-  }
-
-  return text;
-}
-
-class _QuickRateCard extends StatelessWidget {
-  const _QuickRateCard({
-    required this.icon,
-    required this.label,
-    required this.hourlyAmount,
-    required this.hourlyUnit,
-    this.succeedingHourText,
-    this.dailyText,
-  });
-
-  final IconData icon;
-  final String label;
-  final String hourlyAmount;
-  final String hourlyUnit;
-  final String? succeedingHourText;
-  final String? dailyText;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFE2E5EC)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(icon, size: 18, color: const Color(0xFF2D333F)),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  label.toUpperCase(),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 0.5,
-                    color: AppTheme.textDark,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.baseline,
-            textBaseline: TextBaseline.alphabetic,
-            children: [
-              Text(
-                hourlyAmount,
-                style: const TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.w800,
-                  color: AppTheme.textDark,
-                ),
-              ),
-              if (hourlyUnit.isNotEmpty) ...[
-                Text(
-                  hourlyUnit,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: AppTheme.textMuted,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ],
-            ],
-          ),
-          if (succeedingHourText != null && succeedingHourText!.isNotEmpty) ...[
-            const SizedBox(height: 4),
-            Text(
-              succeedingHourText!,
-              style: const TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-                color: AppTheme.textMuted,
-              ),
-            ),
-          ],
-          if (dailyText != null && dailyText!.isNotEmpty) ...[
-            const SizedBox(height: 4),
-            Text(
-              dailyText!,
-              style: const TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
-                color: AppTheme.textDark,
-              ),
-            ),
-          ],
-        ],
-      ),
+                    return Scaffold(
+                      backgroundColor: AppTheme.background,
+                      appBar: AppBar(
+                        backgroundColor: Colors.white,
+                        surfaceTintColor: Colors.white,
+                        title: const Text('Parking Details'),
+                      ),
+                      body: _buildBody(data),
+                      bottomNavigationBar: _buildBottomBar(data),
+                    );
+                  },
+            );
+          },
     );
   }
 }

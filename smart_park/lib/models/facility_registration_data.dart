@@ -3,11 +3,13 @@ import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
+import '../services/operating_hours.dart';
+
 class FacilityRegistrationData {
   FacilityRegistrationData({
     required this.name,
     required this.address,
-    required this.operatingHours,
+    required this.hours,
     required this.policies,
     required this.rates,
     required this.slots,
@@ -15,11 +17,14 @@ class FacilityRegistrationData {
     this.keepPhotoUrls = const <String>[],
     this.newPhotoFiles = const <File>[],
     this.removedPhotoUrls = const <String>[],
+    this.keepDocumentUrls = const <String>[],
+    this.newDocumentFiles = const <File>[],
+    this.removedDocumentUrls = const <String>[],
   });
 
   final String name;
   final String address;
-  final String operatingHours;
+  final OperatingHours hours;
   final String policies;
   final Map<String, dynamic> rates;
   final Map<String, int> slots;
@@ -27,15 +32,34 @@ class FacilityRegistrationData {
   final List<String> keepPhotoUrls;
   final List<File> newPhotoFiles;
   final List<String> removedPhotoUrls;
+  final List<String> keepDocumentUrls;
+  final List<File> newDocumentFiles;
+  final List<String> removedDocumentUrls;
+
+  bool get documentsChanged =>
+      newDocumentFiles.isNotEmpty || removedDocumentUrls.isNotEmpty;
+
+  /// Whether saving this edit must send the facility back to admin review:
+  /// a rejected facility is being resubmitted, or the proof documents of an
+  /// already-reviewed facility changed and need to be verified again.
+  bool requiresReview({required String? previousStatus}) {
+    final String status = (previousStatus ?? 'pending').toLowerCase();
+    if (status == 'pending') {
+      return false;
+    }
+    return status == 'rejected' || documentsChanged;
+  }
 
   int get availability =>
       slots.values.fold<int>(0, (int total, int item) => total + item);
 
   String _formatRateVal(dynamic val) {
     if (val is Map) {
-      final String initial = (val['initial'] ?? val['hourly'] ?? '-').toString();
+      final String initial = (val['initial'] ?? val['hourly'] ?? '-')
+          .toString();
       final String succHour = (val['succeedingHour'] ?? '').toString();
-      final String succDaily = (val['succeedingDaily'] ?? val['daily'] ?? '').toString();
+      final String succDaily = (val['succeedingDaily'] ?? val['daily'] ?? '')
+          .toString();
       String text = initial;
       if (succHour.isNotEmpty) text += ' (+$succHour/hr)';
       if (succDaily.isNotEmpty) text += ' ($succDaily/day)';
@@ -65,7 +89,7 @@ class FacilityRegistrationData {
       'location': GeoPoint(location.latitude, location.longitude),
       'latitude': location.latitude,
       'longitude': location.longitude,
-      'operatingHours': operatingHours,
+      ...hours.toFirestore(),
       'availability': availability,
     };
   }
@@ -83,10 +107,7 @@ class FacilityRegistrationData {
       'rates': rates,
       'ratesByType': rates,
       'pricing': rateSummary,
-      'slots': <String, dynamic>{
-        'car': 0,
-        'motorcycle': 0,
-      },
+      'slots': <String, dynamic>{'car': 0, 'motorcycle': 0},
       'slotCounts': normalizedSlots,
       'policies': policies,
       'status': 'pending',

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'driver_checkout_payment_page.dart';
 import 'driver_package_selection_page.dart';
 import 'driver_payment_page.dart';
+import '../services/parking_pricing.dart';
 import '../theme/app_theme.dart';
 
 class DriverVehicleOption {
@@ -64,7 +65,8 @@ class DriverVehicleSelectionPage extends StatefulWidget {
     required int duration,
     required double amount,
     required DriverPaymentMethod paymentMethod,
-  })? onProcessPayment;
+  })?
+  onProcessPayment;
 
   @override
   State<DriverVehicleSelectionPage> createState() =>
@@ -88,15 +90,6 @@ class _DriverVehicleSelectionPageState
     super.dispose();
   }
 
-  double _parseAmount(dynamic value) {
-    if (value is num) {
-      return value.toDouble();
-    }
-    final String text = (value as String?)?.trim() ?? '';
-    final Match? match = RegExp(r'([0-9]+(?:\.[0-9]+)?)').firstMatch(text);
-    return double.tryParse(match?.group(1) ?? '') ?? 0;
-  }
-
   Future<void> _continue() async {
     final String plateNumber = _plateNumberController.text.trim();
     if (plateNumber.isEmpty) {
@@ -105,26 +98,21 @@ class _DriverVehicleSelectionPageState
       }
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Plate number is required. Please enter your plate number.'),
+          content: Text(
+            'Plate number is required. Please enter your plate number.',
+          ),
           backgroundColor: Colors.redAccent,
         ),
       );
       return;
     }
 
-    final dynamic vehicleRate = widget.ratesByType[_selectedVehicleType];
-    final Map<String, dynamic> rateMap = vehicleRate is Map
-        ? vehicleRate.map<String, dynamic>(
-            (dynamic k, dynamic v) => MapEntry(k.toString(), v),
-          )
-        : <String, dynamic>{};
-
-    final double initial = _parseAmount(
-        rateMap['initial'] ?? rateMap['hourly'] ?? rateMap['rates'] ?? vehicleRate);
-    final double succHour = _parseAmount(
-        rateMap['succeedingHour'] ?? rateMap['succeeding_hour']);
-    final double succDaily = _parseAmount(
-        rateMap['succeedingDaily'] ?? rateMap['succeeding_daily'] ?? rateMap['daily']);
+    final VehicleRates rates = VehicleRates.from(
+      widget.ratesByType[_selectedVehicleType],
+    );
+    final double initial = rates.initial;
+    final double succHour = rates.succeedingHour;
+    final double succDaily = rates.succeedingDaily;
 
     final List<DriverPackageOption> options = <DriverPackageOption>[];
 
@@ -169,7 +157,9 @@ class _DriverVehicleSelectionPageState
       }
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('No parking packages are configured for this vehicle type.'),
+          content: Text(
+            'No parking packages are configured for this vehicle type.',
+          ),
         ),
       );
       return;
@@ -324,11 +314,11 @@ class _DriverVehicleSelectionPageState
                           physics: const NeverScrollableScrollPhysics(),
                           gridDelegate:
                               SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: columns,
-                            mainAxisSpacing: 10,
-                            crossAxisSpacing: 10,
-                            mainAxisExtent: 125,
-                          ),
+                                crossAxisCount: columns,
+                                mainAxisSpacing: 10,
+                                crossAxisSpacing: 10,
+                                mainAxisExtent: 125,
+                              ),
                           itemCount: widget.vehicleOptions.length,
                           itemBuilder: (context, index) {
                             final DriverVehicleOption option =
@@ -336,8 +326,10 @@ class _DriverVehicleSelectionPageState
                             final bool isSelected =
                                 option.key == _selectedVehicleType;
                             final int available =
-                                (option.capacity - option.activeCount)
-                                    .clamp(0, option.capacity);
+                                (option.capacity - option.activeCount).clamp(
+                                  0,
+                                  option.capacity,
+                                );
 
                             return InkWell(
                               onTap: () {

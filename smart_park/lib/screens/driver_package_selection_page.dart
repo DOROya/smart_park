@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
+import '../services/parking_pricing.dart';
 import '../theme/app_theme.dart';
+import '../widgets/smartpark_ui.dart';
 
 class DriverPackageOption {
   const DriverPackageOption({
@@ -68,77 +70,105 @@ class _DriverPackageSelectionPageState
 
   String _amountText(double amount) {
     return amount % 1 == 0
-        ? 'P${amount.toStringAsFixed(0)}'
-        : 'P${amount.toStringAsFixed(2)}';
+        ? '₱${amount.toStringAsFixed(0)}'
+        : '₱${amount.toStringAsFixed(2)}';
   }
 
   double _calculateTotalAmount(DriverPackageOption option, int duration) {
-    switch (option.key) {
-      case 'base':
-        return option.initialAmount;
-      case 'extended':
-        return option.initialAmount + (option.succeedingHourAmount * duration);
-      case 'daily':
-        return option.dailyAmount * duration;
-      default:
-        return option.initialAmount > 0
-            ? option.initialAmount
-            : option.dailyAmount * duration;
-    }
+    return packageTotal(
+      plan: option.key,
+      initialAmount: option.initialAmount,
+      succeedingHourAmount: option.succeedingHourAmount,
+      dailyAmount: option.dailyAmount,
+      duration: duration,
+    );
   }
 
-  List<int> _durationOptions(String planKey) {
-    return switch (planKey) {
-      'base' => const <int>[], // Do not display duration
-      'extended' => List<int>.generate(12, (int i) => i + 1), // 1 to 12
-      'daily' => List<int>.generate(7, (int i) => i + 1), // 1 to 7
-      _ => List<int>.generate(7, (int i) => i + 1),
+  /// Largest duration each plan allows (matches the checkout function).
+  int _maxDuration(String planKey) => switch (planKey) {
+    'extended' => 12,
+    'daily' => 7,
+    _ => 1,
+  };
+
+  bool _hasDuration(String planKey) =>
+      planKey == 'extended' || planKey == 'daily';
+
+  String _durationTitle(String planKey) => switch (planKey) {
+    'extended' => 'Additional hours',
+    'daily' => 'Number of days',
+    _ => 'Duration',
+  };
+
+  String _durationUnit(String planKey, int count) => switch (planKey) {
+    'extended' => count == 1 ? 'hour' : 'hours',
+    'daily' => count == 1 ? 'day' : 'days',
+    _ => '',
+  };
+
+  String _optionDescription(DriverPackageOption option) => switch (option.key) {
+    'base' => 'Park up to $spBaseStayHours hours.',
+    'extended' =>
+      'First $spBaseStayHours hours, then add hours at '
+          '${_amountText(option.succeedingHourAmount)}/hr.',
+    'daily' => 'Full-day parking, charged per day.',
+    _ => '',
+  };
+
+  (String, String) _optionPrice(DriverPackageOption option) =>
+      switch (option.key) {
+        'base' => (_amountText(option.initialAmount), '/ $spBaseStayLabel'),
+        'extended' => (_amountText(option.initialAmount), '+ hours'),
+        'daily' => (_amountText(option.dailyAmount), '/ day'),
+        _ => (
+          _amountText(
+            option.initialAmount > 0
+                ? option.initialAmount
+                : option.dailyAmount,
+          ),
+          '',
+        ),
+      };
+
+  /// When the paid time ends if the driver parks now.
+  String _paidUntil(String planKey, int duration) {
+    final DateTime now = DateTime.now();
+    final DateTime until = now.add(
+      Duration(
+        hours: includedStayHours(plan: planKey, duration: duration),
+      ),
+    );
+    final int hour12 = until.hour % 12 == 0 ? 12 : until.hour % 12;
+    final String minutes = until.minute.toString().padLeft(2, '0');
+    final String suffix = until.hour < 12 ? 'AM' : 'PM';
+    final String time = '$hour12:$minutes $suffix';
+    final int dayDiff = DateTime(
+      until.year,
+      until.month,
+      until.day,
+    ).difference(DateTime(now.year, now.month, now.day)).inDays;
+    return switch (dayDiff) {
+      0 => 'today, $time',
+      1 => 'tomorrow, $time',
+      _ => '${spFormatDate(until)}, $time',
     };
-  }
-
-  String _durationTitle(String planKey) {
-    return switch (planKey) {
-      'extended' => 'Additional Hours',
-      'daily' => 'Number of Days',
-      _ => 'Duration',
-    };
-  }
-
-  String _durationUnitLabel(String planKey, int count) {
-    return switch (planKey) {
-      'extended' => count == 1 ? '1 hour additional' : '$count hours additional',
-      'daily' => count == 1 ? '1 day' : '$count days',
-      _ => '$count',
-    };
-  }
-
-  String _cardSubtext(DriverPackageOption option) {
-    switch (option.key) {
-      case 'base':
-        return _amountText(option.initialAmount);
-      case 'extended':
-        return '${_amountText(option.initialAmount)} + ${_amountText(option.succeedingHourAmount)}/hr';
-      case 'daily':
-        return '${_amountText(option.dailyAmount)}/day';
-      default:
-        final double amt = option.initialAmount > 0
-            ? option.initialAmount
-            : option.dailyAmount;
-        return _amountText(amt);
-    }
   }
 
   void _continue() {
     final DriverPackageOption selectedOption = widget.options.firstWhere(
       (DriverPackageOption option) => option.key == _selectedPlan,
     );
-    final int effectiveDuration = _selectedPlan == 'base' ? 1 : _duration;
-    final double totalAmount = _calculateTotalAmount(selectedOption, effectiveDuration);
+    final int effectiveDuration = _hasDuration(_selectedPlan) ? _duration : 1;
+    final double totalAmount = _calculateTotalAmount(
+      selectedOption,
+      effectiveDuration,
+    );
 
     final String displayPlanLabel = selectedOption.label;
     final String displayDurationLabel = switch (_selectedPlan) {
-      'base' => 'Base Stay',
-      'extended' => '+$effectiveDuration hr${effectiveDuration == 1 ? "" : "s"} additional',
+      'base' => 'Base Stay · $spBaseStayHours hours',
+      'extended' =>
+        '+$effectiveDuration hr${effectiveDuration == 1 ? "" : "s"} additional',
       'daily' => '$effectiveDuration day${effectiveDuration == 1 ? "" : "s"}',
       _ => '$effectiveDuration',
     };
@@ -157,13 +187,320 @@ class _DriverPackageSelectionPageState
     );
   }
 
+  Widget _buildOptionCard(DriverPackageOption option) {
+    final bool selected = option.key == _selectedPlan;
+    final (String price, String unit) = _optionPrice(option);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Material(
+        color: selected ? const Color(0xFFFFF8E1) : Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(14),
+          onTap: () => setState(() {
+            _selectedPlan = option.key;
+            _duration = 1;
+          }),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 150),
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color: selected ? AppTheme.accent : const Color(0xFFE1E4EA),
+                width: selected ? 2 : 1,
+              ),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: selected ? AppTheme.accent : const Color(0xFFF3F4F7),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(option.icon, color: AppTheme.textDark, size: 22),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        option.label,
+                        style: const TextStyle(
+                          color: AppTheme.textDark,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        _optionDescription(option),
+                        style: const TextStyle(
+                          color: AppTheme.textMuted,
+                          fontSize: 12,
+                          height: 1.3,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(
+                      price,
+                      style: const TextStyle(
+                        color: AppTheme.textDark,
+                        fontSize: 17,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    if (unit.isNotEmpty)
+                      Text(
+                        unit,
+                        style: const TextStyle(
+                          color: AppTheme.textMuted,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(width: 8),
+                Icon(
+                  selected
+                      ? Icons.radio_button_checked_rounded
+                      : Icons.radio_button_off_rounded,
+                  color: selected
+                      ? const Color(0xFFB78300)
+                      : const Color(0xFFC3C7D0),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _stepButton(IconData icon, String tooltip, VoidCallback? onPressed) {
+    return SizedBox(
+      width: 48,
+      height: 48,
+      child: IconButton.filled(
+        onPressed: onPressed,
+        tooltip: tooltip,
+        icon: Icon(icon),
+        style: IconButton.styleFrom(
+          backgroundColor: AppTheme.accent,
+          foregroundColor: AppTheme.textDark,
+          disabledBackgroundColor: const Color(0xFFF1F2F5),
+          disabledForegroundColor: const Color(0xFFB5B9C3),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDurationStepper() {
+    final int max = _maxDuration(_selectedPlan);
+    final String maxUnit = _durationUnit(_selectedPlan, max);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFE1E4EA)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            _durationTitle(_selectedPlan),
+            style: const TextStyle(
+              color: AppTheme.textDark,
+              fontSize: 14,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              _stepButton(
+                Icons.remove_rounded,
+                'Less',
+                _duration > 1 ? () => setState(() => _duration--) : null,
+              ),
+              Expanded(
+                child: Column(
+                  children: [
+                    Text(
+                      '$_duration',
+                      style: const TextStyle(
+                        color: AppTheme.textDark,
+                        fontSize: 28,
+                        fontWeight: FontWeight.w800,
+                        height: 1.1,
+                      ),
+                    ),
+                    Text(
+                      _durationUnit(_selectedPlan, _duration),
+                      style: const TextStyle(
+                        color: AppTheme.textMuted,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              _stepButton(
+                Icons.add_rounded,
+                'More',
+                _duration < max ? () => setState(() => _duration++) : null,
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Text(
+            _duration >= max
+                ? 'Maximum of $max $maxUnit.'
+                : 'Up to $max $maxUnit.',
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: AppTheme.textMuted, fontSize: 11),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _summaryLine(String label, String value, {bool strong = false}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              label,
+              style: TextStyle(
+                color: strong ? AppTheme.textDark : const Color(0xFF565C6B),
+                fontSize: strong ? 14 : 13,
+                fontWeight: strong ? FontWeight.w800 : FontWeight.w500,
+              ),
+            ),
+          ),
+          Text(
+            value,
+            style: TextStyle(
+              color: AppTheme.textDark,
+              fontSize: strong ? 16 : 13,
+              fontWeight: strong ? FontWeight.w800 : FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSummary(DriverPackageOption option, int duration, double total) {
+    final String unit = _durationUnit(option.key, duration);
+    final List<Widget> lines = switch (option.key) {
+      'extended' => <Widget>[
+        _summaryLine(
+          'Base stay ($spBaseStayLabel)',
+          _amountText(option.initialAmount),
+        ),
+        _summaryLine(
+          '$duration additional $unit × '
+          '${_amountText(option.succeedingHourAmount)}',
+          _amountText(option.succeedingHourAmount * duration),
+        ),
+      ],
+      'daily' => <Widget>[
+        _summaryLine(
+          '$duration $unit × ${_amountText(option.dailyAmount)}',
+          _amountText(option.dailyAmount * duration),
+        ),
+      ],
+      _ => <Widget>[
+        _summaryLine(
+          'Base stay ($spBaseStayLabel)',
+          _amountText(option.initialAmount),
+        ),
+      ],
+    };
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFE1E4EA)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Summary',
+            style: TextStyle(
+              color: AppTheme.textDark,
+              fontSize: 14,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 8),
+          ...lines,
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 8),
+            child: Divider(height: 1, color: Color(0xFFEDEFF3)),
+          ),
+          _summaryLine('Total', _amountText(total), strong: true),
+          const SizedBox(height: 8),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Icon(
+                Icons.schedule_rounded,
+                size: 15,
+                color: AppTheme.textMuted,
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  'If you park now, you are covered until '
+                  '${_paidUntil(option.key, duration)}. Extra time is billed '
+                  'per hour at the exit gate.',
+                  style: const TextStyle(
+                    color: AppTheme.textMuted,
+                    fontSize: 11,
+                    height: 1.3,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final DriverPackageOption selectedOption = widget.options.firstWhere(
       (DriverPackageOption option) => option.key == _selectedPlan,
     );
-    final List<int> durations = _durationOptions(_selectedPlan);
-    final double totalAmount = _calculateTotalAmount(selectedOption, _duration);
+    final int effectiveDuration = _hasDuration(_selectedPlan) ? _duration : 1;
+    final double totalAmount = _calculateTotalAmount(
+      selectedOption,
+      effectiveDuration,
+    );
 
     return Scaffold(
       backgroundColor: AppTheme.background,
@@ -202,10 +539,10 @@ class _DriverPackageSelectionPageState
               width: double.infinity,
               padding: const EdgeInsets.fromLTRB(20, 16, 20, 18),
               color: const Color(0xFFFFF4CF),
-              child: Column(
+              child: const Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
+                  Text(
                     'Step 2 of 3',
                     style: TextStyle(
                       color: Color(0xFF565C6B),
@@ -213,9 +550,9 @@ class _DriverPackageSelectionPageState
                       fontWeight: FontWeight.w700,
                     ),
                   ),
-                  const SizedBox(height: 8),
+                  SizedBox(height: 8),
                   Row(
-                    children: const [
+                    children: [
                       _StepDot(number: '1', complete: true),
                       _StepLine(),
                       _StepDot(number: '2', selected: true),
@@ -227,262 +564,91 @@ class _DriverPackageSelectionPageState
               ),
             ),
             Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Choose a package for your ${widget.vehicleLabel}',
-                      style: const TextStyle(
-                        color: AppTheme.textDark,
-                        fontSize: 18,
-                        fontWeight: FontWeight.w800,
+              child: Align(
+                alignment: Alignment.topCenter,
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 640),
+                  child: ListView(
+                    padding: const EdgeInsets.all(16),
+                    children: [
+                      Text(
+                        'Choose a package for your ${widget.vehicleLabel}',
+                        style: const TextStyle(
+                          color: AppTheme.textDark,
+                          fontSize: 18,
+                          fontWeight: FontWeight.w800,
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 12),
-                    LayoutBuilder(
-                      builder: (context, constraints) {
-                        final int columns = constraints.maxWidth >= 580 ? 3 : 2;
-                        return GridView.builder(
-                          shrinkWrap: true,
-                          physics: const NeverScrollableScrollPhysics(),
-                          gridDelegate:
-                              SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: columns,
-                            mainAxisSpacing: 10,
-                            crossAxisSpacing: 10,
-                            mainAxisExtent: 115,
-                          ),
-                          itemCount: widget.options.length,
-                          itemBuilder: (context, index) {
-                            final DriverPackageOption option =
-                                widget.options[index];
-                            final bool isSelected = option.key == _selectedPlan;
-                            return InkWell(
-                              onTap: () {
-                                setState(() {
-                                  _selectedPlan = option.key;
-                                  _duration = 1;
-                                });
-                              },
-                              borderRadius: BorderRadius.circular(12),
-                              child: Container(
-                                padding: const EdgeInsets.all(12),
-                                decoration: BoxDecoration(
-                                  color: isSelected
-                                      ? const Color(0xFFFFF4CF)
-                                      : Colors.white,
-                                  borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(
-                                    color: isSelected
-                                        ? AppTheme.accent
-                                        : const Color(0xFFE1E4EA),
-                                    width: isSelected ? 1.6 : 1,
-                                  ),
-                                ),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Row(
-                                      children: [
-                                        Icon(
-                                          option.icon,
-                                          color: AppTheme.textDark,
-                                          size: 20,
-                                        ),
-                                        const Spacer(),
-                                        if (isSelected)
-                                          const Icon(
-                                            Icons.check_circle_rounded,
-                                            color: Color(0xFFB78300),
-                                            size: 20,
-                                          ),
-                                      ],
-                                    ),
-                                    const Spacer(),
-                                    Text(
-                                      option.label,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(
-                                        color: AppTheme.textDark,
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.w800,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 3),
-                                    Text(
-                                      _cardSubtext(option),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(
-                                        color: AppTheme.textDark,
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.w800,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            );
-                          },
-                        );
-                      },
-                    ),
-                    if (durations.isNotEmpty) ...[
-                      const SizedBox(height: 20),
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(14),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: const Color(0xFFE1E4EA)),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Text(
-                                  _durationTitle(_selectedPlan),
-                                  style: const TextStyle(
-                                    color: AppTheme.textDark,
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w800,
-                                  ),
-                                ),
-                                const Spacer(),
-                                Text(
-                                  _durationUnitLabel(_selectedPlan, _duration),
-                                  style: const TextStyle(
-                                    color: Color(0xFF7A6030),
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w800,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 10),
-                            DropdownButtonFormField<int>(
-                              value: durations.contains(_duration) ? _duration : durations.first,
-                              decoration: InputDecoration(
-                                filled: true,
-                                fillColor: const Color(0xFFF8F9FC),
-                                contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                                border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(10),
-                                  borderSide: const BorderSide(color: Color(0xFFE1E4EA)),
-                                ),
-                                enabledBorder: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(10),
-                                  borderSide: const BorderSide(color: Color(0xFFE1E4EA)),
-                                ),
-                                focusedBorder: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(10),
-                                  borderSide: const BorderSide(color: AppTheme.accent, width: 1.5),
-                                ),
-                              ),
-                              dropdownColor: Colors.white,
-                              icon: const Icon(Icons.arrow_drop_down_rounded, color: AppTheme.textDark),
-                              items: durations.map((int duration) {
-                                return DropdownMenuItem<int>(
-                                  value: duration,
-                                  child: Text(
-                                    _durationUnitLabel(_selectedPlan, duration),
-                                    style: const TextStyle(
-                                      color: AppTheme.textDark,
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                );
-                              }).toList(),
-                              onChanged: (int? newValue) {
-                                if (newValue != null) {
-                                  setState(() {
-                                    _duration = newValue;
-                                  });
-                                }
-                              },
-                            ),
-                          ],
-                        ),
+                      const SizedBox(height: 12),
+                      for (final DriverPackageOption option in widget.options)
+                        _buildOptionCard(option),
+                      if (_hasDuration(_selectedPlan)) ...[
+                        const SizedBox(height: 6),
+                        _buildDurationStepper(),
+                      ],
+                      const SizedBox(height: 12),
+                      _buildSummary(
+                        selectedOption,
+                        effectiveDuration,
+                        totalAmount,
                       ),
                     ],
-                    const SizedBox(height: 12),
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFFFF4CF),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: const Color(0xFFF0D67A)),
-                      ),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  selectedOption.label,
-                                  style: const TextStyle(
-                                    color: AppTheme.textDark,
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w800,
-                                  ),
-                                ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  durations.isEmpty
-                                      ? 'Fixed Stay'
-                                      : _durationUnitLabel(_selectedPlan, _duration),
-                                  style: const TextStyle(
-                                    color: Color(0xFF565C6B),
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          Text(
-                            _amountText(totalAmount),
-                            style: const TextStyle(
-                              color: AppTheme.textDark,
-                              fontSize: 24,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
               ),
             ),
-            SafeArea(
-              top: false,
-              minimum: const EdgeInsets.fromLTRB(16, 10, 16, 14),
-              child: SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: _continue,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppTheme.accent,
-                    foregroundColor: const Color(0xFF22252C),
-                    minimumSize: const Size.fromHeight(50),
-                    elevation: 0,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
+            Container(
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                border: Border(top: BorderSide(color: Color(0xFFE8EAF0))),
+              ),
+              child: SafeArea(
+                top: false,
+                minimum: const EdgeInsets.fromLTRB(16, 12, 16, 14),
+                child: Row(
+                  children: [
+                    Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Total',
+                          style: TextStyle(
+                            color: AppTheme.textMuted,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        Text(
+                          _amountText(totalAmount),
+                          style: const TextStyle(
+                            color: AppTheme.textDark,
+                            fontSize: 22,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ],
                     ),
-                  ),
-                  child: const Text(
-                    'Continue',
-                    style: TextStyle(fontWeight: FontWeight.w800),
-                  ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: _continue,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppTheme.accent,
+                          foregroundColor: const Color(0xFF22252C),
+                          minimumSize: const Size.fromHeight(50),
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        child: const Text(
+                          'Continue',
+                          style: TextStyle(fontWeight: FontWeight.w800),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),

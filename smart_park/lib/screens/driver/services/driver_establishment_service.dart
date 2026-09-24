@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import '../../../services/operating_hours.dart';
 
 enum DriverSortOption { none, nearest, mostSlots }
 
@@ -12,25 +13,23 @@ class DriverEstablishmentService {
 
   static LatLng? extractLatLng(Map<String, dynamic> data) {
     final dynamic locationValue = data['location'];
-    final GeoPoint? geoPoint = locationValue is GeoPoint
-      ? locationValue
-      : null;
+    final GeoPoint? geoPoint = locationValue is GeoPoint ? locationValue : null;
     final Map<String, dynamic>? locationMap = locationValue is Map
-      ? locationValue.map<String, dynamic>(
-        (dynamic key, dynamic value) => MapEntry(key.toString(), value),
-        )
-      : null;
+        ? locationValue.map<String, dynamic>(
+            (dynamic key, dynamic value) => MapEntry(key.toString(), value),
+          )
+        : null;
     final num? latitudeValue = data['latitude'] as num?;
     final num? longitudeValue = data['longitude'] as num?;
 
     final double? latitude =
-      geoPoint?.latitude ??
-      (locationMap?['latitude'] as num?)?.toDouble() ??
-      latitudeValue?.toDouble();
+        geoPoint?.latitude ??
+        (locationMap?['latitude'] as num?)?.toDouble() ??
+        latitudeValue?.toDouble();
     final double? longitude =
-      geoPoint?.longitude ??
-      (locationMap?['longitude'] as num?)?.toDouble() ??
-      longitudeValue?.toDouble();
+        geoPoint?.longitude ??
+        (locationMap?['longitude'] as num?)?.toDouble() ??
+        longitudeValue?.toDouble();
     if (latitude == null || longitude == null) {
       return null;
     }
@@ -54,65 +53,8 @@ class DriverEstablishmentService {
     );
   }
 
-  static bool isOpenNow(Map<String, dynamic> establishment) {
-    final String hours = ((establishment['operatingHours'] as String?) ?? '')
-        .trim();
-    if (hours.isEmpty) {
-      return false;
-    }
-
-    final String lower = hours.toLowerCase();
-    if (lower.contains('24') || lower.contains('open 24')) {
-      return true;
-    }
-
-    final List<String> parts = hours.split('-');
-    if (parts.length != 2) {
-      return false;
-    }
-
-    final int? openMinutes = _parseTimeToMinutes(parts[0].trim());
-    final int? closeMinutes = _parseTimeToMinutes(parts[1].trim());
-    if (openMinutes == null || closeMinutes == null) {
-      return false;
-    }
-
-    final DateTime now = DateTime.now();
-    final int nowMinutes = now.hour * 60 + now.minute;
-
-    if (openMinutes == closeMinutes) {
-      return true;
-    }
-
-    if (openMinutes < closeMinutes) {
-      return nowMinutes >= openMinutes && nowMinutes < closeMinutes;
-    }
-
-    return nowMinutes >= openMinutes || nowMinutes < closeMinutes;
-  }
-
-  static int? _parseTimeToMinutes(String raw) {
-    final RegExp match = RegExp(r'^(\d{1,2})(?::(\d{2}))?\s*([AaPp][Mm])$');
-    final Match? m = match.firstMatch(raw);
-    if (m == null) {
-      return null;
-    }
-
-    int hour = int.tryParse(m.group(1) ?? '') ?? -1;
-    final int minute = int.tryParse(m.group(2) ?? '0') ?? 0;
-    final String suffix = (m.group(3) ?? '').toUpperCase();
-
-    if (hour < 1 || hour > 12 || minute < 0 || minute > 59) {
-      return null;
-    }
-
-    hour = hour % 12;
-    if (suffix == 'PM') {
-      hour += 12;
-    }
-
-    return hour * 60 + minute;
-  }
+  static bool isOpenNow(Map<String, dynamic> establishment) =>
+      OperatingHours.parse(establishment).isOpenAt(DateTime.now());
 
   static List<Map<String, dynamic>> filterAndSort({
     required List<Map<String, dynamic>> establishments,
@@ -123,8 +65,7 @@ class DriverEstablishmentService {
   }) {
     final String query = searchQuery.trim().toLowerCase();
 
-    final List<Map<String, dynamic>> filtered =
-        query.isEmpty
+    final List<Map<String, dynamic>> filtered = query.isEmpty
         ? List<Map<String, dynamic>>.from(establishments)
         : establishments.where((Map<String, dynamic> data) {
             final String name = ((data['name'] as String?) ?? '').toLowerCase();
@@ -133,20 +74,17 @@ class DriverEstablishmentService {
             return name.contains(query) || address.contains(query);
           }).toList();
 
-    final List<Map<String, dynamic>> displayed = filtered
-        .where((Map<String, dynamic> establishment) {
-          if (!openNowOnly) {
-            return true;
-          }
-          return isOpenNow(establishment);
-        })
-        .toList();
+    final List<Map<String, dynamic>> displayed = filtered.where((
+      Map<String, dynamic> establishment,
+    ) {
+      if (!openNowOnly) {
+        return true;
+      }
+      return isOpenNow(establishment);
+    }).toList();
 
     if (sortOption == DriverSortOption.nearest) {
-      displayed.sort((
-        Map<String, dynamic> a,
-        Map<String, dynamic> b,
-      ) {
+      displayed.sort((Map<String, dynamic> a, Map<String, dynamic> b) {
         return distanceToUserMeters(
           establishment: a,
           currentPosition: currentPosition,
@@ -158,10 +96,7 @@ class DriverEstablishmentService {
         );
       });
     } else if (sortOption == DriverSortOption.mostSlots) {
-      displayed.sort((
-        Map<String, dynamic> a,
-        Map<String, dynamic> b,
-      ) {
+      displayed.sort((Map<String, dynamic> a, Map<String, dynamic> b) {
         final int aSlots = ((a['availability'] as num?) ?? 0).toInt();
         final int bSlots = ((b['availability'] as num?) ?? 0).toInt();
         return bSlots.compareTo(aSlots);

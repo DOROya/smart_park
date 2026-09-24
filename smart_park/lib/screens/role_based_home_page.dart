@@ -55,21 +55,20 @@ class _RoleBasedHomePageState extends State<RoleBasedHomePage> {
   }
 
   Map<String, dynamic>? _pickBestUserData(
-    QuerySnapshot<Map<String, dynamic>> snapshot,
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
   ) {
-    if (snapshot.docs.isEmpty) {
+    if (docs.isEmpty) {
       return null;
     }
 
-    for (final QueryDocumentSnapshot<Map<String, dynamic>> doc
-        in snapshot.docs) {
+    for (final QueryDocumentSnapshot<Map<String, dynamic>> doc in docs) {
       final Map<String, dynamic> data = doc.data();
       if (_extractRole(data) != null) {
         return data;
       }
     }
 
-    return snapshot.docs.first.data();
+    return docs.first.data();
   }
 
   Future<DocumentSnapshot<Map<String, dynamic>>> _readUserDocWithRetry({
@@ -94,15 +93,19 @@ class _RoleBasedHomePageState extends State<RoleBasedHomePage> {
     }
   }
 
-  Future<QuerySnapshot<Map<String, dynamic>>> _queryUsersWithRetry({
+  /// Legacy lookups only; security rules allow them just for the signed-in
+  /// user's own records, so a denied query is treated as "no match".
+  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>>
+  _queryUsersWithRetry({
     required Query<Map<String, dynamic>> query,
     required User authenticatedUser,
     required bool hasRetriedAfterTokenRefresh,
   }) async {
     try {
-      return await query.get();
+      return (await query.get()).docs;
     } on FirebaseException catch (error) {
-      if (!hasRetriedAfterTokenRefresh && error.code == 'permission-denied') {
+      if (error.code != 'permission-denied') rethrow;
+      if (!hasRetriedAfterTokenRefresh) {
         await authenticatedUser.getIdToken(true);
         return _queryUsersWithRetry(
           query: query,
@@ -110,7 +113,7 @@ class _RoleBasedHomePageState extends State<RoleBasedHomePage> {
           hasRetriedAfterTokenRefresh: true,
         );
       }
-      rethrow;
+      return const <QueryDocumentSnapshot<Map<String, dynamic>>>[];
     }
   }
 
@@ -138,7 +141,7 @@ class _RoleBasedHomePageState extends State<RoleBasedHomePage> {
     final CollectionReference<Map<String, dynamic>> usersCollection =
         FirebaseFirestore.instance.collection('users');
 
-    final QuerySnapshot<Map<String, dynamic>> byUserId =
+    final List<QueryDocumentSnapshot<Map<String, dynamic>>> byUserId =
         await _queryUsersWithRetry(
           query: usersCollection.where('userID', isEqualTo: uid).limit(10),
           authenticatedUser: authenticatedUser,
@@ -149,12 +152,12 @@ class _RoleBasedHomePageState extends State<RoleBasedHomePage> {
       return bestByUserId;
     }
 
-    final QuerySnapshot<Map<String, dynamic>> byUserIdLowercaseKey =
-        await _queryUsersWithRetry(
-          query: usersCollection.where('userId', isEqualTo: uid).limit(10),
-          authenticatedUser: authenticatedUser,
-          hasRetriedAfterTokenRefresh: hasRetriedAfterTokenRefresh,
-        );
+    final List<QueryDocumentSnapshot<Map<String, dynamic>>>
+    byUserIdLowercaseKey = await _queryUsersWithRetry(
+      query: usersCollection.where('userId', isEqualTo: uid).limit(10),
+      authenticatedUser: authenticatedUser,
+      hasRetriedAfterTokenRefresh: hasRetriedAfterTokenRefresh,
+    );
     final Map<String, dynamic>? bestByUserIdLowercaseKey = _pickBestUserData(
       byUserIdLowercaseKey,
     );
@@ -163,7 +166,7 @@ class _RoleBasedHomePageState extends State<RoleBasedHomePage> {
     }
 
     for (final String email in emailCandidates) {
-      final QuerySnapshot<Map<String, dynamic>> byEmail =
+      final List<QueryDocumentSnapshot<Map<String, dynamic>>> byEmail =
           await _queryUsersWithRetry(
             query: usersCollection.where('email', isEqualTo: email).limit(10),
             authenticatedUser: authenticatedUser,
@@ -257,7 +260,7 @@ class _RoleBasedHomePageState extends State<RoleBasedHomePage> {
     }
 
     for (final String email in emailCandidates) {
-      final QuerySnapshot<Map<String, dynamic>> staffByEmail =
+      final List<QueryDocumentSnapshot<Map<String, dynamic>>> staffByEmail =
           await _queryUsersWithRetry(
             query: FirebaseFirestore.instance
                 .collection('staff_accounts')
@@ -266,7 +269,7 @@ class _RoleBasedHomePageState extends State<RoleBasedHomePage> {
             authenticatedUser: authenticatedUser,
             hasRetriedAfterTokenRefresh: hasRetriedAfterTokenRefresh,
           );
-      if (staffByEmail.docs.isNotEmpty) {
+      if (staffByEmail.isNotEmpty) {
         await _backfillUserDocumentBestEffort(
           uid: uid,
           email: rawEmail,

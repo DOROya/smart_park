@@ -1,3 +1,5 @@
+// ignore_for_file: invalid_use_of_protected_member
+
 part of 'package:smart_park/screens/parking_owner_home_screen.dart';
 
 extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
@@ -29,58 +31,11 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
         fontSize: 13,
         fontWeight: FontWeight.w500,
       ),
-      hintStyle: const TextStyle(
-        color: Color(0xFF9AA0AE),
-        fontSize: 12,
-      ),
+      hintStyle: const TextStyle(color: Color(0xFF9AA0AE), fontSize: 12),
     );
   }
 
-  Widget _buildTabTitle(String title, String subtitle) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          title,
-          style: const TextStyle(
-            fontSize: 24,
-            fontWeight: FontWeight.w700,
-            color: Color(0xFF1E2330),
-            letterSpacing: -0.2,
-          ),
-        ),
-        const SizedBox(height: 6),
-        Text(
-          subtitle,
-          style: const TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w500,
-            color: Color(0xFF737A88),
-          ),
-        ),
-      ],
-    );
-  }
-
-  String _formatShortDate(DateTime dateTime) {
-    const List<String> months = <String>[
-      'Jan',
-      'Feb',
-      'Mar',
-      'Apr',
-      'May',
-      'Jun',
-      'Jul',
-      'Aug',
-      'Sep',
-      'Oct',
-      'Nov',
-      'Dec',
-    ];
-    final String month = months[dateTime.month - 1];
-    final String day = dateTime.day.toString().padLeft(2, '0');
-    return '$month $day, ${dateTime.year}';
-  }
+  String _formatShortDate(DateTime dateTime) => spFormatDate(dateTime);
 
   Widget _buildBody({
     required String ownerId,
@@ -102,148 +57,492 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
     }
   }
 
+  /// Resolves the owner's facility id, falling back to a lookup by ownerId
+  /// for accounts whose user doc does not store it.
+  Widget _withFacilityId({
+    required String ownerId,
+    required Map<String, dynamic> ownerData,
+    required Widget Function(String facilityId, bool resolving) builder,
+  }) {
+    final String initialFacilityId = _resolveFacilityId(ownerData);
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: initialFacilityId.isEmpty
+          ? cachedStream(
+              'owner_facility_$ownerId',
+              () => FirebaseFirestore.instance
+                  .collection('establishments')
+                  .where('ownerId', isEqualTo: ownerId)
+                  .limit(1)
+                  .snapshots(),
+            )
+          : null,
+      builder:
+          (
+            BuildContext context,
+            AsyncSnapshot<QuerySnapshot<Map<String, dynamic>>> estSnapshot,
+          ) {
+            String facilityId = initialFacilityId;
+            if (facilityId.isEmpty &&
+                estSnapshot.hasData &&
+                estSnapshot.data!.docs.isNotEmpty) {
+              facilityId = estSnapshot.data!.docs.first.id;
+            }
+            final bool resolving =
+                initialFacilityId.isEmpty &&
+                estSnapshot.connectionState == ConnectionState.waiting;
+            return builder(facilityId, resolving);
+          },
+    );
+  }
+
   Widget _buildFacilityTab({
     required String ownerId,
     required Map<String, dynamic> ownerData,
   }) {
-    final String initialEstablishmentId = _resolveFacilityId(ownerData);
+    final String firstName = ((ownerData['firstName'] as String?) ?? '').trim();
 
-    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: initialEstablishmentId.isEmpty
-          ? FirebaseFirestore.instance
-              .collection('establishments')
-              .where('ownerId', isEqualTo: ownerId)
-              .limit(1)
-              .snapshots()
-          : null,
-      builder: (context, estSnapshot) {
-        String establishmentId = initialEstablishmentId;
-        if (establishmentId.isEmpty &&
-            estSnapshot.hasData &&
-            estSnapshot.data!.docs.isNotEmpty) {
-          establishmentId = estSnapshot.data!.docs.first.id;
-        }
-        final bool hasRegisteredFacility = establishmentId.isNotEmpty;
-
-        return ListView(
-          padding: const EdgeInsets.only(top: 8),
-          children: [
-            _buildTabTitle(
-              'Facility',
-              'Register and manage your parking establishment details.',
-            ),
-            const SizedBox(height: 14),
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: <Color>[Color(0xFFFFEAA8), Color(0xFFF7C846)],
+    return _withFacilityId(
+      ownerId: ownerId,
+      ownerData: ownerData,
+      builder: (String establishmentId, bool resolving) {
+        final bool hasFacility = establishmentId.isNotEmpty;
+        final DateTime now = DateTime.now();
+        final Widget heroButton = SpHeroButton(
+          icon: hasFacility ? Icons.edit_rounded : Icons.add_business_rounded,
+          label: hasFacility ? 'Update Facility' : 'Register Facility',
+          onPressed: () =>
+              _openFacilityDialog(ownerId: ownerId, ownerData: ownerData),
+        );
+        // A full-width button reads as a stray bar across a tablet banner.
+        final Widget facilityButton = _isTablet
+            ? Align(
+                alignment: Alignment.centerLeft,
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 280),
+                  child: heroButton,
                 ),
-                borderRadius: BorderRadius.circular(16),
-                boxShadow: const [
-                  BoxShadow(
-                    color: Color(0x22000000),
-                    blurRadius: 10,
-                    offset: Offset(0, 5),
-                  ),
+              )
+            : heroButton;
+        final String greeting = firstName.isEmpty
+            ? spGreeting(now)
+            : '${spGreeting(now)}, $firstName';
+
+        if (!hasFacility) {
+          return ListView(
+            padding: const EdgeInsets.only(top: 8),
+            children: [
+              SpHeroBanner(
+                title: greeting,
+                badge: 'Owner',
+                details: <(IconData, String)>[
+                  (Icons.storefront_rounded, 'No facility registered yet'),
+                  (Icons.calendar_today_rounded, spFormatDate(now)),
                 ],
+                action: facilityButton,
               ),
-              child: Row(
-                children: [
-                  Container(
-                    width: 48,
-                    height: 48,
-                    decoration: BoxDecoration(
-                      color: const Color(0x35FFFFFF),
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    child: const Icon(
-                      Icons.storefront_rounded,
-                      color: Color(0xFF2F3544),
-                      size: 26,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      hasRegisteredFacility
-                          ? 'Facility linked to your account'
-                          : 'No facility registered yet',
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFF1F2532),
-                      ),
-                    ),
-                  ),
-                ],
+              const SizedBox(height: 16),
+              if (resolving)
+                const Center(child: CircularProgressIndicator())
+              else
+                const SpEmptyState(
+                  icon: Icons.add_business_rounded,
+                  message:
+                      'Register your facility to start onboarding staff and '
+                      'accepting drivers. An admin reviews it before it goes '
+                      'live.',
+                ),
+            ],
+          );
+        }
+
+        return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+          stream: cachedStream(
+            'establishment_$establishmentId',
+            () => FirebaseFirestore.instance
+                .collection('establishments')
+                .doc(establishmentId)
+                .snapshots(),
+          ),
+          builder: (context, facilitySnapshot) {
+            return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+              stream: cachedStream(
+                'details_$establishmentId',
+                () => FirebaseFirestore.instance
+                    .collection('establishment_details')
+                    .doc(establishmentId)
+                    .snapshots(),
               ),
-            ),
-            const SizedBox(height: 12),
-            _OwnerSectionCard(
-              title: 'Facility Setup',
-              subtitle: hasRegisteredFacility
-                  ? 'Your establishment ID is shown below.'
-                  : 'Create your establishment to start onboarding staff.',
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF8F9FC),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: const Color(0xFFE4E7EF)),
-                    ),
-                    child: Text(
-                      hasRegisteredFacility
-                          ? 'Facility ID: $establishmentId'
-                          : 'Facility ID: Not available yet',
-                      style: const TextStyle(
-                        color: Color(0xFF596173),
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
+              builder: (context, detailsSnapshot) {
+                return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                  stream: cachedStream(
+                    'activity_$establishmentId',
+                    () => FirebaseFirestore.instance
+                        .collection('activity_logs')
+                        .where('establishmentID', isEqualTo: establishmentId)
+                        .snapshots(),
                   ),
-                  const SizedBox(height: 12),
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton.icon(
-                      onPressed: () => _openFacilityDialog(
-                        ownerId: ownerId,
-                        ownerData: ownerData,
-                      ),
-                      icon: Icon(
-                        hasRegisteredFacility
-                            ? Icons.edit_rounded
-                            : Icons.add_business_rounded,
-                      ),
-                      label: Text(
-                        hasRegisteredFacility
-                            ? 'Update Facility'
-                            : 'Register Facility',
-                      ),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppTheme.accent,
-                        foregroundColor: const Color(0xFF22252C),
-                        minimumSize: const Size(double.infinity, 48),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
+                  builder: (context, activitySnapshot) {
+                    final Map<String, dynamic> facility =
+                        facilitySnapshot.data?.data() ?? <String, dynamic>{};
+                    final Map<String, dynamic>? details = detailsSnapshot.data
+                        ?.data();
+                    final SpActivitySummary
+                    summary = SpActivitySummary.fromLogs(
+                      (activitySnapshot.data?.docs ??
+                              <QueryDocumentSnapshot<Map<String, dynamic>>>[])
+                          .map(
+                            (QueryDocumentSnapshot<Map<String, dynamic>> doc) =>
+                                doc.data(),
+                          ),
+                      now,
+                    );
+                    final String facilityName =
+                        ((facility['name'] as String?) ?? '').trim();
+                    final Map<dynamic, dynamic> slotCounts =
+                        (details?['slotCounts'] as Map<dynamic, dynamic>?) ??
+                        <dynamic, dynamic>{};
+                    final int carSlots = ((slotCounts['car'] as num?) ?? 0)
+                        .toInt();
+                    final int motorcycleSlots =
+                        ((slotCounts['motorcycle'] as num?) ?? 0).toInt();
+                    final int slotSum = carSlots + motorcycleSlots;
+                    final int totalSlots = slotSum > 0
+                        ? slotSum
+                        : ((facility['availability'] as num?) ?? 0).toInt();
+
+                    if (_isTablet) {
+                      return _buildTabletFacilityDashboard(
+                        greeting: greeting,
+                        facilityName: facilityName,
+                        facilityButton: facilityButton,
+                        now: now,
+                        details: details,
+                        summary: summary,
+                        slotsCard: SpLiveSlotsCard(
+                          establishmentId: establishmentId,
+                          totalSlots: totalSlots,
+                          fallbackOccupied: summary.insideNow,
+                          carSlots: carSlots,
+                          motorcycleSlots: motorcycleSlots,
                         ),
-                        elevation: 0,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
+                        detailsCard: _buildFacilityDetailsCard(
+                          establishmentId: establishmentId,
+                          facility: facility,
+                          details: details ?? <String, dynamic>{},
+                        ),
+                      );
+                    }
+
+                    return ListView(
+                      padding: const EdgeInsets.only(top: 8),
+                      children: [
+                        SpHeroBanner(
+                          title: greeting,
+                          badge: 'Owner',
+                          details: <(IconData, String)>[
+                            (
+                              Icons.storefront_rounded,
+                              facilityName.isEmpty
+                                  ? 'Your facility'
+                                  : facilityName,
+                            ),
+                            (Icons.calendar_today_rounded, spFormatDate(now)),
+                          ],
+                          action: facilityButton,
+                        ),
+                        if (details != null) ...[
+                          const SizedBox(height: 12),
+                          FacilityReviewStatusBanner(
+                            status: details['status'] as String?,
+                            rejectionReason:
+                                details['rejectionReason'] as String?,
+                          ),
+                        ],
+                        const SizedBox(height: 16),
+                        const SpSectionLabel("Today's Activity"),
+                        const SizedBox(height: 10),
+                        SpDailyActivityTiles(summary: summary),
+                        const SizedBox(height: 16),
+                        SpLiveSlotsCard(
+                          establishmentId: establishmentId,
+                          totalSlots: totalSlots,
+                          fallbackOccupied: summary.insideNow,
+                          carSlots: carSlots,
+                          motorcycleSlots: motorcycleSlots,
+                        ),
+                        const SizedBox(height: 16),
+                        _buildFacilityDetailsCard(
+                          establishmentId: establishmentId,
+                          facility: facility,
+                          details: details ?? <String, dynamic>{},
+                        ),
+                        const SizedBox(height: 16),
+                        SpSectionLabel(
+                          'Recent Scans',
+                          trailing: summary.dayLogs.isEmpty
+                              ? null
+                              : TextButton(
+                                  onPressed: () =>
+                                      setState(() => _selectedIndex = 2),
+                                  child: const Text('View all'),
+                                ),
+                        ),
+                        const SizedBox(height: 6),
+                        if (summary.dayLogs.isEmpty)
+                          const SpEmptyState(message: 'No scans yet today.')
+                        else
+                          for (final Map<String, dynamic> data
+                              in summary.dayLogs.take(3))
+                            SpActivityCard(data: data),
+                      ],
+                    );
+                  },
+                );
+              },
+            );
+          },
         );
       },
+    );
+  }
+
+  /// Tablet facility dashboard: live activity on the left, capacity and
+  /// facility details on the right.
+  Widget _buildTabletFacilityDashboard({
+    required String greeting,
+    required String facilityName,
+    required Widget facilityButton,
+    required DateTime now,
+    required Map<String, dynamic>? details,
+    required SpActivitySummary summary,
+    required Widget slotsCard,
+    required Widget detailsCard,
+  }) {
+    return ListView(
+      padding: const EdgeInsets.only(top: 8),
+      children: [
+        SpHeroBanner(
+          title: greeting,
+          badge: 'Owner',
+          details: <(IconData, String)>[
+            (
+              Icons.storefront_rounded,
+              facilityName.isEmpty ? 'Your facility' : facilityName,
+            ),
+            (Icons.calendar_today_rounded, spFormatDate(now)),
+          ],
+          action: facilityButton,
+        ),
+        if (details != null) ...[
+          const SizedBox(height: 12),
+          FacilityReviewStatusBanner(
+            status: details['status'] as String?,
+            rejectionReason: details['rejectionReason'] as String?,
+          ),
+        ],
+        const SizedBox(height: 20),
+        const SpSectionLabel("Today's Activity"),
+        const SizedBox(height: 10),
+        SpDailyActivityTiles(summary: summary, singleRow: true),
+        const SizedBox(height: 20),
+        _ownerTabletColumns(
+          leftFlex: 3,
+          rightFlex: 2,
+          left: [
+            SpSectionLabel(
+              'Recent Scans',
+              trailing: summary.dayLogs.isEmpty
+                  ? null
+                  : TextButton(
+                      onPressed: () => setState(() => _selectedIndex = 2),
+                      child: const Text('View all'),
+                    ),
+            ),
+            const SizedBox(height: 6),
+            if (summary.dayLogs.isEmpty)
+              const SpEmptyState(message: 'No scans yet today.')
+            else
+              for (final Map<String, dynamic> data in summary.dayLogs.take(6))
+                SpActivityCard(data: data),
+          ],
+          right: [slotsCard, const SizedBox(height: 16), detailsCard],
+        ),
+      ],
+    );
+  }
+
+  bool get _isTablet => spIsTablet(context);
+
+  /// Two top-aligned columns for tablet layouts.
+  Widget _ownerTabletColumns({
+    required List<Widget> left,
+    required List<Widget> right,
+    int leftFlex = 1,
+    int rightFlex = 1,
+  }) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          flex: leftFlex,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: left,
+          ),
+        ),
+        const SizedBox(width: 20),
+        Expanded(
+          flex: rightFlex,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: right,
+          ),
+        ),
+      ],
+    );
+  }
+
+  String _formatRateLine(dynamic value) {
+    if (value is Map) {
+      final String initial = (value['initial'] ?? value['hourly'] ?? '')
+          .toString()
+          .trim();
+      final String perHour = (value['succeedingHour'] ?? '').toString().trim();
+      final String perDay = (value['succeedingDaily'] ?? value['daily'] ?? '')
+          .toString()
+          .trim();
+      if (initial.isEmpty) {
+        return 'Not set';
+      }
+      final List<String> parts = <String>[
+        'PHP $initial first $spBaseStayLabel',
+      ];
+      if (perHour.isNotEmpty) parts.add('+PHP $perHour/hr');
+      if (perDay.isNotEmpty) parts.add('PHP $perDay/day');
+      return parts.join(' · ');
+    }
+    final String text = (value ?? '').toString().trim();
+    return text.isEmpty ? 'Not set' : text;
+  }
+
+  Widget _buildDetailRow(IconData icon, String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 18, color: AppTheme.textMuted),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: AppTheme.textMuted,
+                  ),
+                ),
+                const SizedBox(height: 1),
+                Text(
+                  value,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                    color: AppTheme.textDark,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFacilityDetailsCard({
+    required String establishmentId,
+    required Map<String, dynamic> facility,
+    required Map<String, dynamic> details,
+  }) {
+    final Map<dynamic, dynamic> rates =
+        ((details['rates'] ?? details['ratesByType'])
+            as Map<dynamic, dynamic>?) ??
+        <dynamic, dynamic>{};
+    String read(dynamic value) {
+      final String text = ((value as String?) ?? '').trim();
+      return text.isEmpty ? 'Not provided' : text;
+    }
+
+    return SpSectionCard(
+      icon: Icons.storefront_outlined,
+      title: 'Facility Details',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildDetailRow(
+            Icons.location_on_outlined,
+            'Address',
+            read(facility['address']),
+          ),
+          _buildDetailRow(
+            Icons.schedule_rounded,
+            'Operating Hours',
+            read(facility['operatingHours']),
+          ),
+          _buildDetailRow(
+            Icons.directions_car_outlined,
+            'Car Rate',
+            _formatRateLine(rates['car']),
+          ),
+          _buildDetailRow(
+            Icons.two_wheeler_outlined,
+            'Motorcycle Rate',
+            _formatRateLine(rates['motorcycle']),
+          ),
+          Container(
+            padding: const EdgeInsets.fromLTRB(12, 4, 4, 4),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF6F7FA),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Row(
+              children: [
+                const Icon(
+                  Icons.tag_rounded,
+                  size: 16,
+                  color: AppTheme.textMuted,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    establishmentId,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF596173),
+                    ),
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'Copy facility ID',
+                  icon: const Icon(Icons.copy_rounded, size: 18),
+                  onPressed: () async {
+                    await Clipboard.setData(
+                      ClipboardData(text: establishmentId),
+                    );
+                    _showSnackBar('Facility ID copied.');
+                  },
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -251,32 +550,26 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
     required String ownerId,
     required Map<String, dynamic> ownerData,
   }) {
-    final String initialFacilityId = _resolveFacilityId(ownerData);
-    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: initialFacilityId.isEmpty
-          ? FirebaseFirestore.instance
-              .collection('establishments')
-              .where('ownerId', isEqualTo: ownerId)
-              .limit(1)
-              .snapshots()
-          : null,
-      builder: (BuildContext context,
-          AsyncSnapshot<QuerySnapshot<Map<String, dynamic>>> estSnapshot) {
-        String facilityId = initialFacilityId;
-        if (facilityId.isEmpty &&
-            estSnapshot.hasData &&
-            estSnapshot.data!.docs.isNotEmpty) {
-          facilityId = estSnapshot.data!.docs.first.id;
-        }
+    return _withFacilityId(
+      ownerId: ownerId,
+      ownerData: ownerData,
+      builder: (String facilityId, bool resolving) {
         if (facilityId.isEmpty) {
           return ListView(
             padding: const EdgeInsets.only(top: 8),
-            children: const <Widget>[
-              _OwnerSectionCard(
-                title: 'No Facility Linked',
-                subtitle: 'Register a facility to see gate activity.',
-                child: SizedBox.shrink(),
+            children: [
+              const SpPageHeader(
+                title: 'Activity',
+                subtitle: 'Gate scans recorded by your staff.',
               ),
+              const SizedBox(height: 16),
+              if (resolving)
+                const Center(child: CircularProgressIndicator())
+              else
+                const SpEmptyState(
+                  icon: Icons.storefront_outlined,
+                  message: 'Register a facility to see gate activity.',
+                ),
             ],
           );
         }
@@ -285,41 +578,32 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
     );
   }
 
+  String _initials(String name) {
+    final List<String> parts = name
+        .split(RegExp(r'\s+'))
+        .where((String part) => part.isNotEmpty)
+        .toList();
+    if (parts.isEmpty) return '?';
+    if (parts.length == 1) return parts.first[0].toUpperCase();
+    return '${parts.first[0]}${parts.last[0]}'.toUpperCase();
+  }
+
   Widget _buildStaffTab({
     required String ownerId,
     required Map<String, dynamic> ownerData,
   }) {
-    final String initialFacilityId = _resolveFacilityId(ownerData);
-
-    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: initialFacilityId.isEmpty
-          ? FirebaseFirestore.instance
-              .collection('establishments')
-              .where('ownerId', isEqualTo: ownerId)
-              .limit(1)
-              .snapshots()
-          : null,
-      builder: (context, estSnapshot) {
-        String facilityId = initialFacilityId;
-        if (facilityId.isEmpty &&
-            estSnapshot.hasData &&
-            estSnapshot.data!.docs.isNotEmpty) {
-          facilityId = estSnapshot.data!.docs.first.id;
-        }
+    return _withFacilityId(
+      ownerId: ownerId,
+      ownerData: ownerData,
+      builder: (String facilityId, bool resolving) {
         final bool hasFacilityId = facilityId.isNotEmpty;
 
-    return ListView(
-      padding: const EdgeInsets.only(top: 8),
-      children: [
-        _buildTabTitle(
-          'Staff',
-          'Create and manage staff accounts linked to your facility.',
-        ),
-        const SizedBox(height: 14),
-        _OwnerSectionCard(
+        final Widget addStaffCard = SpSectionCard(
+          icon: Icons.person_add_alt_1_rounded,
           title: 'Add Staff Member',
           subtitle: hasFacilityId
-              ? 'Enter a name - a login username and password are generated automatically.'
+              ? 'Enter a name. A login username and password are '
+                    'generated automatically.'
               : 'Register your facility first to enable staff onboarding.',
           child: Form(
             key: _staffFormKey,
@@ -342,195 +626,96 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
                   },
                 ),
                 const SizedBox(height: 12),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton.icon(
-                    onPressed: !hasFacilityId || _addingStaff
-                        ? null
-                        : () => _addStaff(ownerId: ownerId, facilityId: facilityId),
-                    icon: _addingStaff
-                        ? const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.person_add_alt_1_rounded),
-                    label: Text(_addingStaff ? 'Adding Staff...' : 'Add Staff'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppTheme.accent,
-                      foregroundColor: const Color(0xFF22252C),
-                      minimumSize: const Size(double.infinity, 48),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      elevation: 0,
-                    ),
-                  ),
+                SpPrimaryButton(
+                  icon: Icons.person_add_alt_1_rounded,
+                  label: _addingStaff ? 'Adding Staff...' : 'Add Staff',
+                  busy: _addingStaff,
+                  onPressed: hasFacilityId
+                      ? () =>
+                            _addStaff(ownerId: ownerId, facilityId: facilityId)
+                      : null,
                 ),
               ],
             ),
           ),
-        ),
-        const SizedBox(height: 12),
-        _OwnerSectionCard(
-          title: 'Active Staff',
-          subtitle: 'Accounts currently assigned under this owner.',
-          child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-            stream: FirebaseFirestore.instance
+        );
+        final Widget
+        staffListCard = StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+          stream: cachedStream(
+            'staff_$ownerId',
+            () => FirebaseFirestore.instance
                 .collection('staff_accounts')
                 .where('ownerId', isEqualTo: ownerId)
                 .snapshots(),
-            builder: (
-              BuildContext context,
-              AsyncSnapshot<QuerySnapshot<Map<String, dynamic>>> snapshot,
-            ) {
-              if (snapshot.hasError) {
-                return const Text(
-                  'Unable to load staff records right now.',
-                  style: TextStyle(color: Color(0xFF737A88)),
-                );
-              }
-
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Center(child: CircularProgressIndicator());
-              }
-
-              final List<QueryDocumentSnapshot<Map<String, dynamic>>> staffDocs =
-                  snapshot.data?.docs ??
-                  <QueryDocumentSnapshot<Map<String, dynamic>>>[];
-
-              if (staffDocs.isEmpty) {
-                return const Text(
-                  'No staff accounts yet. Add your first staff member above.',
-                  style: TextStyle(
-                    color: Color(0xFF737A88),
-                    fontWeight: FontWeight.w500,
-                  ),
-                );
-              }
-
-              return Column(
-                children: staffDocs.map((
-                  QueryDocumentSnapshot<Map<String, dynamic>> doc,
-                ) {
-                  final Map<String, dynamic> data = doc.data();
-                  final String rawName = (data['name'] as String?)?.trim() ?? '';
-                  final String name =
-                      rawName.isEmpty ? 'Unnamed Staff' : rawName;
-                  final String username =
-                      (data['username'] as String?)?.trim() ?? 'No username';
-                  return Container(
-                    margin: const EdgeInsets.only(bottom: 8),
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF8F9FC),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: const Color(0xFFE4E7EF)),
-                    ),
-                    child: Row(
-                      children: [
-                        Container(
-                          width: 36,
-                          height: 36,
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFFFF2CA),
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: const Icon(
-                            Icons.badge_rounded,
-                            size: 18,
-                            color: Color(0xFF3D4352),
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                name,
-                                style: const TextStyle(
-                                  color: Color(0xFF1E2330),
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
-                                username,
-                                style: const TextStyle(
-                                  color: Color(0xFF737A88),
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        IconButton(
-                          onPressed: () => _removeStaff(doc.id),
-                          icon: const Icon(
-                            Icons.delete_outline_rounded,
-                            color: Color(0xFFB14141),
-                          ),
-                          tooltip: 'Remove staff',
-                        ),
-                      ],
-                    ),
-                  );
-                }).toList(),
-              );
-            },
           ),
-        ),
-      ],
-    );
-      },
-    );
-  }
+          builder:
+              (
+                BuildContext context,
+                AsyncSnapshot<QuerySnapshot<Map<String, dynamic>>> snapshot,
+              ) {
+                final List<QueryDocumentSnapshot<Map<String, dynamic>>>
+                staffDocs =
+                    snapshot.data?.docs ??
+                    <QueryDocumentSnapshot<Map<String, dynamic>>>[];
 
-  Widget _buildCommissionsTab({
-    required String ownerId,
-    required Map<String, dynamic> ownerData,
-  }) {
-    final String initialFacilityId = _resolveFacilityId(ownerData);
+                Widget content;
+                if (snapshot.hasError) {
+                  content = const SpEmptyState(
+                    boxed: false,
+                    icon: Icons.error_outline_rounded,
+                    message: 'Unable to load staff records right now.',
+                  );
+                } else if (snapshot.connectionState ==
+                    ConnectionState.waiting) {
+                  content = const Center(child: CircularProgressIndicator());
+                } else if (staffDocs.isEmpty) {
+                  content = const SpEmptyState(
+                    boxed: false,
+                    icon: Icons.groups_outlined,
+                    message:
+                        'No staff accounts yet. Add your first staff '
+                        'member above.',
+                  );
+                } else {
+                  content = Column(
+                    children: [
+                      for (final QueryDocumentSnapshot<Map<String, dynamic>> doc
+                          in staffDocs)
+                        _buildStaffRow(doc),
+                    ],
+                  );
+                }
 
-    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: initialFacilityId.isEmpty
-          ? FirebaseFirestore.instance
-              .collection('establishments')
-              .where('ownerId', isEqualTo: ownerId)
-              .limit(1)
-              .snapshots()
-          : null,
-      builder: (
-        BuildContext context,
-        AsyncSnapshot<QuerySnapshot<Map<String, dynamic>>> estSnapshot,
-      ) {
-        String facilityId = initialFacilityId;
-        if (facilityId.isEmpty &&
-            estSnapshot.hasData &&
-            estSnapshot.data!.docs.isNotEmpty) {
-          facilityId = estSnapshot.data!.docs.first.id;
-        }
+                return SpSectionCard(
+                  icon: Icons.groups_rounded,
+                  title: 'Active Staff',
+                  trailing: staffDocs.isEmpty
+                      ? null
+                      : SpChip(
+                          label: '${staffDocs.length}',
+                          color: spExitColor,
+                        ),
+                  child: content,
+                );
+              },
+        );
 
-        if (facilityId.isEmpty &&
-            initialFacilityId.isEmpty &&
-            estSnapshot.connectionState == ConnectionState.waiting) {
+        const Widget header = SpPageHeader(
+          title: 'Staff',
+          subtitle: 'Create and manage staff accounts for your facility.',
+        );
+
+        if (_isTablet) {
           return ListView(
             padding: const EdgeInsets.only(top: 8),
             children: [
-              _buildTabTitle(
-                'Commissions',
-                'Track transaction commissions and payout progress.',
-              ),
-              const SizedBox(height: 14),
-              const _OwnerSectionCard(
-                title: 'Commissions',
-                subtitle: 'Loading facility information...',
-                child: Padding(
-                  padding: EdgeInsets.symmetric(vertical: 10),
-                  child: Center(child: CircularProgressIndicator()),
-                ),
+              header,
+              const SizedBox(height: 20),
+              _ownerTabletColumns(
+                leftFlex: 2,
+                rightFlex: 3,
+                left: [addStaffCard],
+                right: [staffListCard],
               ),
             ],
           );
@@ -539,17 +724,120 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
         return ListView(
           padding: const EdgeInsets.only(top: 8),
           children: [
-            _buildTabTitle(
-              'Commissions',
-              'Track transaction commissions and payout progress.',
+            header,
+            const SizedBox(height: 16),
+            addStaffCard,
+            const SizedBox(height: 12),
+            staffListCard,
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildStaffRow(QueryDocumentSnapshot<Map<String, dynamic>> doc) {
+    final Map<String, dynamic> data = doc.data();
+    final String rawName = (data['name'] as String?)?.trim() ?? '';
+    final String name = rawName.isEmpty ? 'Unnamed Staff' : rawName;
+    final String username = (data['username'] as String?)?.trim() ?? '';
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.fromLTRB(12, 10, 4, 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8F9FC),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFE8EAF0)),
+      ),
+      child: Row(
+        children: [
+          CircleAvatar(
+            radius: 20,
+            backgroundColor: AppTheme.accent.withValues(alpha: 0.3),
+            child: Text(
+              _initials(name),
+              style: const TextStyle(
+                fontWeight: FontWeight.w800,
+                color: AppTheme.textDark,
+              ),
             ),
-            const SizedBox(height: 14),
-            if (facilityId.isEmpty)
-              const _OwnerSectionCard(
-                title: 'No Facility Linked',
-                subtitle:
-                    'Register your facility first so commission records can be tracked here.',
-                child: SizedBox.shrink(),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: AppTheme.textDark,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.alternate_email_rounded,
+                      size: 13,
+                      color: AppTheme.textMuted,
+                    ),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: Text(
+                        username.isEmpty ? 'No username' : username,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: AppTheme.textMuted,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            onPressed: () => _removeStaff(doc.id, name),
+            icon: const Icon(
+              Icons.delete_outline_rounded,
+              color: spDeniedColor,
+            ),
+            tooltip: 'Remove staff',
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCommissionsTab({
+    required String ownerId,
+    required Map<String, dynamic> ownerData,
+  }) {
+    return _withFacilityId(
+      ownerId: ownerId,
+      ownerData: ownerData,
+      builder: (String facilityId, bool resolving) {
+        return ListView(
+          padding: const EdgeInsets.only(top: 8),
+          children: [
+            const SpPageHeader(
+              title: 'Finance',
+              subtitle: 'Your earnings, SmartPark commission and transactions.',
+            ),
+            const SizedBox(height: 16),
+            if (resolving)
+              const Center(child: CircularProgressIndicator())
+            else if (facilityId.isEmpty)
+              const SpEmptyState(
+                icon: Icons.storefront_outlined,
+                message:
+                    'Register your facility first so transactions can be '
+                    'tracked here.',
               )
             else
               _CommissionsListContent(
@@ -563,799 +851,183 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
     );
   }
 
-  Widget _buildProfileTab({
-    required String ownerId,
-    required String role,
-  }) {
+  Widget _buildProfileTab({required String ownerId, required String role}) {
     final String firstName = _profileFirstNameController.text.trim();
     final String lastName = _profileLastNameController.text.trim();
     final String displayName = '$firstName $lastName'.trim().isEmpty
         ? 'Parking Owner'
         : '$firstName $lastName'.trim();
+    final String email = _profileEmailController.text.trim();
+
+    final Widget identityCard = Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: <Color>[Color(0xFFFFEAA8), Color(0xFFF7C846)],
+        ),
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Row(
+        children: [
+          CircleAvatar(
+            radius: 30,
+            backgroundColor: const Color(0x40FFFFFF),
+            child: Text(
+              _initials(displayName),
+              style: const TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.w800,
+                color: Color(0xFF1F2532),
+              ),
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  displayName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFF1F2532),
+                  ),
+                ),
+                if (email.isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    email,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      color: Color(0xFF3D4658),
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 6),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 3,
+                  ),
+                  decoration: BoxDecoration(
+                    color: const Color(0x40FFFFFF),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: const Text(
+                    'Parking Owner',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF3D4658),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+    final Widget accountCard = SpSectionCard(
+      icon: Icons.manage_accounts_rounded,
+      title: 'Account Information',
+      subtitle: 'Personal details used across the platform.',
+      child: Column(
+        children: [
+          TextFormField(
+            controller: _profileFirstNameController,
+            decoration: _ownerFieldDecoration(
+              label: 'First Name',
+              icon: Icons.person_outline_rounded,
+            ),
+          ),
+          const SizedBox(height: 10),
+          TextFormField(
+            controller: _profileLastNameController,
+            decoration: _ownerFieldDecoration(
+              label: 'Last Name',
+              icon: Icons.person_outline_rounded,
+            ),
+          ),
+          const SizedBox(height: 10),
+          TextFormField(
+            controller: _profileEmailController,
+            decoration: _ownerFieldDecoration(
+              label: 'Email',
+              icon: Icons.alternate_email_rounded,
+            ),
+          ),
+          const SizedBox(height: 12),
+          SpPrimaryButton(
+            icon: Icons.save_rounded,
+            label: _savingProfile ? 'Saving Profile...' : 'Save Changes',
+            busy: _savingProfile,
+            onPressed: () => _saveProfile(ownerId, role),
+          ),
+        ],
+      ),
+    );
+    final Widget signOutButton = SizedBox(
+      width: double.infinity,
+      child: OutlinedButton.icon(
+        onPressed: _signOut,
+        icon: const Icon(Icons.logout_rounded),
+        label: const Text(
+          'Sign Out',
+          style: TextStyle(fontWeight: FontWeight.w700),
+        ),
+        style: OutlinedButton.styleFrom(
+          minimumSize: const Size(double.infinity, 48),
+          foregroundColor: const Color(0xFFAF2E2E),
+          side: const BorderSide(color: Color(0xFFF0C9C9)),
+          backgroundColor: const Color(0xFFFFF6F6),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+      ),
+    );
+
+    const Widget header = SpPageHeader(
+      title: 'Profile',
+      subtitle: 'Your account details and session.',
+    );
+
+    if (_isTablet) {
+      return ListView(
+        padding: const EdgeInsets.only(top: 8),
+        children: [
+          header,
+          const SizedBox(height: 20),
+          _ownerTabletColumns(
+            leftFlex: 2,
+            rightFlex: 3,
+            left: [identityCard, const SizedBox(height: 12), signOutButton],
+            right: [accountCard],
+          ),
+        ],
+      );
+    }
 
     return ListView(
       padding: const EdgeInsets.only(top: 8),
       children: [
-        _buildTabTitle(
-          'Profile',
-          'Maintain your account details and session settings.',
-        ),
-        const SizedBox(height: 14),
-        Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: <Color>[Color(0xFFFFEAA8), Color(0xFFF7C846)],
-            ),
-            borderRadius: BorderRadius.circular(16),
-            boxShadow: const [
-              BoxShadow(
-                color: Color(0x22000000),
-                blurRadius: 10,
-                offset: Offset(0, 5),
-              ),
-            ],
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 58,
-                height: 58,
-                decoration: BoxDecoration(
-                  color: const Color(0x35FFFFFF),
-                  borderRadius: BorderRadius.circular(18),
-                ),
-                child: const Icon(
-                  Icons.person_rounded,
-                  size: 30,
-                  color: Color(0xFF313645),
-                ),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      displayName,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFF1C2230),
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      _profileEmailController.text.trim(),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 13,
-                        color: Color(0xFF4C5362),
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
+        header,
+        const SizedBox(height: 16),
+        identityCard,
         const SizedBox(height: 12),
-        _OwnerSectionCard(
-          title: 'Account Information',
-          subtitle: 'Update your personal details used across the platform.',
-          child: Column(
-            children: [
-              TextFormField(
-                controller: _profileFirstNameController,
-                decoration: _ownerFieldDecoration(
-                  label: 'First Name',
-                  icon: Icons.person_outline_rounded,
-                ),
-              ),
-              const SizedBox(height: 10),
-              TextFormField(
-                controller: _profileLastNameController,
-                decoration: _ownerFieldDecoration(
-                  label: 'Last Name',
-                  icon: Icons.person_outline_rounded,
-                ),
-              ),
-              const SizedBox(height: 10),
-              TextFormField(
-                controller: _profileEmailController,
-                decoration: _ownerFieldDecoration(
-                  label: 'Email',
-                  icon: Icons.alternate_email_rounded,
-                ),
-              ),
-              const SizedBox(height: 12),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton.icon(
-                  onPressed:
-                      _savingProfile ? null : () => _saveProfile(ownerId, role),
-                  icon: _savingProfile
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.save_rounded),
-                  label: Text(
-                    _savingProfile ? 'Saving Profile...' : 'Save Changes',
-                  ),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppTheme.accent,
-                    foregroundColor: const Color(0xFF22252C),
-                    minimumSize: const Size(double.infinity, 48),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    elevation: 0,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 10),
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  onPressed: _signOut,
-                  icon: const Icon(Icons.logout_rounded),
-                  label: const Text('Sign Out'),
-                  style: OutlinedButton.styleFrom(
-                    minimumSize: const Size(double.infinity, 48),
-                    foregroundColor: const Color(0xFFAF2E2E),
-                    side: const BorderSide(color: Color(0xFFF0C9C9)),
-                    backgroundColor: const Color(0xFFFFF6F6),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
+        accountCard,
+        const SizedBox(height: 12),
+        signOutButton,
       ],
-    );
-  }
-}
-
-class _OwnerSectionCard extends StatelessWidget {
-  const _OwnerSectionCard({
-    required this.title,
-    required this.subtitle,
-    required this.child,
-  });
-
-  final String title;
-  final String subtitle;
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFE4E7EF)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            title,
-            style: const TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w700,
-              color: Color(0xFF1E2330),
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            subtitle,
-            style: const TextStyle(
-              color: Color(0xFF737A88),
-              fontSize: 12.5,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-          const SizedBox(height: 14),
-          child,
-        ],
-      ),
-    );
-  }
-}
-
-class _OwnerMetricTile extends StatelessWidget {
-  const _OwnerMetricTile({required this.label, required this.value});
-
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF8F9FC),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            label,
-            style: const TextStyle(
-              color: Color(0xFF737A88),
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            value,
-            style: const TextStyle(
-              color: Color(0xFF1E2330),
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-DateTime? _parseDateTime(dynamic value) {
-  if (value == null) return null;
-  if (value is Timestamp) return value.toDate();
-  if (value is DateTime) return value;
-  if (value is String) return DateTime.tryParse(value);
-  if (value is num) return DateTime.fromMillisecondsSinceEpoch(value.toInt());
-  return null;
-}
-
-class _CommissionRecord {
-  const _CommissionRecord({
-    required this.id,
-    required this.driverName,
-    required this.grossAmount,
-    required this.platformFee,
-    required this.netToOwner,
-    required this.status,
-    this.createdAt,
-  });
-
-  final String id;
-  final String driverName;
-  final double grossAmount;
-  final double platformFee;
-  final double netToOwner;
-  final String status;
-  final DateTime? createdAt;
-}
-
-class _CommissionsListContent extends StatelessWidget {
-  const _CommissionsListContent({
-    required this.facilityId,
-    required this.ownerId,
-    required this.formatShortDate,
-  });
-
-  final String facilityId;
-  final String ownerId;
-  final String Function(DateTime) formatShortDate;
-
-  @override
-  Widget build(BuildContext context) {
-    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: FirebaseFirestore.instance
-          .collection('transactions')
-          .snapshots(),
-      builder: (
-        BuildContext context,
-        AsyncSnapshot<QuerySnapshot<Map<String, dynamic>>> txSnapshot,
-      ) {
-        return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-          stream: FirebaseFirestore.instance
-              .collection('payment_splits')
-              .snapshots(),
-          builder: (
-            BuildContext context,
-            AsyncSnapshot<QuerySnapshot<Map<String, dynamic>>> splitSnapshot,
-          ) {
-            if (txSnapshot.hasError && splitSnapshot.hasError) {
-              return const _OwnerSectionCard(
-                title: 'Commissions',
-                subtitle: 'Unable to load commission records right now.',
-                child: SizedBox.shrink(),
-              );
-            }
-
-            if (txSnapshot.connectionState == ConnectionState.waiting &&
-                splitSnapshot.connectionState == ConnectionState.waiting) {
-              return const _OwnerSectionCard(
-                title: 'Commissions',
-                subtitle: 'Loading commission records...',
-                child: Padding(
-                  padding: EdgeInsets.symmetric(vertical: 10),
-                  child: Center(child: CircularProgressIndicator()),
-                ),
-              );
-            }
-
-            final List<QueryDocumentSnapshot<Map<String, dynamic>>> txDocs =
-                txSnapshot.data?.docs ??
-                    <QueryDocumentSnapshot<Map<String, dynamic>>>[];
-            final List<QueryDocumentSnapshot<Map<String, dynamic>>> splitDocs =
-                splitSnapshot.data?.docs ??
-                    <QueryDocumentSnapshot<Map<String, dynamic>>>[];
-
-            final Map<String, Map<String, dynamic>> splitByTxId =
-                <String, Map<String, dynamic>>{};
-            for (final QueryDocumentSnapshot<Map<String, dynamic>> doc in splitDocs) {
-              final Map<String, dynamic> data = doc.data();
-              final String estId = ((data['establishmentId'] as String?) ??
-                      (data['establishmentID'] as String?) ??
-                      '')
-                  .trim();
-              final String destAcc =
-                  ((data['destinationAccountId'] as String?) ?? '').trim();
-
-              if (estId == facilityId ||
-                  (facilityId.isNotEmpty && estId == facilityId) ||
-                  (ownerId.isNotEmpty && destAcc == ownerId)) {
-                final String txId =
-                    ((data['transactionId'] as String?) ?? doc.id).trim();
-                if (txId.isNotEmpty) {
-                  splitByTxId[txId] = data;
-                }
-              }
-            }
-
-            final Map<String, _CommissionRecord> recordMap =
-                <String, _CommissionRecord>{};
-
-            for (final QueryDocumentSnapshot<Map<String, dynamic>> doc in txDocs) {
-              final Map<String, dynamic> data = doc.data();
-              final String txEstId = ((data['establishmentId'] as String?) ??
-                      (data['establishmentID'] as String?) ??
-                      '')
-                  .trim();
-              final String txOwnerId =
-                  ((data['ownerId'] as String?) ?? '').trim();
-
-              final bool matchesFacility = (txEstId == facilityId) ||
-                  (facilityId.isNotEmpty && txEstId == facilityId) ||
-                  (ownerId.isNotEmpty && txOwnerId == ownerId);
-
-              if (!matchesFacility) {
-                continue;
-              }
-
-              final String txId = doc.id;
-              final Map<String, dynamic>? matchingSplit = splitByTxId[txId];
-
-              double grossAmount = 0;
-              double platformFee = 0;
-              double netToOwner = 0;
-              String status = ((data['status'] as String?) ??
-                      (data['paymentStatus'] as String?) ??
-                      'paid')
-                  .toUpperCase();
-              DateTime? createdAt = _parseDateTime(data['createdAt']) ??
-                  _parseDateTime(data['createdAtClient']);
-              String driverName =
-                  ((data['driverName'] as String?) ?? '').trim();
-              if (driverName.isEmpty) {
-                driverName =
-                    ((data['driverEmail'] as String?) ?? 'Driver').trim();
-              }
-
-              if (matchingSplit != null) {
-                grossAmount =
-                    ((matchingSplit['grossAmountCentavos'] as num?) ?? 0) / 100;
-                platformFee =
-                    ((matchingSplit['platformFeeCentavos'] as num?) ?? 0) / 100;
-                netToOwner =
-                    ((matchingSplit['netToOwnerCentavos'] as num?) ?? 0) / 100;
-                if (matchingSplit['status'] != null) {
-                  status =
-                      (matchingSplit['status'] as String).toUpperCase();
-                }
-                if (matchingSplit['createdAt'] != null) {
-                  createdAt = _parseDateTime(matchingSplit['createdAt']);
-                }
-              } else {
-                final double amount =
-                    ((data['amount'] as num?) ?? 0).toDouble();
-                final int grossCentavos =
-                    ((data['grossAmountCentavos'] as num?) ?? (amount * 100))
-                        .round();
-                final int feeCentavos =
-                    ((data['platformFeeCentavos'] as num?) ??
-                            (grossCentavos * 0.05))
-                        .round();
-                final int processorCentavos =
-                    ((data['estimatedProcessorFeeCentavos'] as num?) ??
-                            (grossCentavos * 0.02))
-                        .round();
-                final int netCentavos =
-                    grossCentavos - feeCentavos - processorCentavos;
-
-                grossAmount = grossCentavos / 100;
-                platformFee = feeCentavos / 100;
-                netToOwner = netCentavos / 100;
-              }
-
-              recordMap[txId] = _CommissionRecord(
-                id: txId,
-                driverName: driverName,
-                grossAmount: grossAmount,
-                platformFee: platformFee,
-                netToOwner: netToOwner,
-                status: status,
-                createdAt: createdAt,
-              );
-            }
-
-            for (final QueryDocumentSnapshot<Map<String, dynamic>> doc in splitDocs) {
-              final Map<String, dynamic> data = doc.data();
-              final String estId = ((data['establishmentId'] as String?) ??
-                      (data['establishmentID'] as String?) ??
-                      '')
-                  .trim();
-              final String destAcc =
-                  ((data['destinationAccountId'] as String?) ?? '').trim();
-              final bool matchesFacility = (estId == facilityId) ||
-                  (facilityId.isNotEmpty && estId == facilityId) ||
-                  (ownerId.isNotEmpty && destAcc == ownerId);
-
-              if (!matchesFacility) {
-                continue;
-              }
-
-              final String txId =
-                  ((data['transactionId'] as String?) ?? doc.id).trim();
-              if (!recordMap.containsKey(txId)) {
-                final double grossAmount =
-                    ((data['grossAmountCentavos'] as num?) ?? 0) / 100;
-                final double platformFee =
-                    ((data['platformFeeCentavos'] as num?) ?? 0) / 100;
-                final double netToOwner =
-                    ((data['netToOwnerCentavos'] as num?) ?? 0) / 100;
-                final String status =
-                    ((data['status'] as String?) ?? 'paid').toUpperCase();
-                final DateTime? createdAt = _parseDateTime(data['createdAt']);
-
-                recordMap[txId] = _CommissionRecord(
-                  id: txId,
-                  driverName: 'Driver',
-                  grossAmount: grossAmount,
-                  platformFee: platformFee,
-                  netToOwner: netToOwner,
-                  status: status,
-                  createdAt: createdAt,
-                );
-              }
-            }
-
-            final List<_CommissionRecord> records = recordMap.values.toList();
-            records.sort((_CommissionRecord a, _CommissionRecord b) {
-              final DateTime aDate =
-                  a.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0);
-              final DateTime bDate =
-                  b.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0);
-              return bDate.compareTo(aDate);
-            });
-
-            double totalRevenue = 0;
-            double totalCommission = 0;
-
-            for (final _CommissionRecord record in records) {
-              totalRevenue += record.grossAmount;
-              totalCommission += record.platformFee;
-            }
-
-            return Column(
-              children: [
-                _OwnerSectionCard(
-                  title: 'Commission Summary',
-                  subtitle: '${records.length} transaction(s) recorded',
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: _OwnerMetricTile(
-                          label: 'Revenue',
-                          value: 'PHP ${totalRevenue.toStringAsFixed(2)}',
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: _OwnerMetricTile(
-                          label: 'Commission',
-                          value:
-                              'PHP ${totalCommission.toStringAsFixed(2)}',
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 12),
-                _OwnerSectionCard(
-                  title: 'Recent Transactions',
-                  subtitle: 'Latest parking transactions for this facility.',
-                  child: records.isEmpty
-                      ? const Text(
-                          'No commission records yet.',
-                          style: TextStyle(
-                            color: Color(0xFF737A88),
-                            fontWeight: FontWeight.w500,
-                          ),
-                        )
-                      : Column(
-                          children: records.take(12).map((
-                            _CommissionRecord record,
-                          ) {
-                            final String dateText = record.createdAt == null
-                                ? 'Date unavailable'
-                                : formatShortDate(record.createdAt!);
-
-                            return Container(
-                              margin: const EdgeInsets.only(bottom: 8),
-                              padding: const EdgeInsets.all(12),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFF8F9FC),
-                                borderRadius: BorderRadius.circular(12),
-                                border: Border.all(
-                                  color: const Color(0xFFE4E7EF),
-                                ),
-                              ),
-                              child: Row(
-                                children: [
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Row(
-                                          children: [
-                                            Text(
-                                              'PHP ${record.grossAmount.toStringAsFixed(2)}',
-                                              style: const TextStyle(
-                                                color: Color(0xFF1E2330),
-                                                fontWeight: FontWeight.w700,
-                                              ),
-                                            ),
-                                            if (record.driverName.isNotEmpty) ...[
-                                              const SizedBox(width: 8),
-                                              Flexible(
-                                                child: Text(
-                                                  '· ${record.driverName}',
-                                                  maxLines: 1,
-                                                  overflow: TextOverflow.ellipsis,
-                                                  style: const TextStyle(
-                                                    color: Color(0xFF737A88),
-                                                    fontSize: 12,
-                                                    fontWeight: FontWeight.w500,
-                                                  ),
-                                                ),
-                                              ),
-                                            ],
-                                          ],
-                                        ),
-                                        const SizedBox(height: 2),
-                                        Text(
-                                          'Commission: PHP ${record.platformFee.toStringAsFixed(2)} · Payout: PHP ${record.netToOwner.toStringAsFixed(2)}',
-                                          style: const TextStyle(
-                                            color: Color(0xFF737A88),
-                                            fontSize: 12,
-                                            fontWeight: FontWeight.w500,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 2),
-                                        Text(
-                                          dateText,
-                                          style: const TextStyle(
-                                            color: Color(0xFF737A88),
-                                            fontSize: 11,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 10,
-                                      vertical: 5,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: record.status == 'PAID'
-                                          ? const Color(0xFFE8F6EF)
-                                          : const Color(0xFFFFF3D9),
-                                      borderRadius: BorderRadius.circular(999),
-                                    ),
-                                    child: Text(
-                                      record.status,
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.w700,
-                                        color: record.status == 'PAID'
-                                            ? const Color(0xFF1F7A4A)
-                                            : const Color(0xFF946200),
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            );
-                          }).toList(),
-                        ),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
-  }
-}
-
-class _GateActivityContent extends StatelessWidget {
-  const _GateActivityContent({required this.facilityId});
-
-  final String facilityId;
-
-  @override
-  Widget build(BuildContext context) {
-    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: FirebaseFirestore.instance
-          .collection('activity_logs')
-          .where('establishmentID', isEqualTo: facilityId)
-          .orderBy('timestamp', descending: true)
-          .limit(100)
-          .snapshots(),
-      builder: (BuildContext context,
-          AsyncSnapshot<QuerySnapshot<Map<String, dynamic>>> snapshot) {
-        final List<QueryDocumentSnapshot<Map<String, dynamic>>> docs =
-            snapshot.data?.docs ?? <QueryDocumentSnapshot<Map<String, dynamic>>>[];
-        int cashDueCount = 0;
-        double cashDueTotal = 0;
-        for (final QueryDocumentSnapshot<Map<String, dynamic>> doc in docs) {
-          final Map<String, dynamic> data = doc.data();
-          final String oStatus =
-              ((data['overtimeStatus'] as String?) ?? '').toLowerCase();
-          if (oStatus == 'cash_due') {
-            cashDueCount++;
-            cashDueTotal += ((data['overtimeAmount'] as num?) ?? 0).toDouble();
-          }
-        }
-        return ListView(
-          padding: const EdgeInsets.only(top: 8),
-          children: <Widget>[
-            const Text(
-              'Gate Activity',
-              style: TextStyle(fontSize: 24, fontWeight: FontWeight.w700),
-            ),
-            const SizedBox(height: 6),
-            const Text('Same entry/exit trail staff sees, incl. overtime.'),
-            const SizedBox(height: 14),
-            _OwnerSectionCard(
-              title: 'Cash still to collect',
-              subtitle: 'Overtime flagged at exit.',
-              child: Row(
-                children: <Widget>[
-                  _OwnerMetricTile(
-                    label: 'Open items',
-                    value: cashDueCount.toString(),
-                  ),
-                  const SizedBox(width: 10),
-                  _OwnerMetricTile(
-                    label: 'Cash total',
-                    value: 'PHP ${cashDueTotal.toStringAsFixed(2)}',
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 12),
-            _OwnerSectionCard(
-              title: 'Latest scans',
-              subtitle: 'Newest first, up to 100.',
-              child: Builder(
-                builder: (BuildContext context) {
-                  if (snapshot.hasError) {
-                    return const Text('Unable to load activity.');
-                  }
-                  if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const Center(child: CircularProgressIndicator());
-                  }
-                  if (docs.isEmpty) {
-                    return const Text('No entry/exit scans yet.');
-                  }
-                  return Column(
-                    children: docs.map((
-                      QueryDocumentSnapshot<Map<String, dynamic>> doc,
-                    ) {
-                      final Map<String, dynamic> data = doc.data();
-                      final String plate =
-                          (data['vehiclePlate'] as String?) ?? 'N/A';
-                      final String scanType =
-                          ((data['scanType'] as String?) ?? 'entry')
-                              .toUpperCase();
-                      final String status =
-                          ((data['status'] as String?) ?? '?').toUpperCase();
-                      final int overtimeHours =
-                          ((data['overtimeHours'] as num?) ?? 0).toInt();
-                      final double overtimeAmount =
-                          ((data['overtimeAmount'] as num?) ?? 0).toDouble();
-                      final String reason =
-                          (data['decisionReason'] as String?) ?? '';
-                      return Container(
-                        margin: const EdgeInsets.only(bottom: 8),
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF8F9FC),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                            color: const Color(0xFFE4E7EF),
-                          ),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: <Widget>[
-                            Row(
-                              children: <Widget>[
-                                Expanded(
-                                  child: Text(
-                                    '$plate - $scanType',
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
-                                ),
-                                Text(
-                                  status,
-                                  style: const TextStyle(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w800,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            if (overtimeHours > 0)
-                              Text(
-                                'Overtime ${overtimeHours}h / PHP '
-                                '${overtimeAmount.toStringAsFixed(2)}',
-                                style: const TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            if (reason.isNotEmpty)
-                              Text(
-                                reason,
-                                style: const TextStyle(fontSize: 12),
-                              ),
-                          ],
-                        ),
-                      );
-                    }).toList(),
-                  );
-                },
-              ),
-            ),
-          ],
-        );
-      },
     );
   }
 }
