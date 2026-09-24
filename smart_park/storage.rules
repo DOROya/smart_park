@@ -1,0 +1,56 @@
+rules_version = '2';
+
+// Uses Firestore lookups (firestore.get/exists), so on first deploy the CLI
+// asks to grant Storage access to Firestore; answer yes.
+service firebase.storage {
+  match /b/{bucket}/o {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isImageUpload() {
+      return request.resource.contentType.matches('image/.*')
+        && request.resource.size < 10 * 1024 * 1024;
+    }
+
+    function establishmentDoc(establishmentId) {
+      return /databases/(default)/documents/establishments/$(establishmentId);
+    }
+
+    function ownsEstablishment(establishmentId) {
+      return isSignedIn()
+        && firestore.exists(establishmentDoc(establishmentId))
+        && firestore.get(establishmentDoc(establishmentId)).data.ownerId == request.auth.uid;
+    }
+
+    function isAdmin() {
+      return isSignedIn()
+        && firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.get('role', '') == 'admin';
+    }
+
+    // Legacy single facility photo: establishments/{establishmentId}.jpg
+    match /establishments/{photoFile} {
+      allow read: if true;
+      allow write: if photoFile.matches('.+[.]jpg')
+        && ownsEstablishment(photoFile.split('[.]')[0])
+        && isImageUpload();
+      allow delete: if photoFile.matches('.+[.]jpg')
+        && (ownsEstablishment(photoFile.split('[.]')[0]) || isAdmin());
+    }
+
+    // Facility photos (photo_*.jpg) and business-document proofs
+    // (document_*.jpg), both uploaded by ParkingStorageService.
+    match /establishments/{establishmentId}/{fileName} {
+      // Facility photos are public content shown to drivers. Business
+      // documents are for the owner and admins only (tokenized download URLs
+      // are stored in the owner/admin-only establishment_private doc).
+      allow read: if fileName.matches('photo_.*')
+        || ownsEstablishment(establishmentId)
+        || isAdmin();
+      allow create, update: if ownsEstablishment(establishmentId)
+        && isImageUpload()
+        && (fileName.matches('photo_.*') || fileName.matches('document_.*'));
+      allow delete: if ownsEstablishment(establishmentId) || isAdmin();
+    }
+  }
+}

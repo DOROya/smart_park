@@ -1,52 +1,295 @@
 rules_version = '2';
 
+// Who may do what:
+// - Drivers read establishments and their own tickets. Tickets, payments,
+//   payment splits and stats are written only by Cloud Functions (Admin SDK,
+//   which bypasses these rules), so no client can mark anything paid.
+// - Parking owners manage their own establishment and staff, and read their
+//   own establishment's tickets, splits and gate logs.
+// - Staff (staff_accounts/{uid}) work one facility's gate.
+// - Admins (users/{uid}.role == 'admin', set by hand in the console) review
+//   establishments and read everything.
 service cloud.firestore {
   match /databases/{database}/documents {
+
+    // ---------- identity helpers ----------
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function uid() {
+      return request.auth.uid;
+    }
+
     // Staff sign in with a synthetic-domain email (see
     // staff_credentials.dart) and can never complete Firebase's email
-    // verification flow, so treat those accounts as verified here too.
+    // verification flow. Anyone could register such an email, so this only
+    // grants general read access; staff powers come from isStaffOf().
     function isVerifiedOrStaff() {
-      // matches() requires a FULL string match, so the username portion
-      // before '@' needs an explicit wildcard - without it this never
-      // matched any real staff email (e.g. "hx37e_juandelacruz@...").
-      return request.auth != null &&
+      return signedIn() &&
         (request.auth.token.email_verified == true ||
          request.auth.token.email.matches('.*@staff[.]smartpark[.]internal$'));
     }
 
+    function userPath(id) {
+      return /databases/$(database)/documents/users/$(id);
+    }
+
+    // The app reads the role from any of these keys (role_based_home_page).
+    function roleOf(data) {
+      return data.get('role', data.get('Role', data.get('userRole', '')));
+    }
+
+    function myRole() {
+      return exists(userPath(uid())) ? roleOf(get(userPath(uid())).data) : '';
+    }
+
+    function isAdmin() {
+      return signedIn() && myRole() == 'admin';
+    }
+
+    function isParkingOwner() {
+      return isVerifiedOrStaff() && myRole() == 'Parking Owner';
+    }
+
+    function staffPath(id) {
+      return /databases/$(database)/documents/staff_accounts/$(id);
+    }
+
+    function isStaffOf(establishmentId) {
+      return signedIn() &&
+        exists(staffPath(uid())) &&
+        get(staffPath(uid())).data.facilityId == establishmentId;
+    }
+
+    function establishmentPath(id) {
+      return /databases/$(database)/documents/establishments/$(id);
+    }
+
+    function isOwnerOf(establishmentId) {
+      return signedIn() &&
+        exists(establishmentPath(establishmentId)) &&
+        get(establishmentPath(establishmentId)).data.ownerId == uid();
+    }
+
+    // Same as isOwnerOf, but sees an establishment created in this batch.
+    function willOwn(establishmentId) {
+      return signedIn() &&
+        existsAfter(establishmentPath(establishmentId)) &&
+        getAfter(establishmentPath(establishmentId)).data.ownerId == uid();
+    }
+
+    function unchanged(field) {
+      return request.resource.data.get(field, null) == resource.data.get(field, null);
+    }
+
+    // ---------- users ----------
+
+    // Roles a user may give themselves. 'staff' only with a staff record
+    // made by their owner; 'admin' never.
+    function selfAssignableRole(role) {
+      return role in ['Driver', 'Parking Owner'] ||
+        (role == 'staff' && exists(staffPath(uid())));
+    }
+
+    function roleFieldsUnchanged() {
+      return unchanged('role') && unchanged('Role') && unchanged('userRole');
+    }
+
+    function noRoleKeys(data) {
+      return !data.keys().hasAny(['role', 'Role', 'userRole']);
+    }
+
+    function validNewRole(data) {
+      return noRoleKeys(data) ||
+        (data.keys().hasAny(['role']) &&
+         !data.keys().hasAny(['Role', 'userRole']) &&
+         selfAssignableRole(data.role));
+    }
+
     match /users/{userId} {
-      // Allow role/profile bootstrap reads even when email_verified claim is stale.
-      allow read: if request.auth != null;
-      allow create, update: if request.auth != null && request.auth.uid == userId;
+      allow get: if signedIn() && (uid() == userId || isAdmin());
+      // Legacy role lookups query by these fields; only the caller's own
+      // records match (role_based_home_page treats a denial as no match).
+      allow list: if isAdmin() ||
+        (signedIn() &&
+          (resource.data.get('userID', null) == uid() ||
+           resource.data.get('userId', null) == uid() ||
+           resource.data.get('email', null) == request.auth.token.email));
+      allow create: if signedIn() && uid() == userId &&
+        validNewRole(request.resource.data);
+      // Pick a role once (when there is none yet); never change it after.
+      allow update: if signedIn() && uid() == userId &&
+        (roleFieldsUnchanged() ||
+         (noRoleKeys(resource.data) && validNewRole(request.resource.data)));
       allow delete: if false;
     }
 
+    // ---------- staff ----------
+
     match /staff_accounts/{staffId} {
-      // Role resolution checks this collection by email for staff logins.
-      allow read: if request.auth != null;
-      allow create, update: if request.auth != null && request.auth.token.email_verified == true;
-      allow delete: if false;
+      allow read: if isAdmin() ||
+        (signedIn() &&
+          (resource.data.ownerId == uid() ||
+           resource.data.userId == uid() ||
+           resource.data.get('email', null) == request.auth.token.email));
+      // Keyed by the staff member's uid so isStaffOf() can find it.
+      allow create: if isParkingOwner() &&
+        request.resource.data.ownerId == uid() &&
+        request.resource.data.userId == staffId &&
+        isOwnerOf(request.resource.data.facilityId);
+      allow update: if signedIn() &&
+        resource.data.ownerId == uid() &&
+        request.resource.data.ownerId == uid() &&
+        unchanged('userId') &&
+        isOwnerOf(request.resource.data.facilityId);
+      allow delete: if isAdmin() || (signedIn() && resource.data.ownerId == uid());
+    }
+
+    // ---------- establishments ----------
+
+    match /establishments/{establishmentId} {
+      allow read: if isVerifiedOrStaff();
+      allow create: if isParkingOwner() &&
+        request.resource.data.ownerId == uid();
+      allow update: if isAdmin() ||
+        (signedIn() &&
+          resource.data.ownerId == uid() &&
+          request.resource.data.ownerId == uid());
+      allow delete: if isAdmin();
+    }
+
+    // Owners may only (re)submit for review; approving, rejecting and the
+    // review fields belong to admins.
+    function ownerReviewFieldsOk() {
+      return request.resource.data.get('status', 'pending') == 'pending'
+          ? request.resource.data.get('reviewedBy', null) == null &&
+            request.resource.data.get('rejectionReason', null) == null
+          : unchanged('status') &&
+            unchanged('reviewedBy') &&
+            unchanged('reviewedAt') &&
+            unchanged('rejectionReason');
+    }
+
+    match /establishment_details/{establishmentId} {
+      allow read: if isVerifiedOrStaff();
+      allow create: if isParkingOwner() &&
+        willOwn(establishmentId) &&
+        request.resource.data.get('status', 'pending') == 'pending' &&
+        request.resource.data.get('reviewedBy', null) == null;
+      allow update: if isAdmin() ||
+        (isOwnerOf(establishmentId) && ownerReviewFieldsOk());
+      allow delete: if isAdmin();
+    }
+
+    // Live slot counts, kept by the updateOccupancy Cloud Function.
+    match /establishment_occupancy/{establishmentId} {
+      allow read: if isVerifiedOrStaff();
+      allow write: if false;
+    }
+
+    // Business-document proofs: owner and admins only.
+    match /establishment_private/{establishmentId} {
+      allow read: if isAdmin() || isOwnerOf(establishmentId);
+      allow create, update: if isOwnerOf(establishmentId);
+      allow delete: if isAdmin();
+    }
+
+    // ---------- gate activity ----------
+
+    function canSeeEstablishment(establishmentId) {
+      return isAdmin() || isOwnerOf(establishmentId) || isStaffOf(establishmentId);
     }
 
     match /activity_logs/{logId} {
-      allow read, create: if isVerifiedOrStaff();
-      // Slice 1 gate flow closes the open ENTRY log on EXIT (isActive=false).
-      allow update: if isVerifiedOrStaff();
+      allow read: if canSeeEstablishment(resource.data.establishmentID);
+      allow create: if isStaffOf(request.resource.data.establishmentID) &&
+        request.resource.data.staffId == uid();
+      // Exit scans close the open entry log (isActive=false).
+      allow update: if isStaffOf(resource.data.establishmentID) &&
+        unchanged('establishmentID') &&
+        unchanged('transactionId');
       allow delete: if false;
     }
 
     match /StaffActivityLogs/{logId} {
-      allow read, create: if isVerifiedOrStaff();
+      allow read: if isAdmin() ||
+        (signedIn() && resource.data.staffID == uid()) ||
+        isOwnerOf(resource.data.establishmentID);
+      allow create: if isStaffOf(request.resource.data.establishmentID) &&
+        request.resource.data.staffID == uid();
       allow update, delete: if false;
     }
 
-    match /transactions/{transactionId} {
-      allow read, create, update: if isVerifiedOrStaff();
-      allow delete: if false;
+    // ---------- tickets and money (written by Cloud Functions only) ----------
+
+    // Gate staff record check-in/out and overtime; nothing about payment.
+    function staffTicketUpdateOk() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+        'entryStatus', 'entryAt', 'entryStaffId', 'entryLogId',
+        'exitAt', 'exitStaffId', 'exitLogId', 'staySeconds',
+        'overtimeHours', 'overtimeRate', 'overtimeAmount', 'overtimeStatus',
+        'updatedAt'
+      ]);
     }
 
+    // Staff log drive-up customers as walk-ins: already checked in, no
+    // driver, no money. They only count toward slot occupancy.
+    function walkInCreateOk() {
+      let d = request.resource.data;
+      return isStaffOf(d.establishmentId) &&
+        d.source == 'walk_in' &&
+        d.status == 'walk_in' &&
+        d.entryStatus == 'checked_in' &&
+        d.entryStaffId == uid() &&
+        d.vehicleType in ['car', 'motorcycle'] &&
+        d.keys().hasOnly([
+          'establishmentId', 'ownerId', 'source', 'status', 'entryStatus',
+          'entryAt', 'entryStaffId', 'entryLogId', 'vehicleType',
+          'vehiclePlate', 'createdAt', 'updatedAt'
+        ]);
+    }
+
+    match /transactions/{transactionId} {
+      allow read: if (signedIn() && resource.data.driverId == uid()) ||
+        canSeeEstablishment(resource.data.establishmentId);
+      allow create: if walkInCreateOk();
+      allow delete: if false;
+      allow update: if isStaffOf(resource.data.establishmentId) &&
+        staffTicketUpdateOk();
+    }
+
+    match /payments/{paymentId} {
+      allow read: if isAdmin() ||
+        (signedIn() && resource.data.driverId == uid()) ||
+        isOwnerOf(resource.data.establishmentId);
+      allow write: if false;
+    }
+
+    match /payment_splits/{splitId} {
+      allow read: if isAdmin() || isOwnerOf(resource.data.establishmentId);
+      allow write: if false;
+    }
+
+    match /parking_checkouts/{checkoutId} {
+      allow read: if signedIn() && resource.data.driverId == uid();
+      allow write: if false;
+    }
+
+    match /stats_daily/{day} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
+    match /stats/{doc} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
+    // Anything not listed above is closed.
     match /{document=**} {
-      allow read, write: if isVerifiedOrStaff();
+      allow read, write: if false;
     }
   }
 }
