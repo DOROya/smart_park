@@ -1,16 +1,14 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
-import '../../services/parking_pricing.dart';
+import '../../services/gate_scan_service.dart';
 import '../../services/permission_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/smartpark_ui.dart';
-import '../../services/error_reporter.dart';
 import '../auth/sign_in_screen.dart';
 import 'walk_in_panel.dart';
 
@@ -21,37 +19,6 @@ class StaffHomePage extends StatefulWidget {
 
   @override
   State<StaffHomePage> createState() => _StaffHomePageState();
-}
-
-/// Result of a single gate scan shown to the staff member.
-class _GateScanResult {
-  _GateScanResult({
-    required this.decision,
-    required this.vehiclePlate,
-    required this.scanType,
-    required this.timestamp,
-    this.reason,
-    this.transactionId,
-    this.elapsed,
-    this.billableHours,
-    this.overtimeHours,
-    this.overtimeAmount,
-  });
-
-  final String decision;
-  final String vehiclePlate;
-  final String scanType;
-  final DateTime timestamp;
-  final String? reason;
-  final String? transactionId;
-  final Duration? elapsed;
-  final int? billableHours;
-  final double? overtimeHours;
-  final double? overtimeAmount;
-
-  bool get isAllowed => decision == 'ALLOWED';
-  bool get isDenied => decision == 'DENIED';
-  bool get hasOvertime => (overtimeHours ?? 0) > 0 && (overtimeAmount ?? 0) > 0;
 }
 
 class _StaffHomePageState extends State<StaffHomePage>
@@ -68,20 +35,14 @@ class _StaffHomePageState extends State<StaffHomePage>
   String? _assignedFacilityId;
   String? _ownerId;
 
+  final GateScanService _gateService = GateScanService();
   late final MobileScannerController _scannerController;
   bool _isProcessingScan = false;
-  _GateScanResult? _lastScanResult;
+  GateScanResult? _lastScanResult;
 
   /// Staff-side gate direction. Entry/exit is chosen here in the app and is
   /// never taken from the scanned QR content.
   String _gateMode = 'entry';
-
-  /// Guards against re-processing the same ticket while the camera keeps
-  /// reporting it.
-  String? _lastProcessedTicketKey;
-  DateTime? _lastProcessedAt;
-
-  static const Duration _rescanCooldown = Duration(seconds: 8);
 
   @override
   void initState() {
@@ -123,70 +84,20 @@ class _StaffHomePageState extends State<StaffHomePage>
   }
 
   Future<void> _resolveAssignedFacility() async {
-    final String? uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) {
+    final User? user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
       return;
     }
-
-    final String signedInEmail =
-        (FirebaseAuth.instance.currentUser?.email ?? '').trim().toLowerCase();
-
-    final QuerySnapshot<Map<String, dynamic>> staffSnapshot =
-        await FirebaseFirestore.instance
-            .collection('staff_accounts')
-            .where('userId', isEqualTo: uid)
-            .limit(1)
-            .get();
-
-    if (staffSnapshot.docs.isNotEmpty) {
-      final Map<String, dynamic> staffData = staffSnapshot.docs.first.data();
-      if (!mounted) {
-        return;
-      }
-      setState(() {
-        _assignedFacilityId =
-            (staffData['establishmentID'] as String?) ??
-            (staffData['facilityId'] as String?);
-        _ownerId = staffData['ownerId'] as String?;
-      });
-      return;
-    }
-
-    if (signedInEmail.isNotEmpty) {
-      final QuerySnapshot<Map<String, dynamic>> staffByEmail =
-          await FirebaseFirestore.instance
-              .collection('staff_accounts')
-              .where('email', isEqualTo: signedInEmail)
-              .limit(1)
-              .get();
-
-      if (staffByEmail.docs.isNotEmpty) {
-        final Map<String, dynamic> staffData = staffByEmail.docs.first.data();
-        if (!mounted) {
-          return;
-        }
-        setState(() {
-          _assignedFacilityId =
-              (staffData['establishmentID'] as String?) ??
-              (staffData['facilityId'] as String?);
-          _ownerId = staffData['ownerId'] as String?;
-        });
-        return;
-      }
-    }
-
-    final DocumentSnapshot<Map<String, dynamic>> userDoc =
-        await FirebaseFirestore.instance.collection('users').doc(uid).get();
-
+    final StaffAssignment assignment = await _gateService.resolveAssignment(
+      uid: user.uid,
+      email: user.email ?? '',
+    );
     if (!mounted) {
       return;
     }
-
     setState(() {
-      _assignedFacilityId =
-          (userDoc.data()?['establishmentID'] as String?) ??
-          (userDoc.data()?['facilityId'] as String?);
-      _ownerId = userDoc.data()?['ownerId'] as String?;
+      _assignedFacilityId = assignment.facilityId;
+      _ownerId = assignment.ownerId;
     });
   }
 
@@ -211,59 +122,29 @@ class _StaffHomePageState extends State<StaffHomePage>
     );
   }
 
-  Future<void> _logStaffAction({
-    required String action,
-    required String transactionId,
-    String? activityLogId,
-    String? vehiclePlate,
-  }) async {
-    final String? staffId = FirebaseAuth.instance.currentUser?.uid;
-    if (staffId == null) {
-      return;
+  /// The signed-in staff member, or null when signed out.
+  GateStaff? _currentStaff() {
+    final User? user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      return null;
     }
-
-    await FirebaseFirestore.instance
-        .collection('StaffActivityLogs')
-        .add(<String, dynamic>{
-          'staffID': staffId,
-          'ownerId': _ownerId,
-          'establishmentID': _assignedFacilityId,
-          'facilityId': _assignedFacilityId,
-          'action': action,
-          'date': FieldValue.serverTimestamp(),
-          'transactionId': transactionId,
-          if (activityLogId != null && activityLogId.isNotEmpty)
-            'activityLogId': activityLogId,
-          if (vehiclePlate != null && vehiclePlate.isNotEmpty)
-            'vehiclePlate': vehiclePlate,
-        });
+    return GateStaff(
+      staffId: user.uid,
+      email: user.email ?? '',
+      facilityId: _assignedFacilityId,
+      ownerId: _ownerId,
+    );
   }
 
-  void _presentGateResult(_GateScanResult result) {
-    if (!mounted) {
-      _isProcessingScan = false;
+  /// Shows [result]; null means the scan was ignored as a duplicate.
+  void _presentGateResult(GateScanResult? result) {
+    _isProcessingScan = false;
+    if (result == null || !mounted) {
       return;
     }
     setState(() {
       _lastScanResult = result;
     });
-    _isProcessingScan = false;
-  }
-
-  DateTime? _parseActivityTimestamp(dynamic value) {
-    if (value is Timestamp) {
-      return value.toDate();
-    }
-    if (value is DateTime) {
-      return value;
-    }
-    if (value is String) {
-      return DateTime.tryParse(value);
-    }
-    if (value is num) {
-      return DateTime.fromMillisecondsSinceEpoch(value.toInt());
-    }
-    return null;
   }
 
   void _onBarcodeDetect(BarcodeCapture capture) {
@@ -278,655 +159,34 @@ class _StaffHomePageState extends State<StaffHomePage>
     unawaited(_handleScanPayload(raw));
   }
 
-  Future<String?> _logDeniedScan({
-    required String scanType,
-    required String vehiclePlate,
-    required String decisionReason,
-    String? transactionId,
-  }) async {
-    final String? staffId = FirebaseAuth.instance.currentUser?.uid;
-    if (staffId == null || _assignedFacilityId == null) {
-      return null;
-    }
-    final DocumentReference<Map<String, dynamic>> logRef =
-        await FirebaseFirestore.instance
-            .collection('activity_logs')
-            .add(<String, dynamic>{
-              'establishmentID': _assignedFacilityId,
-              'facilityId': _assignedFacilityId,
-              'ownerId': _ownerId,
-              'staffId': staffId,
-              'staffEmail': (FirebaseAuth.instance.currentUser?.email ?? '')
-                  .trim(),
-              'vehiclePlate': vehiclePlate,
-              'scanType': scanType,
-              'gateMode': scanType,
-              'status': 'DENIED',
-              'decision': 'DENIED',
-              'decisionReason': decisionReason,
-              'timestamp': FieldValue.serverTimestamp(),
-              'createdAt': FieldValue.serverTimestamp(),
-              'isActive': false,
-              if (transactionId != null && transactionId.isNotEmpty)
-                'transactionId': transactionId,
-            });
-    await _logStaffAction(
-      action: 'scan_$scanType',
-      transactionId: transactionId ?? logRef.id,
-      activityLogId: logRef.id,
-      vehiclePlate: vehiclePlate,
-    );
-    return logRef.id;
-  }
-
   Future<void> _handleScanPayload(String rawPayload) async {
-    final String? staffId = FirebaseAuth.instance.currentUser?.uid;
-    if (staffId == null) {
+    final GateStaff? staff = _currentStaff();
+    if (staff == null) {
       _isProcessingScan = false;
       return;
     }
-    final String? facilityId = _assignedFacilityId;
-    if (facilityId == null || facilityId.isEmpty) {
-      _presentGateResult(
-        _GateScanResult(
-          decision: 'DENIED',
-          vehiclePlate: '--',
-          scanType: _gateMode,
-          timestamp: DateTime.now(),
-          reason: 'Staff is not assigned to a facility yet.',
-        ),
-      );
-      return;
-    }
-    Map<String, dynamic>? payload;
-    try {
-      final dynamic decoded = jsonDecode(rawPayload);
-      if (decoded is Map) {
-        payload = decoded.map<String, dynamic>(
-          (dynamic k, dynamic v) => MapEntry<String, dynamic>(k.toString(), v),
-        );
-      }
-    } catch (_) {
-      payload = null;
-    }
-    if (payload == null) {
-      await _logDeniedScan(
-        scanType: _gateMode,
-        vehiclePlate: 'unreadable',
-        decisionReason: 'QR is not a SmartPark ticket.',
-      );
-      _presentGateResult(
-        _GateScanResult(
-          decision: 'DENIED',
-          vehiclePlate: '--',
-          scanType: _gateMode,
-          timestamp: DateTime.now(),
-          reason: 'Not a SmartPark ticket QR.',
-        ),
-      );
-      return;
-    }
-    final String txId = ((payload['transactionId'] as String?) ?? '').trim();
-    final String pPlate = ((payload['vehiclePlate'] as String?) ?? '--').trim();
-    if (txId.isEmpty) {
-      await _logDeniedScan(
-        scanType: _gateMode,
-        vehiclePlate: pPlate,
-        decisionReason: 'Ticket payload missing transaction id.',
-      );
-      _presentGateResult(
-        _GateScanResult(
-          decision: 'DENIED',
-          vehiclePlate: pPlate,
-          scanType: _gateMode,
-          timestamp: DateTime.now(),
-          reason: 'Ticket is unreadable. Use plate lookup.',
-        ),
-      );
-      return;
-    }
-    final String ticketKey = '$_gateMode|$txId';
-    final DateTime now = DateTime.now();
-    if (_lastProcessedTicketKey == ticketKey &&
-        _lastProcessedAt != null &&
-        now.difference(_lastProcessedAt!) < _rescanCooldown) {
-      _isProcessingScan = false;
-      return;
-    }
-    try {
-      DocumentSnapshot<Map<String, dynamic>>? snap;
-      try {
-        snap = await FirebaseFirestore.instance
-            .collection('transactions')
-            .doc(txId)
-            .get();
-      } on FirebaseException catch (error) {
-        // Staff may only read their own facility's tickets, so a ticket from
-        // another facility (or a made-up id) is denied rather than returned.
-        if (error.code != 'permission-denied') rethrow;
-        snap = null;
-      }
-      if (snap == null || !snap.exists) {
-        await _logDeniedScan(
-          scanType: _gateMode,
-          vehiclePlate: pPlate,
-          decisionReason: 'Ticket does not exist.',
-          transactionId: txId,
-        );
-        _presentGateResult(
-          _GateScanResult(
-            decision: 'DENIED',
-            vehiclePlate: pPlate,
-            scanType: _gateMode,
-            timestamp: now,
-            transactionId: txId,
-            reason: 'Ticket not found for this facility.',
-          ),
-        );
-        return;
-      }
-      final Map<String, dynamic> ticket = snap.data() ?? <String, dynamic>{};
-      final String status = ((ticket['status'] as String?) ?? '').toLowerCase();
-      final String tFac =
-          ((ticket['establishmentId'] as String?) ??
-                  (ticket['establishmentID'] as String?) ??
-                  '')
-              .trim();
-      final String plate =
-          (((ticket['vehiclePlate'] as String?) ?? pPlate)).trim().isEmpty
-          ? '--'
-          : (((ticket['vehiclePlate'] as String?) ?? pPlate)).trim();
-      if (tFac != facilityId) {
-        await _logDeniedScan(
-          scanType: _gateMode,
-          vehiclePlate: plate,
-          decisionReason: 'Ticket belongs to another facility.',
-          transactionId: txId,
-        );
-        _presentGateResult(
-          _GateScanResult(
-            decision: 'DENIED',
-            vehiclePlate: plate,
-            scanType: _gateMode,
-            timestamp: now,
-            transactionId: txId,
-            reason: 'Ticket issued for another facility.',
-          ),
-        );
-        return;
-      }
-      if (status != 'paid') {
-        await _logDeniedScan(
-          scanType: _gateMode,
-          vehiclePlate: plate,
-          decisionReason: 'Ticket not paid ($status).',
-          transactionId: txId,
-        );
-        _presentGateResult(
-          _GateScanResult(
-            decision: 'DENIED',
-            vehiclePlate: plate,
-            scanType: _gateMode,
-            timestamp: now,
-            transactionId: txId,
-            reason: 'Payment not confirmed.',
-          ),
-        );
-        return;
-      }
-      if (_gateMode == 'entry') {
-        await _processEntryScan(
-          staffId: staffId,
-          facilityId: facilityId,
-          transactionId: txId,
-          plate: plate,
-          ticket: ticket,
-          ticketKey: ticketKey,
-          scannedAt: now,
-        );
-      } else {
-        await _processExitScan(
-          staffId: staffId,
-          facilityId: facilityId,
-          transactionId: txId,
-          plate: plate,
-          ticket: ticket,
-          ticketKey: ticketKey,
-          scannedAt: now,
-        );
-      }
-    } catch (error, stack) {
-      reportError(error, stack, reason: 'Gate scan verification failed');
-      _presentGateResult(
-        _GateScanResult(
-          decision: 'ERROR',
-          vehiclePlate: '--',
-          scanType: _gateMode,
-          timestamp: now,
-          transactionId: txId,
-          reason: 'Verification failed. Retry.',
-        ),
-      );
-    }
-  }
-
-  Future<void> _processEntryScan({
-    required String staffId,
-    required String facilityId,
-    required String transactionId,
-    required String plate,
-    required Map<String, dynamic> ticket,
-    required String ticketKey,
-    required DateTime scannedAt,
-  }) async {
-    final String entryStatus = ((ticket['entryStatus'] as String?) ?? '')
-        .toLowerCase();
-    if (entryStatus == 'checked_in' || entryStatus == 'inside') {
-      await _logDeniedScan(
-        scanType: 'entry',
-        vehiclePlate: plate,
-        decisionReason: 'Ticket already checked in.',
-        transactionId: transactionId,
-      );
-      _presentGateResult(
-        _GateScanResult(
-          decision: 'DENIED',
-          vehiclePlate: plate,
-          scanType: 'entry',
-          timestamp: scannedAt,
-          transactionId: transactionId,
-          reason: 'Already inside. Do not admit twice.',
-        ),
-      );
-      return;
-    }
-    if (entryStatus == 'checked_out' || entryStatus == 'exited') {
-      await _logDeniedScan(
-        scanType: 'entry',
-        vehiclePlate: plate,
-        decisionReason: 'Ticket already used.',
-        transactionId: transactionId,
-      );
-      _presentGateResult(
-        _GateScanResult(
-          decision: 'DENIED',
-          vehiclePlate: plate,
-          scanType: 'entry',
-          timestamp: scannedAt,
-          transactionId: transactionId,
-          reason: 'Ticket already completed a stay.',
-        ),
-      );
-      return;
-    }
-    final DocumentReference<Map<String, dynamic>> ticketRef = FirebaseFirestore
-        .instance
-        .collection('transactions')
-        .doc(transactionId);
-    final DocumentReference<Map<String, dynamic>> logRef = FirebaseFirestore
-        .instance
-        .collection('activity_logs')
-        .doc();
-    final WriteBatch batch = FirebaseFirestore.instance.batch();
-    batch.set(ticketRef, <String, dynamic>{
-      'entryStatus': 'checked_in',
-      'entryAt': FieldValue.serverTimestamp(),
-      'entryStaffId': staffId,
-      'entryLogId': logRef.id,
-      'updatedAt': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
-    batch.set(logRef, <String, dynamic>{
-      'establishmentID': facilityId,
-      'facilityId': facilityId,
-      'ownerId': _ownerId,
-      'staffId': staffId,
-      'staffEmail': (FirebaseAuth.instance.currentUser?.email ?? '').trim(),
-      'vehiclePlate': plate,
-      'scanType': 'entry',
-      'gateMode': 'entry',
-      'status': 'ALLOWED',
-      'decision': 'ALLOWED',
-      'decisionReason': 'Paid ticket verified for this facility.',
-      'timestamp': FieldValue.serverTimestamp(),
-      'createdAt': FieldValue.serverTimestamp(),
-      'isActive': true,
-      'transactionId': transactionId,
-    });
-    await batch.commit();
-    _lastProcessedTicketKey = ticketKey;
-    _lastProcessedAt = scannedAt;
-    await _logStaffAction(
-      action: 'scan_entry',
-      transactionId: transactionId,
-      activityLogId: logRef.id,
-      vehiclePlate: plate,
-    );
     _presentGateResult(
-      _GateScanResult(
-        decision: 'ALLOWED',
-        vehiclePlate: plate,
-        scanType: 'entry',
-        timestamp: scannedAt,
-        transactionId: transactionId,
-        reason: 'Paid ticket verified. Admit vehicle.',
-      ),
-    );
-  }
-
-  Future<void> _processExitScan({
-    required String staffId,
-    required String facilityId,
-    required String transactionId,
-    required String plate,
-    required Map<String, dynamic> ticket,
-    required String ticketKey,
-    required DateTime scannedAt,
-  }) async {
-    final String entryStatus = ((ticket['entryStatus'] as String?) ?? '')
-        .toLowerCase();
-    if (entryStatus == 'checked_out' || entryStatus == 'exited') {
-      await _logDeniedScan(
-        scanType: 'exit',
-        vehiclePlate: plate,
-        decisionReason: 'Ticket already checked out.',
-        transactionId: transactionId,
-      );
-      _presentGateResult(
-        _GateScanResult(
-          decision: 'DENIED',
-          vehiclePlate: plate,
-          scanType: 'exit',
-          timestamp: scannedAt,
-          transactionId: transactionId,
-          reason: 'Already exited.',
-        ),
-      );
-      return;
-    }
-    final DateTime? entryAt =
-        _parseActivityTimestamp(ticket['entryAt']) ??
-        _parseActivityTimestamp(ticket['createdAt']);
-    if ((entryStatus != 'checked_in' && entryStatus != 'inside') &&
-        entryAt == null) {
-      await _logDeniedScan(
-        scanType: 'exit',
-        vehiclePlate: plate,
-        decisionReason: 'No recorded entry scan.',
-        transactionId: transactionId,
-      );
-      _presentGateResult(
-        _GateScanResult(
-          decision: 'DENIED',
-          vehiclePlate: plate,
-          scanType: 'exit',
-          timestamp: scannedAt,
-          transactionId: transactionId,
-          reason: 'No entry on record. Verify first.',
-        ),
-      );
-      return;
-    }
-
-    final DateTime entryTime = entryAt ?? scannedAt;
-    Duration elapsed = scannedAt.difference(entryTime);
-    if (elapsed.isNegative) {
-      elapsed = Duration.zero;
-    }
-    Map<String, dynamic>? rates;
-    try {
-      final DocumentSnapshot<Map<String, dynamic>> details =
-          await FirebaseFirestore.instance
-              .collection('establishment_details')
-              .doc(facilityId)
-              .get();
-      final dynamic raw = details.data()?['rates'];
-      if (raw is Map) {
-        rates = raw.map<String, dynamic>(
-          (dynamic k, dynamic v) => MapEntry<String, dynamic>(k.toString(), v),
-        );
-      }
-    } catch (error, stack) {
-      reportError(
-        error,
-        stack,
-        reason: 'Loading facility rates for exit scan failed',
-      );
-      rates = null;
-    }
-
-    final String vType = (((ticket['vehicleType'] as String?) ?? 'car'))
-        .trim()
-        .toLowerCase();
-    final double? rate = resolveOvertimeRate(rates, vType);
-    // Overtime starts after the time the driver paid for, not always
-    // after the base stay.
-    final int includedHours = includedStayHours(
-      plan: ((ticket['plan'] as String?) ?? 'base').trim().toLowerCase(),
-      duration: ticketDuration(ticket),
-    );
-    final int extraHours = overtimeHours(elapsed, includedHours);
-    final double amount = rate == null ? 0 : extraHours * rate;
-    final bool cashDue = extraHours > 0 && amount > 0;
-    final String oStatus = extraHours <= 0
-        ? 'none'
-        : (cashDue ? 'cash_due' : 'rate_unresolved');
-    final DocumentReference<Map<String, dynamic>> ticketRef = FirebaseFirestore
-        .instance
-        .collection('transactions')
-        .doc(transactionId);
-    final DocumentReference<Map<String, dynamic>> exitRef = FirebaseFirestore
-        .instance
-        .collection('activity_logs')
-        .doc();
-    QueryDocumentSnapshot<Map<String, dynamic>>? openEntry;
-    try {
-      final QuerySnapshot<Map<String, dynamic>> q = await FirebaseFirestore
-          .instance
-          .collection('activity_logs')
-          .where('establishmentID', isEqualTo: facilityId)
-          .where('transactionId', isEqualTo: transactionId)
-          .where('scanType', isEqualTo: 'entry')
-          .where('isActive', isEqualTo: true)
-          .limit(1)
-          .get();
-      if (q.docs.isNotEmpty) {
-        openEntry = q.docs.first;
-      }
-    } catch (error, stack) {
-      reportError(error, stack, reason: 'Looking up open entry log failed');
-      openEntry = null;
-    }
-    final WriteBatch batch = FirebaseFirestore.instance.batch();
-    batch.set(ticketRef, <String, dynamic>{
-      'entryStatus': 'checked_out',
-      'exitAt': FieldValue.serverTimestamp(),
-      'exitStaffId': staffId,
-      'exitLogId': exitRef.id,
-      'staySeconds': elapsed.inSeconds,
-      'overtimeHours': extraHours,
-      'overtimeRate': rate,
-      'overtimeAmount': amount,
-      'overtimeStatus': oStatus,
-      'updatedAt': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
-    batch.set(exitRef, <String, dynamic>{
-      'establishmentID': facilityId,
-      'facilityId': facilityId,
-      'ownerId': _ownerId,
-      'staffId': staffId,
-      'staffEmail': (FirebaseAuth.instance.currentUser?.email ?? '').trim(),
-      'vehiclePlate': plate,
-      'scanType': 'exit',
-      'gateMode': 'exit',
-      'status': 'ALLOWED',
-      'decision': 'ALLOWED',
-      'decisionReason': extraHours <= 0
-          ? 'Within paid time.'
-          : (cashDue ? 'Overtime: collect cash.' : 'Overtime: rate missing.'),
-      'timestamp': FieldValue.serverTimestamp(),
-      'createdAt': FieldValue.serverTimestamp(),
-      'isActive': false,
-      'transactionId': transactionId,
-      'elapsedSeconds': elapsed.inSeconds,
-      'billableHours': includedHours + extraHours,
-      'overtimeHours': extraHours,
-      'overtimeRate': rate,
-      'overtimeAmount': amount,
-      'overtimeStatus': oStatus,
-    });
-    if (openEntry != null) {
-      batch.set(openEntry.reference, <String, dynamic>{
-        'isActive': false,
-        'exitAt': FieldValue.serverTimestamp(),
-        'exitLogId': exitRef.id,
-        'updatedAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
-    }
-    await batch.commit();
-    _lastProcessedTicketKey = ticketKey;
-    _lastProcessedAt = scannedAt;
-    await _logStaffAction(
-      action: 'scan_exit',
-      transactionId: transactionId,
-      activityLogId: exitRef.id,
-      vehiclePlate: plate,
-    );
-    _presentGateResult(
-      _GateScanResult(
-        decision: 'ALLOWED',
-        vehiclePlate: plate,
-        scanType: 'exit',
-        timestamp: scannedAt,
-        transactionId: transactionId,
-        elapsed: elapsed,
-        billableHours: includedHours + extraHours,
-        overtimeHours: extraHours.toDouble(),
-        overtimeAmount: amount,
-        reason: extraHours <= 0
-            ? 'Within 2-hour base. Release.'
-            : (cashDue
-                  ? 'Overtime: collect cash first.'
-                  : 'Overtime: confirm.'),
+      await _gateService.handleScanPayload(
+        staff: staff,
+        gateMode: _gateMode,
+        rawPayload: rawPayload,
       ),
     );
   }
 
   Future<void> _lookupByPlate(String rawPlate) async {
-    final String plate = rawPlate.trim();
-    if (plate.isEmpty) {
-      _presentGateResult(
-        _GateScanResult(
-          decision: 'ERROR',
-          vehiclePlate: '--',
-          scanType: _gateMode,
-          timestamp: DateTime.now(),
-          reason: 'Type the plate before lookup.',
-        ),
-      );
-      return;
-    }
-    final String? facilityId = _assignedFacilityId;
-    if (facilityId == null || facilityId.isEmpty) {
-      _presentGateResult(
-        _GateScanResult(
-          decision: 'DENIED',
-          vehiclePlate: plate,
-          scanType: _gateMode,
-          timestamp: DateTime.now(),
-          reason: 'Staff not assigned to a facility.',
-        ),
-      );
+    final GateStaff? staff = _currentStaff();
+    if (staff == null) {
       return;
     }
     _isProcessingScan = true;
-    try {
-      final QuerySnapshot<Map<String, dynamic>> matches =
-          await FirebaseFirestore.instance
-              .collection('transactions')
-              .where('establishmentId', isEqualTo: facilityId)
-              // New tickets store the plate upper-cased; older ones as typed.
-              .where(
-                'vehiclePlate',
-                whereIn: <String>{plate, plate.toUpperCase()}.toList(),
-              )
-              .limit(10)
-              .get();
-      final List<QueryDocumentSnapshot<Map<String, dynamic>>> mine = matches
-          .docs
-          .where((QueryDocumentSnapshot<Map<String, dynamic>> d) {
-            final Map<String, dynamic> m = d.data();
-            final String f =
-                ((m['establishmentId'] as String?) ??
-                        (m['establishmentID'] as String?) ??
-                        '')
-                    .trim();
-            // Walk-ins are checked out from the Walk-ins panel instead.
-            return f == facilityId && m['source'] != 'walk_in';
-          })
-          .toList();
-      if (mine.isEmpty) {
-        await _logDeniedScan(
-          scanType: _gateMode,
-          vehiclePlate: plate,
-          decisionReason: 'Plate lookup: no ticket here.',
-        );
-        _presentGateResult(
-          _GateScanResult(
-            decision: 'DENIED',
-            vehiclePlate: plate,
-            scanType: _gateMode,
-            timestamp: DateTime.now(),
-            reason: 'No ticket for this plate here.',
-          ),
-        );
-        return;
-      }
-      QueryDocumentSnapshot<Map<String, dynamic>>? chosen;
-      for (final QueryDocumentSnapshot<Map<String, dynamic>> d in mine) {
-        if (((d.data()['status'] as String?) ?? '').toLowerCase() == 'paid') {
-          chosen = d;
-          break;
-        }
-      }
-      chosen ??= mine.first;
-      if (((chosen.data()['status'] as String?) ?? '').toLowerCase() !=
-          'paid') {
-        await _logDeniedScan(
-          scanType: _gateMode,
-          vehiclePlate: plate,
-          decisionReason: 'Plate lookup: ticket unpaid.',
-          transactionId: chosen.id,
-        );
-        _presentGateResult(
-          _GateScanResult(
-            decision: 'DENIED',
-            vehiclePlate: plate,
-            scanType: _gateMode,
-            timestamp: DateTime.now(),
-            transactionId: chosen.id,
-            reason: 'Ticket for plate is unpaid.',
-          ),
-        );
-        return;
-      }
-      await _handleScanPayload(
-        jsonEncode(<String, dynamic>{
-          'transactionId': chosen.id,
-          'vehiclePlate': plate,
-        }),
-      );
-    } catch (error, stack) {
-      reportError(error, stack, reason: 'Plate lookup failed');
-      _presentGateResult(
-        _GateScanResult(
-          decision: 'ERROR',
-          vehiclePlate: plate,
-          scanType: _gateMode,
-          timestamp: DateTime.now(),
-          reason: 'Lookup failed. Retry.',
-        ),
-      );
-    }
+    _presentGateResult(
+      await _gateService.lookupByPlate(
+        staff: staff,
+        gateMode: _gateMode,
+        rawPlate: rawPlate,
+      ),
+    );
   }
 
   Future<void> _pickHistoryDate() async {

@@ -635,7 +635,7 @@ extension _StaffHomePageFragments on _StaffHomePageState {
 class _GateResultCard extends StatelessWidget {
   const _GateResultCard({required this.result});
 
-  final _GateScanResult result;
+  final GateScanResult result;
 
   @override
   Widget build(BuildContext context) {
