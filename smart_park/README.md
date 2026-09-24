@@ -36,8 +36,12 @@ is not required.
 
 ## Tests
 
+CI (`.github/workflows/ci.yml`) runs all of these on every push to `master`
+and every pull request, plus `dart format` and `flutter analyze`, which must
+report no issues.
+
 ```sh
-flutter test                      # Dart unit/widget tests
+flutter test                      # Dart unit/widget tests (incl. gate scanning)
 cd functions && npm test          # function unit tests (pricing, PayMongo payload)
 cd functions && firebase emulators:exec --only firestore,storage \
   --project demo-smartpark "node --test --test-concurrency=1 rules-test/firestore.test.js rules-test/storage.test.js"
@@ -67,3 +71,33 @@ and their business documents to the private `establishment_private` doc.
 
 Admins are regular users whose `users/{uid}.role` is `admin`, set by hand
 in the Firebase console. The app never lets anyone give themselves that role.
+
+## App Check
+
+The app sends App Check tokens (Play Integrity on Android, App Attest with
+DeviceCheck fallback on iOS, the debug provider in debug builds). The
+functions accept requests without a token until you turn enforcement on:
+
+1. Firebase console > App Check: register the Android app with Play
+   Integrity (add the app's SHA-256 fingerprints) and the iOS app with
+   App Attest.
+2. Run a debug build on each dev device/emulator, copy the debug token it
+   prints to the log, and add it under App Check > Apps > Manage debug tokens.
+3. Watch App Check > APIs for a few days until almost all requests are
+   verified. Then enforce it for Firestore and Storage there, and for the
+   functions by adding `ENFORCE_APP_CHECK=true` to `functions/.env` and
+   running `firebase deploy --only functions`.
+
+## Crash reporting
+
+Release builds send uncaught errors to Firebase Crashlytics, along with handled
+failures reported through `reportError()` (`lib/services/error_reporter.dart`).
+Debug builds report nothing. Use `reportError` in any `catch` block where a
+failure would otherwise go unnoticed.
+
+## Code layout
+
+Screens live under `lib/screens/<role>/`. Firestore logic that makes
+decisions belongs in `lib/services/`, with `FirebaseFirestore` injected, so
+it can be tested with `fake_cloud_firestore`. See `gate_scan_service.dart`
+and `test/gate_scan_service_test.dart` for the pattern.
