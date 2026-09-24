@@ -13,6 +13,7 @@ import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import '../../models/facility_registration_data.dart';
 import '../../theme/app_theme.dart';
 import '../../services/establishment_repository.dart';
+import '../../services/error_reporter.dart';
 import '../../services/platform_fees.dart';
 import '../../utils/staff_credentials.dart';
 import '../../widgets/smartpark_ui.dart';
@@ -118,8 +119,8 @@ class _ParkingOwnerHomePageState extends State<ParkingOwnerHomePage>
         moved++;
       }
       if (moved > 0) await batch.commit();
-    } catch (error) {
-      debugPrint('ParkingOwnerHomePage: staff record migration failed: $error');
+    } catch (error, stack) {
+      reportError(error, stack, reason: 'Staff record migration failed');
     }
   }
 
@@ -162,8 +163,8 @@ class _ParkingOwnerHomePageState extends State<ParkingOwnerHomePage>
         });
         await batch.commit();
       }
-    } catch (error) {
-      debugPrint('ParkingOwnerHomePage: document URL migration failed: $error');
+    } catch (error, stack) {
+      reportError(error, stack, reason: 'Document URL migration failed');
     }
   }
 
@@ -474,7 +475,8 @@ class _ParkingOwnerHomePageState extends State<ParkingOwnerHomePage>
           .doc(staffDocId)
           .delete();
       _showSnackBar('Staff account removed.');
-    } catch (error) {
+    } catch (error, stack) {
+      reportError(error, stack, reason: 'Removing staff account failed');
       _showSnackBar('Unable to remove staff: $error');
     }
   }
@@ -609,7 +611,8 @@ class _ParkingOwnerHomePageState extends State<ParkingOwnerHomePage>
           establishmentId: savedEstablishmentId,
           previousStatus: currentData?['status'] as String?,
         );
-      } catch (error) {
+      } catch (error, stack) {
+        reportError(error, stack, reason: 'Saving facility failed');
         _showSnackBar('Unable to save facility: $error');
         return null;
       }

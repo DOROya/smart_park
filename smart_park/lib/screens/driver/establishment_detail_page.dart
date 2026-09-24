@@ -10,6 +10,7 @@ import 'driver_vehicle_selection_page.dart';
 import 'driver_in_app_checkout_page.dart';
 import 'driver_paid_ticket_page.dart';
 import '../../services/parking_checkout_service.dart';
+import '../../services/error_reporter.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/smartpark_ui.dart';
 import 'services/driver_establishment_service.dart';
@@ -983,7 +984,8 @@ class _EstablishmentDetailPageState extends State<EstablishmentDetailPage>
     } on FirebaseFunctionsException catch (error) {
       _showSnackBar(error.message ?? 'Failed to process payment.');
       return false;
-    } catch (error) {
+    } catch (error, stack) {
+      reportError(error, stack, reason: 'Parking payment failed');
       _showSnackBar('Failed to process payment: $error');
       return false;
     } finally {

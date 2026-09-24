@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../../theme/app_theme.dart';
+import '../../services/error_reporter.dart';
 import '../../widgets/smartpark_ui.dart';
 
 /// Gate panel for drive-up customers without a SmartPark ticket.
@@ -119,7 +120,8 @@ class _WalkInPanelState extends State<WalkInPanel> {
         'Walk-in ${vehicleType == 'motorcycle' ? 'motorcycle' : 'car'} '
         'checked in${plate.isEmpty ? '' : ' ($plate)'}.',
       );
-    } catch (error) {
+    } catch (error, stack) {
+      reportError(error, stack, reason: 'Recording walk-in failed');
       _showSnackBar('Unable to record walk-in: $error');
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -181,7 +183,8 @@ class _WalkInPanelState extends State<WalkInPanel> {
       }
       await batch.commit();
       _showSnackBar('Walk-in ${plate.isEmpty ? '' : '$plate '}checked out.');
-    } catch (error) {
+    } catch (error, stack) {
+      reportError(error, stack, reason: 'Walk-in checkout failed');
       _showSnackBar('Unable to check out walk-in: $error');
     } finally {
       if (mounted) setState(() => _exiting.remove(ticket.id));

@@ -5,8 +5,8 @@ import 'parking_storage_service.dart';
 
 class EstablishmentRepository {
   const EstablishmentRepository({
-    ParkingStorageService storageService = const ParkingStorageService(),
-  }) : _storageService = storageService;
+    this._storageService = const ParkingStorageService(),
+  });
 
   final ParkingStorageService _storageService;
 

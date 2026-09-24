@@ -10,6 +10,7 @@ import '../../services/parking_pricing.dart';
 import '../../services/permission_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/smartpark_ui.dart';
+import '../../services/error_reporter.dart';
 import '../auth/sign_in_screen.dart';
 import 'walk_in_panel.dart';
 
@@ -492,7 +493,8 @@ class _StaffHomePageState extends State<StaffHomePage>
           scannedAt: now,
         );
       }
-    } catch (_) {
+    } catch (error, stack) {
+      reportError(error, stack, reason: 'Gate scan verification failed');
       _presentGateResult(
         _GateScanResult(
           decision: 'ERROR',
@@ -681,7 +683,12 @@ class _StaffHomePageState extends State<StaffHomePage>
           (dynamic k, dynamic v) => MapEntry<String, dynamic>(k.toString(), v),
         );
       }
-    } catch (_) {
+    } catch (error, stack) {
+      reportError(
+        error,
+        stack,
+        reason: 'Loading facility rates for exit scan failed',
+      );
       rates = null;
     }
 
@@ -723,7 +730,8 @@ class _StaffHomePageState extends State<StaffHomePage>
       if (q.docs.isNotEmpty) {
         openEntry = q.docs.first;
       }
-    } catch (_) {
+    } catch (error, stack) {
+      reportError(error, stack, reason: 'Looking up open entry log failed');
       openEntry = null;
     }
     final WriteBatch batch = FirebaseFirestore.instance.batch();
@@ -905,7 +913,8 @@ class _StaffHomePageState extends State<StaffHomePage>
           'vehiclePlate': plate,
         }),
       );
-    } catch (_) {
+    } catch (error, stack) {
+      reportError(error, stack, reason: 'Plate lookup failed');
       _presentGateResult(
         _GateScanResult(
           decision: 'ERROR',

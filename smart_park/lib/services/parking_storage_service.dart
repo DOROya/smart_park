@@ -4,6 +4,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart';
 
+import 'error_reporter.dart';
+
 class ParkingStorageService {
   const ParkingStorageService();
 
@@ -38,15 +40,11 @@ class ParkingStorageService {
         'ParkingStorageService: Uploaded and linked photoUrl for $establishmentId',
       );
       return downloadUrl;
-    } on FirebaseException catch (error) {
-      debugPrint(
-        'ParkingStorageService: Firebase error (${error.code}): ${error.message}',
-      );
+    } on FirebaseException catch (error, stack) {
+      reportError(error, stack, reason: 'Firebase error uploading photo');
       return null;
-    } catch (error) {
-      debugPrint(
-        'ParkingStorageService: Unexpected error during upload: $error',
-      );
+    } catch (error, stack) {
+      reportError(error, stack, reason: 'Unexpected error during upload');
       return null;
     }
   }
@@ -77,14 +75,10 @@ class ParkingStorageService {
         final TaskSnapshot snapshot = await uploadTask;
         final String downloadUrl = await snapshot.ref.getDownloadURL();
         uploadedUrls.add(downloadUrl);
-      } on FirebaseException catch (error) {
-        debugPrint(
-          'ParkingStorageService: Firebase error uploading photo $i (${error.code}): ${error.message}',
-        );
-      } catch (error) {
-        debugPrint(
-          'ParkingStorageService: Unexpected error uploading photo $i: $error',
-        );
+      } on FirebaseException catch (error, stack) {
+        reportError(error, stack, reason: 'Firebase error uploading photo');
+      } catch (error, stack) {
+        reportError(error, stack, reason: 'Unexpected error uploading photo');
       }
     }
 
@@ -113,15 +107,11 @@ class ParkingStorageService {
         'ParkingStorageService: Updated photoUrls (${finalUrls.length}) for $establishmentId',
       );
       return finalUrls;
-    } on FirebaseException catch (error) {
-      debugPrint(
-        'ParkingStorageService: Firebase error updating photoUrls (${error.code}): ${error.message}',
-      );
+    } on FirebaseException catch (error, stack) {
+      reportError(error, stack, reason: 'Firebase error updating photoUrls');
       return null;
-    } catch (error) {
-      debugPrint(
-        'ParkingStorageService: Unexpected error updating photoUrls: $error',
-      );
+    } catch (error, stack) {
+      reportError(error, stack, reason: 'Unexpected error updating photoUrls');
       return null;
     }
   }
@@ -154,13 +144,13 @@ class ParkingStorageService {
           SettableMetadata(contentType: 'image/jpeg'),
         );
         uploadedUrls.add(await snapshot.ref.getDownloadURL());
-      } on FirebaseException catch (error) {
-        debugPrint(
-          'ParkingStorageService: Firebase error uploading document $i (${error.code}): ${error.message}',
-        );
-      } catch (error) {
-        debugPrint(
-          'ParkingStorageService: Unexpected error uploading document $i: $error',
+      } on FirebaseException catch (error, stack) {
+        reportError(error, stack, reason: 'Firebase error uploading document');
+      } catch (error, stack) {
+        reportError(
+          error,
+          stack,
+          reason: 'Unexpected error uploading document',
         );
       }
     }
@@ -184,14 +174,18 @@ class ParkingStorageService {
         'ParkingStorageService: Updated businessDocumentUrls (${finalUrls.length}) for $establishmentId',
       );
       return finalUrls;
-    } on FirebaseException catch (error) {
-      debugPrint(
-        'ParkingStorageService: Firebase error updating businessDocumentUrls (${error.code}): ${error.message}',
+    } on FirebaseException catch (error, stack) {
+      reportError(
+        error,
+        stack,
+        reason: 'Firebase error updating businessDocumentUrls',
       );
       return null;
-    } catch (error) {
-      debugPrint(
-        'ParkingStorageService: Unexpected error updating businessDocumentUrls: $error',
+    } catch (error, stack) {
+      reportError(
+        error,
+        stack,
+        reason: 'Unexpected error updating businessDocumentUrls',
       );
       return null;
     }
@@ -215,10 +209,8 @@ class ParkingStorageService {
         urls.add(url);
       }
       return urls;
-    } catch (error) {
-      debugPrint(
-        'ParkingStorageService: Error listing storage photoUrls: $error',
-      );
+    } catch (error, stack) {
+      reportError(error, stack, reason: 'Error listing storage photoUrls');
       return <String>[];
     }
   }
@@ -230,14 +222,10 @@ class ParkingStorageService {
     try {
       await FirebaseStorage.instance.refFromURL(photoUrl).delete();
       debugPrint('ParkingStorageService: Deleted photo at $photoUrl');
-    } on FirebaseException catch (error) {
-      debugPrint(
-        'ParkingStorageService: Firebase error deleting photo (${error.code}): ${error.message}',
-      );
-    } catch (error) {
-      debugPrint(
-        'ParkingStorageService: Unexpected error deleting photo: $error',
-      );
+    } on FirebaseException catch (error, stack) {
+      reportError(error, stack, reason: 'Firebase error deleting photo');
+    } catch (error, stack) {
+      reportError(error, stack, reason: 'Unexpected error deleting photo');
     }
   }
 }
