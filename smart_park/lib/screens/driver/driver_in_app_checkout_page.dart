@@ -33,6 +33,8 @@ class _DriverInAppCheckoutPageState extends State<DriverInAppCheckoutPage> {
   String? _errorMessage;
   Timer? _pollTimer;
 
+  static const Duration _pollInterval = Duration(seconds: 2);
+
   @override
   void initState() {
     super.initState();
@@ -109,7 +111,9 @@ class _DriverInAppCheckoutPageState extends State<DriverInAppCheckoutPage> {
     // page's first timer tick (e.g. a fast test-mode authorization).
     unawaited(_checkPaymentStatus(silent: true));
 
-    _pollTimer = Timer.periodic(const Duration(seconds: 4), (_) async {
+    // Methods like QRPH never redirect to the success URL, so this poll is
+    // what closes the page for them; keep it short so it feels automatic.
+    _pollTimer = Timer.periodic(_pollInterval, (_) async {
       await _checkPaymentStatus(silent: true);
     });
   }
@@ -308,38 +312,72 @@ class _DriverInAppCheckoutPageState extends State<DriverInAppCheckoutPage> {
                 color: Colors.white,
                 border: Border(top: BorderSide(color: Color(0xFFE2E5EC))),
               ),
-              child: SizedBox(
-                width: double.infinity,
-                child: ElevatedButton.icon(
-                  onPressed: _checkingStatus
-                      ? null
-                      : () => _checkPaymentStatus(),
-                  icon: _checkingStatus
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (widget.checkPaid != null)
+                    const Padding(
+                      padding: EdgeInsets.only(bottom: 8),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          SizedBox(
+                            width: 12,
+                            height: 12,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 1.8,
+                              color: AppTheme.textMuted,
+                            ),
                           ),
-                        )
-                      : const Icon(Icons.verified_outlined),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppTheme.accent,
-                    foregroundColor: const Color(0xFF22252C),
-                    minimumSize: const Size.fromHeight(48),
-                    elevation: 0,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
+                          SizedBox(width: 8),
+                          Flexible(
+                            child: Text(
+                              'Waiting for payment confirmation. '
+                              'This closes automatically.',
+                              style: TextStyle(
+                                color: AppTheme.textMuted,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: _checkingStatus
+                          ? null
+                          : () => _checkPaymentStatus(),
+                      icon: _checkingStatus
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Icon(Icons.verified_outlined),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppTheme.accent,
+                        foregroundColor: const Color(0xFF22252C),
+                        minimumSize: const Size.fromHeight(48),
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                      label: Text(
+                        _checkingStatus
+                            ? 'Checking status...'
+                            : 'I Have Completed Payment',
+                        style: const TextStyle(fontWeight: FontWeight.w800),
+                      ),
                     ),
                   ),
-                  label: Text(
-                    _checkingStatus
-                        ? 'Checking status...'
-                        : 'I Have Completed Payment',
-                    style: const TextStyle(fontWeight: FontWeight.w800),
-                  ),
-                ),
+                ],
               ),
             ),
           ),
