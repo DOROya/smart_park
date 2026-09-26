@@ -94,16 +94,13 @@ class _GateActivityContentState extends State<_GateActivityContent>
                   Container(
                     padding: const EdgeInsets.all(14),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFFFF3D9),
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: const Color(0xFFE8B93E)),
+                      color: AppTheme.warningSoft,
+                      borderRadius: BorderRadius.circular(AppTheme.radiusLarge),
+                      border: Border.all(color: AppTheme.accent),
                     ),
                     child: Row(
                       children: [
-                        const Icon(
-                          Icons.payments_rounded,
-                          color: spInsideColor,
-                        ),
+                        Icon(Icons.payments_rounded, color: spInsideColor),
                         const SizedBox(width: 10),
                         Expanded(
                           child: Column(
@@ -111,7 +108,7 @@ class _GateActivityContentState extends State<_GateActivityContent>
                             children: [
                               Text(
                                 'PHP ${cashDueTotal.toStringAsFixed(2)} overtime cash',
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontWeight: FontWeight.w800,
                                   color: AppTheme.textDark,
                                 ),
@@ -119,9 +116,9 @@ class _GateActivityContentState extends State<_GateActivityContent>
                               Text(
                                 '$cashDueCount exit(s) flagged for cash '
                                 'collection at the gate.',
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontSize: 12,
-                                  color: Color(0xFF6B5A2E),
+                                  color: AppTheme.accentText,
                                 ),
                               ),
                             ],
@@ -155,7 +152,7 @@ class _GateActivityContentState extends State<_GateActivityContent>
                     message: 'Unable to load activity.',
                   )
                 else if (!snapshot.hasData)
-                  const Center(child: CircularProgressIndicator())
+                  const SpSkeletonList()
                 else if (visible.isEmpty)
                   const SpEmptyState(
                     message: 'No scans for this filter and date.',

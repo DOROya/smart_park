@@ -5,16 +5,18 @@ import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart' show LatLng;
 import 'package:url_launcher/url_launcher.dart';
 
-import 'driver_payment_page.dart';
-import 'driver_vehicle_selection_page.dart';
+import '../../services/error_reporter.dart';
+import '../../services/operating_hours.dart';
+import '../../services/parking_checkout_service.dart';
+import '../../theme/app_theme.dart';
+import '../../utils/friendly_error.dart';
+import '../../widgets/smartpark_ui.dart';
+import '../../widgets/sp_network_image.dart';
 import 'driver_in_app_checkout_page.dart';
 import 'driver_paid_ticket_page.dart';
-import '../../services/parking_checkout_service.dart';
-import '../../services/error_reporter.dart';
-import '../../theme/app_theme.dart';
-import '../../widgets/smartpark_ui.dart';
+import 'driver_payment_page.dart';
+import 'driver_vehicle_selection_page.dart';
 import 'services/driver_establishment_service.dart';
-import '../../services/operating_hours.dart';
 
 part 'establishment_detail/rate_display.dart';
 
@@ -174,9 +176,9 @@ class _EstablishmentDetailPageState extends State<EstablishmentDetailPage>
   }
 
   Widget _photoPlaceholder(IconData icon) => Container(
-    color: const Color(0xFFE9EDF3),
+    color: AppTheme.border,
     alignment: Alignment.center,
-    child: Icon(icon, size: 54, color: const Color(0xFF737A88)),
+    child: Icon(icon, size: 54, color: AppTheme.textMuted),
   );
 
   /// Rounded photo header (swipeable when there are several photos) with
@@ -192,7 +194,7 @@ class _EstablishmentDetailPageState extends State<EstablishmentDetailPage>
     final List<String> photoUrls = _extractPhotoUrls(data);
 
     return ClipRRect(
-      borderRadius: BorderRadius.circular(20),
+      borderRadius: BorderRadius.circular(AppTheme.radiusXLarge),
       child: SizedBox(
         height: 200,
         width: double.infinity,
@@ -202,23 +204,17 @@ class _EstablishmentDetailPageState extends State<EstablishmentDetailPage>
             if (photoUrls.isEmpty)
               _photoPlaceholder(Icons.local_parking_rounded)
             else if (photoUrls.length == 1)
-              Image.network(
+              SpNetworkImage(
                 photoUrls.first,
-                fit: BoxFit.cover,
-                errorBuilder: (context, error, stackTrace) =>
-                    _photoPlaceholder(Icons.local_parking_rounded),
+                errorIcon: Icons.local_parking_rounded,
               )
             else
               PageView.builder(
                 itemCount: photoUrls.length,
                 onPageChanged: (int index) =>
                     setState(() => _photoIndex = index),
-                itemBuilder: (BuildContext context, int index) => Image.network(
-                  photoUrls[index],
-                  fit: BoxFit.cover,
-                  errorBuilder: (context, error, stackTrace) =>
-                      _photoPlaceholder(Icons.broken_image_rounded),
-                ),
+                itemBuilder: (BuildContext context, int index) =>
+                    SpNetworkImage(photoUrls[index]),
               ),
             const IgnorePointer(
               child: DecoratedBox(
@@ -242,7 +238,7 @@ class _EstablishmentDetailPageState extends State<EstablishmentDetailPage>
                     vertical: 4,
                   ),
                   decoration: BoxDecoration(
-                    color: Colors.white,
+                    color: AppTheme.surface,
                     borderRadius: BorderRadius.circular(999),
                   ),
                   child: Row(
@@ -297,8 +293,8 @@ class _EstablishmentDetailPageState extends State<EstablishmentDetailPage>
                                 address,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  color: Color(0xFFE8EAF0),
+                                style: TextStyle(
+                                  color: AppTheme.border,
                                   fontSize: 12,
                                 ),
                               ),
@@ -314,7 +310,9 @@ class _EstablishmentDetailPageState extends State<EstablishmentDetailPage>
                             ),
                             decoration: BoxDecoration(
                               color: const Color(0xEFFFFFFF),
-                              borderRadius: BorderRadius.circular(10),
+                              borderRadius: BorderRadius.circular(
+                                AppTheme.radiusSmall,
+                              ),
                             ),
                             child: Row(
                               children: [
@@ -326,8 +324,8 @@ class _EstablishmentDetailPageState extends State<EstablishmentDetailPage>
                                 const SizedBox(width: 3),
                                 Text(
                                   rating.toStringAsFixed(1),
-                                  style: const TextStyle(
-                                    color: AppTheme.textDark,
+                                  style: TextStyle(
+                                    color: AppTheme.onAccent,
                                     fontSize: 12,
                                     fontWeight: FontWeight.w800,
                                   ),
@@ -379,7 +377,7 @@ class _EstablishmentDetailPageState extends State<EstablishmentDetailPage>
         : 'Opens at ${OperatingHours.format12h(hours.openMinutes!)}';
     return Row(
       children: [
-        const Icon(Icons.schedule_rounded, size: 18, color: AppTheme.textMuted),
+        Icon(Icons.schedule_rounded, size: 18, color: AppTheme.textMuted),
         const SizedBox(width: 8),
         Expanded(
           child: Column(
@@ -387,7 +385,7 @@ class _EstablishmentDetailPageState extends State<EstablishmentDetailPage>
             children: [
               Text(
                 hours.isSet ? hours.label : _readText(data['operatingHours']),
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
                   color: AppTheme.textDark,
@@ -396,10 +394,7 @@ class _EstablishmentDetailPageState extends State<EstablishmentDetailPage>
               if (detail.isNotEmpty)
                 Text(
                   detail,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: AppTheme.textMuted,
-                  ),
+                  style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
                 ),
             ],
           ),
@@ -420,13 +415,13 @@ class _EstablishmentDetailPageState extends State<EstablishmentDetailPage>
       child: Column(
         children: [
           _buildHoursRow(data),
-          const Padding(
+          Padding(
             padding: EdgeInsets.symmetric(vertical: 10),
-            child: Divider(height: 1, color: Color(0xFFEDEFF3)),
+            child: Divider(height: 1, color: AppTheme.border),
           ),
           Row(
             children: [
-              const Icon(
+              Icon(
                 Icons.location_on_outlined,
                 size: 18,
                 color: AppTheme.textMuted,
@@ -435,10 +430,7 @@ class _EstablishmentDetailPageState extends State<EstablishmentDetailPage>
               Expanded(
                 child: Text(
                   _readText(data['address']),
-                  style: const TextStyle(
-                    fontSize: 13,
-                    color: AppTheme.textDark,
-                  ),
+                  style: TextStyle(fontSize: 13, color: AppTheme.textDark),
                 ),
               ),
               const SizedBox(width: 8),
@@ -448,7 +440,7 @@ class _EstablishmentDetailPageState extends State<EstablishmentDetailPage>
                 label: const Text('Directions'),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: spExitColor,
-                  side: const BorderSide(color: spCardBorder),
+                  side: BorderSide(color: spCardBorder),
                   visualDensity: VisualDensity.compact,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(999),
@@ -515,7 +507,7 @@ class _EstablishmentDetailPageState extends State<EstablishmentDetailPage>
           Expanded(
             child: Text(
               label,
-              style: const TextStyle(fontSize: 13, color: AppTheme.textMuted),
+              style: TextStyle(fontSize: 13, color: AppTheme.textMuted),
             ),
           ),
           Text(
@@ -570,7 +562,7 @@ class _EstablishmentDetailPageState extends State<EstablishmentDetailPage>
         child: Column(
           children: [
             for (int i = 0; i < rows.length; i++) ...[
-              if (i > 0) const Divider(height: 1, color: Color(0xFFEDEFF3)),
+              if (i > 0) Divider(height: 1, color: AppTheme.border),
               rows[i],
             ],
           ],
@@ -599,21 +591,11 @@ class _EstablishmentDetailPageState extends State<EstablishmentDetailPage>
               return GestureDetector(
                 onTap: () => _showPhoto(photoUrls[index]),
                 child: ClipRRect(
-                  borderRadius: BorderRadius.circular(14),
-                  child: Image.network(
+                  borderRadius: BorderRadius.circular(AppTheme.radiusLarge),
+                  child: SpNetworkImage(
                     photoUrls[index],
                     width: 150,
                     height: 110,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, _, _) => Container(
-                      width: 150,
-                      height: 110,
-                      color: const Color(0xFFF1F3F7),
-                      child: const Icon(
-                        Icons.broken_image_rounded,
-                        color: AppTheme.textMuted,
-                      ),
-                    ),
                   ),
                 ),
               );
@@ -636,7 +618,7 @@ class _EstablishmentDetailPageState extends State<EstablishmentDetailPage>
             children: [
               InteractiveViewer(
                 maxScale: 5,
-                child: Center(child: Image.network(url, fit: BoxFit.contain)),
+                child: Center(child: SpNetworkImage(url, fit: BoxFit.contain)),
               ),
               Positioned(
                 top: 4,
@@ -689,12 +671,12 @@ class _EstablishmentDetailPageState extends State<EstablishmentDetailPage>
             width: double.infinity,
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
-              color: const Color(0xFFF6F7FA),
-              borderRadius: BorderRadius.circular(12),
+              color: AppTheme.surfaceAlt,
+              borderRadius: BorderRadius.circular(AppTheme.radius),
             ),
             child: Text(
               policies.isEmpty ? 'No policy details available yet.' : policies,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 13.5,
                 height: 1.5,
                 color: AppTheme.textDark,
@@ -717,11 +699,11 @@ class _EstablishmentDetailPageState extends State<EstablishmentDetailPage>
             const SizedBox(height: 12),
             Container(
               decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
+                color: AppTheme.surface,
+                borderRadius: BorderRadius.circular(AppTheme.radius),
                 border: Border.all(color: spCardBorder),
               ),
-              child: const TabBar(
+              child: TabBar(
                 labelColor: AppTheme.textDark,
                 unselectedLabelColor: AppTheme.textMuted,
                 indicatorColor: AppTheme.accent,
@@ -758,8 +740,8 @@ class _EstablishmentDetailPageState extends State<EstablishmentDetailPage>
     final String? fromRate = _lowestBaseRate(data, _rateVehicleKeys(data));
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-      decoration: const BoxDecoration(
-        color: Colors.white,
+      decoration: BoxDecoration(
+        color: AppTheme.surface,
         border: Border(top: BorderSide(color: spCardBorder)),
       ),
       child: SafeArea(
@@ -771,13 +753,13 @@ class _EstablishmentDetailPageState extends State<EstablishmentDetailPage>
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
+                  Text(
                     'From · first $spBaseStayLabel',
                     style: TextStyle(fontSize: 11, color: AppTheme.textMuted),
                   ),
                   Text(
                     fromRate.replaceFirst('P', '₱'),
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 20,
                       fontWeight: FontWeight.w800,
                       color: AppTheme.textDark,
@@ -801,11 +783,11 @@ class _EstablishmentDetailPageState extends State<EstablishmentDetailPage>
                     : const Icon(Icons.local_parking_rounded),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppTheme.accent,
-                  foregroundColor: const Color(0xFF22252C),
+                  foregroundColor: AppTheme.onAccent,
                   elevation: 0,
                   minimumSize: const Size.fromHeight(50),
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
+                    borderRadius: BorderRadius.circular(AppTheme.radiusLarge),
                   ),
                 ),
                 label: Text(
@@ -982,11 +964,15 @@ class _EstablishmentDetailPageState extends State<EstablishmentDetailPage>
 
       return true;
     } on FirebaseFunctionsException catch (error) {
-      _showSnackBar(error.message ?? 'Failed to process payment.');
+      _showSnackBar(
+        friendlyError(error, fallback: 'Unable to process the payment.'),
+      );
       return false;
     } catch (error, stack) {
       reportError(error, stack, reason: 'Parking payment failed');
-      _showSnackBar('Failed to process payment: $error');
+      _showSnackBar(
+        friendlyError(error, fallback: 'Unable to process the payment.'),
+      );
       return false;
     } finally {
       if (mounted) {
@@ -1035,7 +1021,7 @@ class _EstablishmentDetailPageState extends State<EstablishmentDetailPage>
                     Widget message(Widget child) => Scaffold(
                       backgroundColor: AppTheme.background,
                       appBar: AppBar(
-                        backgroundColor: Colors.white,
+                        backgroundColor: AppTheme.surface,
                         title: const Text('Parking Details'),
                       ),
                       body: Center(child: child),
@@ -1048,7 +1034,7 @@ class _EstablishmentDetailPageState extends State<EstablishmentDetailPage>
                     }
                     if (snapshot.hasError || detailsSnapshot.hasError) {
                       return message(
-                        const Text(
+                        Text(
                           'Unable to load establishment details.',
                           style: TextStyle(color: AppTheme.textMuted),
                         ),
@@ -1061,7 +1047,7 @@ class _EstablishmentDetailPageState extends State<EstablishmentDetailPage>
                         detailsSnapshot.data?.data() ?? <String, dynamic>{};
                     if (baseData.isEmpty && detailsData.isEmpty) {
                       return message(
-                        const Text(
+                        Text(
                           'Establishment not found.',
                           style: TextStyle(color: AppTheme.textMuted),
                         ),
@@ -1077,8 +1063,8 @@ class _EstablishmentDetailPageState extends State<EstablishmentDetailPage>
                     return Scaffold(
                       backgroundColor: AppTheme.background,
                       appBar: AppBar(
-                        backgroundColor: Colors.white,
-                        surfaceTintColor: Colors.white,
+                        backgroundColor: AppTheme.surface,
+                        surfaceTintColor: AppTheme.surface,
                         title: const Text('Parking Details'),
                       ),
                       body: _buildBody(data),

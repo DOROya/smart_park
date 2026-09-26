@@ -41,12 +41,12 @@ class WelcomeScreen extends StatelessWidget {
             width: double.infinity,
             padding: const EdgeInsets.all(18),
             decoration: BoxDecoration(
-              gradient: const LinearGradient(
+              gradient: LinearGradient(
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
-                colors: <Color>[Color(0xFFFFEAA8), Color(0xFFF7C846)],
+                colors: <Color>[AppTheme.accentLight, AppTheme.accentWarm],
               ),
-              borderRadius: BorderRadius.circular(20),
+              borderRadius: BorderRadius.circular(AppTheme.radiusXLarge),
             ),
             child: const Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -60,13 +60,7 @@ class WelcomeScreen extends StatelessWidget {
                 _WelcomePoint(
                   icon: Icons.storefront_rounded,
                   title: 'Parking owners',
-                  text: 'Run your facility, staff, and earnings in one place.',
-                ),
-                SizedBox(height: 14),
-                _WelcomePoint(
-                  icon: Icons.qr_code_scanner_rounded,
-                  title: 'Staff',
-                  text: 'Scan tickets at the gate and track who is inside.',
+                  text: 'Run your facility and track earnings in one place.',
                 ),
               ],
             ),
@@ -81,14 +75,6 @@ class WelcomeScreen extends StatelessWidget {
           SecondaryAuthButton(
             text: 'Create an Account',
             onPressed: () => _openSignUp(context),
-          ),
-          const SizedBox(height: 16),
-          const Center(
-            child: Text(
-              'Staff sign in with the username from their parking owner.',
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
-            ),
           ),
         ],
       ),
@@ -117,9 +103,9 @@ class _WelcomePoint extends StatelessWidget {
           height: 38,
           decoration: BoxDecoration(
             color: const Color(0x55FFFFFF),
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(AppTheme.radius),
           ),
-          child: Icon(icon, size: 20, color: const Color(0xFF1F2532)),
+          child: Icon(icon, size: 20, color: AppTheme.textDark),
         ),
         const SizedBox(width: 12),
         Expanded(
@@ -128,18 +114,18 @@ class _WelcomePoint extends StatelessWidget {
             children: [
               Text(
                 title,
-                style: const TextStyle(
+                style: TextStyle(
                   fontWeight: FontWeight.w800,
-                  color: Color(0xFF1F2532),
+                  color: AppTheme.textDark,
                 ),
               ),
               const SizedBox(height: 2),
               Text(
                 text,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 12.5,
                   fontWeight: FontWeight.w500,
-                  color: Color(0xFF3D4658),
+                  color: AppTheme.textSecondary,
                 ),
               ),
             ],

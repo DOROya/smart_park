@@ -123,8 +123,8 @@ class _DriverPaymentPageState extends State<DriverPaymentPage> {
 
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: Colors.white,
-        surfaceTintColor: Colors.white,
+        backgroundColor: AppTheme.surface,
+        surfaceTintColor: AppTheme.surface,
         title: const Text('Payment'),
       ),
       body: SafeArea(
@@ -146,7 +146,7 @@ class _DriverPaymentPageState extends State<DriverPaymentPage> {
                 Text(
                   widget.establishmentName,
                   style: theme.textTheme.bodyMedium?.copyWith(
-                    color: const Color(0xFF626978),
+                    color: AppTheme.textSecondary,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -199,32 +199,33 @@ class _DriverPaymentPageState extends State<DriverPaymentPage> {
                           padding: const EdgeInsets.only(bottom: 10),
                           child: InkWell(
                             onTap: () => setState(() => _method = method),
-                            borderRadius: BorderRadius.circular(8),
+                            borderRadius: BorderRadius.circular(
+                              AppTheme.radiusSmall,
+                            ),
                             child: Ink(
                               padding: const EdgeInsets.all(14),
                               decoration: BoxDecoration(
                                 color: selected
-                                    ? const Color(0xFFFFF5D6)
-                                    : const Color(0xFFF9FAFC),
-                                borderRadius: BorderRadius.circular(8),
+                                    ? AppTheme.accentSoft
+                                    : AppTheme.surfaceAlt,
+                                borderRadius: BorderRadius.circular(
+                                  AppTheme.radiusSmall,
+                                ),
                                 border: Border.all(
                                   color: selected
-                                      ? const Color(0xFFE3B329)
-                                      : const Color(0xFFE1E5EC),
+                                      ? AppTheme.accent
+                                      : AppTheme.border,
                                   width: selected ? 1.5 : 1,
                                 ),
                               ),
                               child: Row(
                                 children: [
-                                  Icon(
-                                    method.icon,
-                                    color: const Color(0xFF363D4B),
-                                  ),
+                                  Icon(method.icon, color: AppTheme.textDark),
                                   const SizedBox(width: 12),
                                   Expanded(
                                     child: Text(
                                       method.label,
-                                      style: const TextStyle(
+                                      style: TextStyle(
                                         color: AppTheme.textDark,
                                         fontWeight: FontWeight.w700,
                                       ),
@@ -232,7 +233,7 @@ class _DriverPaymentPageState extends State<DriverPaymentPage> {
                                   ),
                                   Radio<DriverPaymentMethod>(
                                     value: method,
-                                    activeColor: const Color(0xFFC49100),
+                                    activeColor: AppTheme.accentText,
                                   ),
                                 ],
                               ),
@@ -278,10 +279,10 @@ class _DriverPaymentPageState extends State<DriverPaymentPage> {
                 : null,
             style: FilledButton.styleFrom(
               backgroundColor: AppTheme.accent,
-              foregroundColor: const Color(0xFF252A34),
+              foregroundColor: AppTheme.onAccent,
               minimumSize: const Size.fromHeight(54),
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
               ),
             ),
             icon: const Icon(Icons.lock_outline_rounded),
@@ -305,8 +306,8 @@ class _DriverPaymentPageState extends State<DriverPaymentPage> {
       children: [
         Text(
           label,
-          style: const TextStyle(
-            color: Color(0xFF4C5361),
+          style: TextStyle(
+            color: AppTheme.textSecondary,
             fontWeight: FontWeight.w600,
           ),
         ),
@@ -314,11 +315,13 @@ class _DriverPaymentPageState extends State<DriverPaymentPage> {
         DropdownButtonFormField<String>(
           initialValue: value,
           isExpanded: true,
-          decoration: const InputDecoration(
+          decoration: InputDecoration(
             contentPadding: EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             border: OutlineInputBorder(
-              borderRadius: BorderRadius.all(Radius.circular(8)),
-              borderSide: BorderSide(color: Color(0xFFE1E5EC)),
+              borderRadius: BorderRadius.all(
+                Radius.circular(AppTheme.radiusSmall),
+              ),
+              borderSide: BorderSide(color: AppTheme.border),
             ),
           ),
           items: values
@@ -346,16 +349,16 @@ class _DriverPaymentPageState extends State<DriverPaymentPage> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFE1E5EC)),
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
+        border: Border.all(color: AppTheme.border),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             title,
-            style: const TextStyle(
+            style: TextStyle(
               color: AppTheme.textDark,
               fontSize: 16,
               fontWeight: FontWeight.w700,
@@ -385,12 +388,12 @@ class _PaymentSummary extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFF252C38),
-        borderRadius: BorderRadius.circular(8),
+        color: AppTheme.ink,
+        borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
       ),
       child: Row(
         children: [
-          const Icon(Icons.receipt_long_rounded, color: Color(0xFFF7D45D)),
+          const Icon(Icons.receipt_long_rounded, color: AppTheme.accent),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
@@ -398,20 +401,25 @@ class _PaymentSummary extends StatelessWidget {
               children: [
                 Text(
                   '${vehicleType[0].toUpperCase()}${vehicleType.substring(1)} | ${plan[0].toUpperCase()}${plan.substring(1)}',
-                  style: const TextStyle(color: Color(0xFFD6DCE5)),
+                  style: TextStyle(
+                    color: AppTheme.onInk.withValues(alpha: 0.85),
+                  ),
                 ),
                 const SizedBox(height: 3),
-                const Text(
+                Text(
                   'Parking charge',
-                  style: TextStyle(color: Color(0xFFABB4C2), fontSize: 12),
+                  style: TextStyle(
+                    color: AppTheme.onInk.withValues(alpha: 0.7),
+                    fontSize: 12,
+                  ),
                 ),
               ],
             ),
           ),
           Text(
             amount > 0 ? 'PHP ${amount.toStringAsFixed(2)}' : 'Not set',
-            style: const TextStyle(
-              color: Colors.white,
+            style: TextStyle(
+              color: AppTheme.onInk,
               fontSize: 18,
               fontWeight: FontWeight.w700,
             ),
@@ -432,20 +440,20 @@ class _TestNotice extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: const Color(0xFFF4F6FA),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFDCE3ED)),
+        color: AppTheme.surfaceAlt,
+        borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
+        border: Border.all(color: AppTheme.border),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(Icons.info_outline_rounded, color: Color(0xFF4B6584)),
+          Icon(Icons.info_outline_rounded, color: AppTheme.textSecondary),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
               message,
-              style: const TextStyle(
-                color: Color(0xFF4C5C70),
+              style: TextStyle(
+                color: AppTheme.textSecondary,
                 fontSize: 12,
                 height: 1.45,
                 fontWeight: FontWeight.w500,
@@ -491,8 +499,8 @@ class _PaymentCheckoutPageState extends State<PaymentCheckoutPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: Colors.white,
-        surfaceTintColor: Colors.white,
+        backgroundColor: AppTheme.surface,
+        surfaceTintColor: AppTheme.surface,
         automaticallyImplyLeading: false,
         title: const Text('Payment in progress'),
         actions: [
@@ -515,18 +523,18 @@ class _PaymentCheckoutPageState extends State<PaymentCheckoutPage> {
                   width: 56,
                   height: 56,
                   alignment: Alignment.center,
-                  decoration: const BoxDecoration(
-                    color: Color(0xFFFFF2BE),
+                  decoration: BoxDecoration(
+                    color: AppTheme.accentSoft,
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(
+                  child: Icon(
                     Icons.lock_outline_rounded,
-                    color: Color(0xFF2F3744),
+                    color: AppTheme.textDark,
                     size: 30,
                   ),
                 ),
                 const SizedBox(height: 14),
-                const Text(
+                Text(
                   'Complete your secure payment',
                   textAlign: TextAlign.center,
                   style: TextStyle(
@@ -539,7 +547,7 @@ class _PaymentCheckoutPageState extends State<PaymentCheckoutPage> {
                 Text(
                   widget.establishmentName,
                   textAlign: TextAlign.center,
-                  style: const TextStyle(color: Color(0xFF687181)),
+                  style: TextStyle(color: AppTheme.textMuted),
                 ),
                 const SizedBox(height: 20),
                 _checkoutCard(),
@@ -558,10 +566,10 @@ class _PaymentCheckoutPageState extends State<PaymentCheckoutPage> {
             onPressed: _openingCheckout ? null : _openCheckout,
             style: FilledButton.styleFrom(
               backgroundColor: AppTheme.accent,
-              foregroundColor: const Color(0xFF252A34),
+              foregroundColor: AppTheme.onAccent,
               minimumSize: const Size.fromHeight(54),
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
               ),
             ),
             icon: _openingCheckout
@@ -586,9 +594,9 @@ class _PaymentCheckoutPageState extends State<PaymentCheckoutPage> {
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFE1E5EC)),
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
+        border: Border.all(color: AppTheme.border),
       ),
       child: Column(
         children: [
@@ -608,14 +616,14 @@ class _PaymentCheckoutPageState extends State<PaymentCheckoutPage> {
             width: double.infinity,
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: const Color(0xFFE2E6ED)),
+              borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
+              border: Border.all(color: AppTheme.border),
             ),
-            child: const Text(
+            child: Text(
               'PayMongo opens a hosted checkout where you enter card or wallet test details. Your parking ticket is issued only after the payment is confirmed.',
               textAlign: TextAlign.center,
               style: TextStyle(
-                color: Color(0xFF697384),
+                color: AppTheme.textMuted,
                 fontSize: 12,
                 height: 1.4,
               ),
@@ -636,14 +644,11 @@ class _PaymentCheckoutPageState extends State<PaymentCheckoutPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          label,
-          style: const TextStyle(color: Color(0xFF737E8E), fontSize: 12),
-        ),
+        Text(label, style: TextStyle(color: AppTheme.textMuted, fontSize: 12)),
         const SizedBox(height: 4),
         Text(
           value,
-          style: const TextStyle(
+          style: TextStyle(
             color: AppTheme.textDark,
             fontWeight: FontWeight.w700,
           ),

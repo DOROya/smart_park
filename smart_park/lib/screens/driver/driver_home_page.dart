@@ -10,12 +10,12 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../../services/permission_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/smartpark_ui.dart';
+import '../../widgets/sp_profile_view.dart';
+import '../auth/sign_in_screen.dart';
+import 'establishment_detail_page.dart';
 import 'services/driver_establishment_service.dart';
 import 'widgets/driver_home_section.dart';
-import 'widgets/driver_profile_section.dart';
 import 'widgets/driver_ticket_history_section.dart';
-import 'establishment_detail_page.dart';
-import '../auth/sign_in_screen.dart';
 
 class DriverHomePage extends StatefulWidget {
   const DriverHomePage({super.key, this.role = 'driver'});
@@ -42,17 +42,12 @@ class _DriverHomePageState extends State<DriverHomePage>
   bool _openNowOnly = false;
   bool _locationServiceDialogOpen = false;
   bool _awaitingLocationSettingsReturn = false;
-  bool _savingProfile = false;
-  bool _updatingPassword = false;
 
   final TextEditingController _profileFirstNameController =
       TextEditingController();
   final TextEditingController _profileLastNameController =
       TextEditingController();
   final TextEditingController _profileEmailController = TextEditingController();
-  final TextEditingController _newPasswordController = TextEditingController();
-  final TextEditingController _confirmPasswordController =
-      TextEditingController();
 
   bool _profileSeeded = false;
 
@@ -86,130 +81,27 @@ class _DriverHomePageState extends State<DriverHomePage>
     _profileFirstNameController.dispose();
     _profileLastNameController.dispose();
     _profileEmailController.dispose();
-    _newPasswordController.dispose();
-    _confirmPasswordController.dispose();
     _mapController?.dispose();
     super.dispose();
   }
 
-  void _showSnackBar(String message) {
-    if (!mounted) {
-      return;
-    }
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
-  }
-
   void _seedProfileControllers(Map<String, dynamic>? data) {
-    if (_profileSeeded) {
+    // The first build runs before the user document loads; seeding then
+    // would lock the fields to empty values.
+    if (_profileSeeded || data == null) {
       return;
     }
 
     _profileSeeded = true;
-    _profileFirstNameController.text = ((data?['firstName'] as String?) ?? '')
+    _profileFirstNameController.text = ((data['firstName'] as String?) ?? '')
         .trim();
-    _profileLastNameController.text = ((data?['lastName'] as String?) ?? '')
+    _profileLastNameController.text = ((data['lastName'] as String?) ?? '')
         .trim();
     _profileEmailController.text =
-        ((data?['email'] as String?) ??
+        ((data['email'] as String?) ??
                 FirebaseAuth.instance.currentUser?.email ??
                 '')
             .trim();
-  }
-
-  Future<void> _saveProfile() async {
-    if (_savingProfile) {
-      return;
-    }
-
-    final String? uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) {
-      _showSnackBar('No logged-in user found.');
-      return;
-    }
-
-    final String firstName = _profileFirstNameController.text.trim();
-    final String lastName = _profileLastNameController.text.trim();
-    final String email = _profileEmailController.text.trim();
-
-    if (firstName.isEmpty || lastName.isEmpty || email.isEmpty) {
-      _showSnackBar('Please complete profile fields.');
-      return;
-    }
-
-    setState(() {
-      _savingProfile = true;
-    });
-
-    try {
-      await FirebaseFirestore.instance
-          .collection('users')
-          .doc(uid)
-          .update(<String, dynamic>{
-            'firstName': firstName,
-            'lastName': lastName,
-            'email': email,
-            'updatedAt': FieldValue.serverTimestamp(),
-          });
-      _showSnackBar('Profile updated.');
-    } finally {
-      if (mounted) {
-        setState(() {
-          _savingProfile = false;
-        });
-      }
-    }
-  }
-
-  Future<void> _changePassword() async {
-    if (_updatingPassword) {
-      return;
-    }
-
-    final User? user = FirebaseAuth.instance.currentUser;
-    if (user == null) {
-      _showSnackBar('No logged-in user found.');
-      return;
-    }
-
-    final String newPassword = _newPasswordController.text.trim();
-    final String confirmPassword = _confirmPasswordController.text.trim();
-
-    if (newPassword.length < 6) {
-      _showSnackBar('Password must be at least 6 characters.');
-      return;
-    }
-
-    if (newPassword != confirmPassword) {
-      _showSnackBar('Password confirmation does not match.');
-      return;
-    }
-
-    setState(() {
-      _updatingPassword = true;
-    });
-
-    try {
-      await user.updatePassword(newPassword);
-      _newPasswordController.clear();
-      _confirmPasswordController.clear();
-      _showSnackBar('Password updated successfully.');
-    } on FirebaseAuthException catch (error) {
-      if (error.code == 'requires-recent-login') {
-        _showSnackBar(
-          'For security, please sign out and sign in again before changing password.',
-        );
-      } else {
-        _showSnackBar(error.message ?? 'Failed to update password.');
-      }
-    } finally {
-      if (mounted) {
-        setState(() {
-          _updatingPassword = false;
-        });
-      }
-    }
   }
 
   Future<DocumentSnapshot<Map<String, dynamic>>> _fetchUserDocument() {
@@ -383,16 +275,16 @@ class _DriverHomePageState extends State<DriverHomePage>
         return AlertDialog(
           backgroundColor: AppTheme.background,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(18),
+            borderRadius: BorderRadius.circular(AppTheme.radiusLarge),
           ),
-          title: const Text(
+          title: Text(
             'Enable Location Services',
             style: TextStyle(
               color: AppTheme.textDark,
               fontWeight: FontWeight.w700,
             ),
           ),
-          content: const Text(
+          content: Text(
             'SmartPark needs GPS enabled to discover nearby parking.',
             style: TextStyle(
               color: AppTheme.textMuted,
@@ -402,16 +294,16 @@ class _DriverHomePageState extends State<DriverHomePage>
           actions: [
             TextButton(
               onPressed: () => Navigator.of(dialogContext).pop(false),
-              child: const Text(
+              child: Text(
                 'Not Now',
-                style: TextStyle(color: Color(0xFF6E7483)),
+                style: TextStyle(color: AppTheme.textMuted),
               ),
             ),
             ElevatedButton(
               onPressed: () => Navigator.of(dialogContext).pop(true),
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppTheme.accent,
-                foregroundColor: const Color(0xFF22252C),
+                foregroundColor: AppTheme.onAccent,
               ),
               child: const Text('Open Settings'),
             ),
@@ -458,17 +350,15 @@ class _DriverHomePageState extends State<DriverHomePage>
       case 1:
         return const DriverTicketHistorySection();
       case 2:
-        return DriverProfileSection(
-          profileFirstNameController: _profileFirstNameController,
-          profileLastNameController: _profileLastNameController,
-          profileEmailController: _profileEmailController,
-          newPasswordController: _newPasswordController,
-          confirmPasswordController: _confirmPasswordController,
-          savingProfile: _savingProfile,
-          updatingPassword: _updatingPassword,
-          onSaveProfile: _saveProfile,
-          onChangePassword: _changePassword,
+        return SpProfileView(
+          roleLabel: 'Driver',
+          firstNameController: _profileFirstNameController,
+          lastNameController: _profileLastNameController,
+          email: _profileEmailController.text.isNotEmpty
+              ? _profileEmailController.text
+              : FirebaseAuth.instance.currentUser?.email ?? '',
           onSignOut: _signOut,
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
         );
       case 0:
       default:
@@ -516,7 +406,7 @@ class _DriverHomePageState extends State<DriverHomePage>
               appBar: AppBar(
                 elevation: 0,
                 scrolledUnderElevation: 0,
-                backgroundColor: Colors.white,
+                backgroundColor: AppTheme.surface,
                 titleSpacing: 16,
                 automaticallyImplyLeading: false,
                 actions: [
@@ -531,7 +421,7 @@ class _DriverHomePageState extends State<DriverHomePage>
                   children: [
                     Text(
                       firstName.isEmpty ? greeting : '$greeting, $firstName',
-                      style: const TextStyle(
+                      style: TextStyle(
                         color: AppTheme.textDark,
                         fontSize: 17,
                         fontWeight: FontWeight.w700,
@@ -540,7 +430,7 @@ class _DriverHomePageState extends State<DriverHomePage>
                     const SizedBox(height: 2),
                     Row(
                       children: [
-                        const Icon(
+                        Icon(
                           Icons.place_rounded,
                           size: 14,
                           color: spEntryColor,
@@ -551,7 +441,7 @@ class _DriverHomePageState extends State<DriverHomePage>
                             _locationLabel,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
+                            style: TextStyle(
                               color: AppTheme.textMuted,
                               fontSize: 12,
                               fontWeight: FontWeight.w500,
@@ -566,8 +456,8 @@ class _DriverHomePageState extends State<DriverHomePage>
               body: _buildBodyByIndex(),
               bottomNavigationBar: BottomNavigationBar(
                 currentIndex: _selectedIndex,
-                selectedItemColor: const Color(0xFF22252C),
-                unselectedItemColor: const Color(0xFF6C727F),
+                selectedItemColor: AppTheme.textDark,
+                unselectedItemColor: AppTheme.textMuted,
                 showSelectedLabels: true,
                 showUnselectedLabels: true,
                 type: BottomNavigationBarType.fixed,

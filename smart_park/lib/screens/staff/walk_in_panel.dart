@@ -2,8 +2,9 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
-import '../../theme/app_theme.dart';
 import '../../services/error_reporter.dart';
+import '../../theme/app_theme.dart';
+import '../../utils/friendly_error.dart';
 import '../../widgets/smartpark_ui.dart';
 
 /// Gate panel for drive-up customers without a SmartPark ticket.
@@ -122,7 +123,9 @@ class _WalkInPanelState extends State<WalkInPanel> {
       );
     } catch (error, stack) {
       reportError(error, stack, reason: 'Recording walk-in failed');
-      _showSnackBar('Unable to record walk-in: $error');
+      _showSnackBar(
+        friendlyError(error, fallback: 'Unable to record the walk-in.'),
+      );
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -185,7 +188,9 @@ class _WalkInPanelState extends State<WalkInPanel> {
       _showSnackBar('Walk-in ${plate.isEmpty ? '' : '$plate '}checked out.');
     } catch (error, stack) {
       reportError(error, stack, reason: 'Walk-in checkout failed');
-      _showSnackBar('Unable to check out walk-in: $error');
+      _showSnackBar(
+        friendlyError(error, fallback: 'Unable to check out the walk-in.'),
+      );
     } finally {
       if (mounted) setState(() => _exiting.remove(ticket.id));
     }
@@ -207,11 +212,11 @@ class _WalkInPanelState extends State<WalkInPanel> {
         label: Text(label, style: const TextStyle(fontWeight: FontWeight.w800)),
         style: ElevatedButton.styleFrom(
           backgroundColor: AppTheme.accent,
-          foregroundColor: AppTheme.textDark,
+          foregroundColor: AppTheme.onAccent,
           elevation: 0,
           minimumSize: const Size.fromHeight(48),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(AppTheme.radius),
           ),
         ),
       ),
@@ -246,7 +251,7 @@ class _WalkInPanelState extends State<WalkInPanel> {
                             ? 'Motorcycle (no plate)'
                             : 'Car (no plate)')
                       : plate,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontWeight: FontWeight.w700,
                     color: AppTheme.textDark,
                   ),
@@ -256,10 +261,7 @@ class _WalkInPanelState extends State<WalkInPanel> {
                       ? 'Inside'
                       : 'In at ${TimeOfDay.fromDateTime(entryAt).format(context)}'
                             ' · ${_stayLabel(entryAt)}',
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: AppTheme.textMuted,
-                  ),
+                  style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
                 ),
               ],
             ),
@@ -268,7 +270,7 @@ class _WalkInPanelState extends State<WalkInPanel> {
             onPressed: busy ? null : () => _recordExit(ticket),
             style: OutlinedButton.styleFrom(
               foregroundColor: spExitColor,
-              side: const BorderSide(color: spCardBorder),
+              side: BorderSide(color: spCardBorder),
               visualDensity: VisualDensity.compact,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(999),
@@ -305,15 +307,15 @@ class _WalkInPanelState extends State<WalkInPanel> {
               hintText: 'Plate number (optional)',
               isDense: true,
               filled: true,
-              fillColor: const Color(0xFFF8F9FC),
+              fillColor: AppTheme.surfaceAlt,
               prefixIcon: const Icon(Icons.pin_outlined, size: 20),
               border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: const BorderSide(color: Color(0xFFE4E7EF)),
+                borderRadius: BorderRadius.circular(AppTheme.radius),
+                borderSide: BorderSide(color: AppTheme.border),
               ),
               enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: const BorderSide(color: Color(0xFFE4E7EF)),
+                borderRadius: BorderRadius.circular(AppTheme.radius),
+                borderSide: BorderSide(color: AppTheme.border),
               ),
             ),
           ),
@@ -350,13 +352,13 @@ class _WalkInPanelState extends State<WalkInPanel> {
                     children: [
                       Text(
                         'Inside now (${inside.length})',
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontWeight: FontWeight.w800,
                           color: AppTheme.textDark,
                         ),
                       ),
                       if (inside.isEmpty)
-                        const Padding(
+                        Padding(
                           padding: EdgeInsets.only(top: 6),
                           child: Text(
                             'No walk-ins inside.',

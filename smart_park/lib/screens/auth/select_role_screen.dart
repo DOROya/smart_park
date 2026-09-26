@@ -59,9 +59,9 @@ class _SelectRoleScreenState extends State<SelectRoleScreen> {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Material(
-        color: isSelected ? const Color(0xFFFFF7DD) : Colors.white,
+        color: isSelected ? AppTheme.accentSoft : AppTheme.surface,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(18),
+          borderRadius: BorderRadius.circular(AppTheme.radiusLarge),
           side: BorderSide(
             color: isSelected ? AppTheme.accent : spCardBorder,
             width: isSelected ? 2 : 1,
@@ -87,16 +87,21 @@ class _SelectRoleScreenState extends State<SelectRoleScreen> {
                       decoration: BoxDecoration(
                         color: isSelected
                             ? AppTheme.accent
-                            : const Color(0xFFF1F3F7),
-                        borderRadius: BorderRadius.circular(12),
+                            : AppTheme.surfaceAlt,
+                        borderRadius: BorderRadius.circular(AppTheme.radius),
                       ),
-                      child: Icon(icon, color: AppTheme.textDark),
+                      child: Icon(
+                        icon,
+                        color: isSelected
+                            ? AppTheme.onAccent
+                            : AppTheme.textDark,
+                      ),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
                       child: Text(
                         role,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 17,
                           fontWeight: FontWeight.w800,
                           color: AppTheme.textDark,
@@ -111,8 +116,8 @@ class _SelectRoleScreenState extends State<SelectRoleScreen> {
                             : Icons.radio_button_unchecked_rounded,
                         key: ValueKey<bool>(isSelected),
                         color: isSelected
-                            ? const Color(0xFFB58A10)
-                            : const Color(0xFFC9CCD4),
+                            ? AppTheme.accentText
+                            : AppTheme.borderStrong,
                       ),
                     ),
                   ],
@@ -124,7 +129,7 @@ class _SelectRoleScreenState extends State<SelectRoleScreen> {
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Padding(
+                        Padding(
                           padding: EdgeInsets.only(top: 1),
                           child: Icon(
                             Icons.check_rounded,
@@ -136,9 +141,9 @@ class _SelectRoleScreenState extends State<SelectRoleScreen> {
                         Expanded(
                           child: Text(
                             desc,
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 13,
-                              color: Color(0xFF3D4658),
+                              color: AppTheme.textSecondary,
                             ),
                           ),
                         ),
@@ -175,10 +180,10 @@ class _SelectRoleScreenState extends State<SelectRoleScreen> {
             width: double.infinity,
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: const Color(0xFFFFF3D9),
-              borderRadius: BorderRadius.circular(12),
+              color: AppTheme.warningSoft,
+              borderRadius: BorderRadius.circular(AppTheme.radius),
             ),
-            child: const Row(
+            child: Row(
               children: [
                 Icon(
                   Icons.warning_amber_rounded,
@@ -192,7 +197,7 @@ class _SelectRoleScreenState extends State<SelectRoleScreen> {
                     style: TextStyle(
                       fontSize: 12.5,
                       fontWeight: FontWeight.w600,
-                      color: Color(0xFF6B5A2E),
+                      color: AppTheme.accentText,
                     ),
                   ),
                 ),

@@ -2,11 +2,15 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
+import '../../theme/app_theme.dart';
+import '../../utils/friendly_error.dart';
 import '../../utils/staff_credentials.dart';
+import '../../widgets/sp_loading.dart';
 import '../admin/admin_home_page.dart';
 import '../driver/driver_home_page.dart';
 import '../parking_owner/parking_owner_home_screen.dart';
 import '../staff/staff_home_page.dart';
+import 'sign_in_screen.dart';
 
 class RoleBasedHomePage extends StatefulWidget {
   const RoleBasedHomePage({super.key});
@@ -290,13 +294,11 @@ class _RoleBasedHomePageState extends State<RoleBasedHomePage> {
       future: _roleFuture,
       builder: (BuildContext context, AsyncSnapshot<String> snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Scaffold(
-            body: Center(child: CircularProgressIndicator()),
-          );
+          return const SpLoadingScreen();
         }
 
         if (snapshot.hasError || !snapshot.hasData) {
-          final String detail = snapshot.error?.toString() ?? 'Unknown error.';
+          final Object? error = snapshot.error;
           return Scaffold(
             body: Center(
               child: Padding(
@@ -304,18 +306,39 @@ class _RoleBasedHomePageState extends State<RoleBasedHomePage> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Text(
-                      'Unable to resolve your account role. Please sign in again.',
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 10),
                     Text(
-                      detail,
+                      "We couldn't load your account.",
                       textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: Colors.black54,
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                        color: AppTheme.textDark,
                       ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      error == null
+                          ? 'Please sign in again.'
+                          : friendlyError(
+                              error,
+                              fallback: 'Please sign in again.',
+                            ),
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: AppTheme.textMuted),
+                    ),
+                    const SizedBox(height: 18),
+                    FilledButton(
+                      onPressed: () async {
+                        final NavigatorState navigator = Navigator.of(context);
+                        await FirebaseAuth.instance.signOut();
+                        await navigator.pushAndRemoveUntil(
+                          MaterialPageRoute<void>(
+                            builder: (_) => const SignInScreen(),
+                          ),
+                          (route) => false,
+                        );
+                      },
+                      child: const Text('Sign in again'),
                     ),
                   ],
                 ),

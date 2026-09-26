@@ -50,8 +50,9 @@ extension _AdminHomePageFragments on _AdminHomePageState {
     required _RevenueSeries series,
     required String title,
     required String subtitle,
-    Color color = spExitColor,
+    Color? color,
   }) {
+    color ??= spExitColor;
     return SpSectionCard(
       icon: Icons.bar_chart_rounded,
       title: title,
@@ -146,7 +147,9 @@ extension _AdminHomePageFragments on _AdminHomePageState {
                       decoration: BoxDecoration(
                         color: (isFacility ? spEntryColor : spExitColor)
                             .withValues(alpha: 0.12),
-                        borderRadius: BorderRadius.circular(10),
+                        borderRadius: BorderRadius.circular(
+                          AppTheme.radiusSmall,
+                        ),
                       ),
                       child: Icon(
                         isFacility
@@ -165,7 +168,7 @@ extension _AdminHomePageFragments on _AdminHomePageState {
                             item.title,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontWeight: FontWeight.w700,
                               color: AppTheme.textDark,
                             ),
@@ -174,7 +177,7 @@ extension _AdminHomePageFragments on _AdminHomePageState {
                             item.subtitle,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 12,
                               color: AppTheme.textMuted,
                             ),
@@ -185,10 +188,7 @@ extension _AdminHomePageFragments on _AdminHomePageState {
                     const SizedBox(width: 8),
                     Text(
                       _relativeTime(item.createdAt),
-                      style: const TextStyle(
-                        fontSize: 11,
-                        color: AppTheme.textMuted,
-                      ),
+                      style: TextStyle(fontSize: 11, color: AppTheme.textMuted),
                     ),
                   ],
                 ),
@@ -488,14 +488,14 @@ extension _AdminHomePageFragments on _AdminHomePageState {
           CircleAvatar(
             radius: 22,
             backgroundColor: AppTheme.accent.withValues(alpha: 0.3),
-            child: const Icon(Icons.shield_rounded, color: AppTheme.textDark),
+            child: Icon(Icons.shield_rounded, color: AppTheme.textDark),
           ),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
+                Text(
                   'Administrator',
                   style: TextStyle(
                     fontWeight: FontWeight.w700,
@@ -507,10 +507,7 @@ extension _AdminHomePageFragments on _AdminHomePageState {
                     email,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: AppTheme.textMuted,
-                    ),
+                    style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
                   ),
               ],
             ),
@@ -529,11 +526,11 @@ extension _AdminHomePageFragments on _AdminHomePageState {
         ),
         style: OutlinedButton.styleFrom(
           minimumSize: const Size(double.infinity, 48),
-          foregroundColor: const Color(0xFFAF2E2E),
-          side: const BorderSide(color: Color(0xFFF0C9C9)),
-          backgroundColor: const Color(0xFFFFF6F6),
+          foregroundColor: AppTheme.danger,
+          side: BorderSide(color: AppTheme.dangerBorder),
+          backgroundColor: AppTheme.dangerSoft,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(AppTheme.radius),
           ),
         ),
       ),
@@ -577,7 +574,13 @@ extension _AdminHomePageFragments on _AdminHomePageState {
           leftFlex: 3,
           rightFlex: 2,
           left: Column(
-            children: [accountCard, const SizedBox(height: 16), statsCard],
+            children: [
+              accountCard,
+              const SizedBox(height: 16),
+              statsCard,
+              const SizedBox(height: 16),
+              const SpAppearanceCard(),
+            ],
           ),
           right: signOutButton,
         ),
@@ -590,6 +593,8 @@ extension _AdminHomePageFragments on _AdminHomePageState {
       accountCard,
       const SizedBox(height: 12),
       statsCard,
+      const SizedBox(height: 12),
+      const SpAppearanceCard(),
       const SizedBox(height: 12),
       signOutButton,
     ];

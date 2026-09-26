@@ -193,10 +193,10 @@ class _DriverPackageSelectionPageState
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: Material(
-        color: selected ? const Color(0xFFFFF8E1) : Colors.white,
-        borderRadius: BorderRadius.circular(14),
+        color: selected ? AppTheme.accentSoft : AppTheme.surface,
+        borderRadius: BorderRadius.circular(AppTheme.radiusLarge),
         child: InkWell(
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(AppTheme.radiusLarge),
           onTap: () => setState(() {
             _selectedPlan = option.key;
             _duration = 1;
@@ -205,9 +205,9 @@ class _DriverPackageSelectionPageState
             duration: const Duration(milliseconds: 150),
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(14),
+              borderRadius: BorderRadius.circular(AppTheme.radiusLarge),
               border: Border.all(
-                color: selected ? AppTheme.accent : const Color(0xFFE1E4EA),
+                color: selected ? AppTheme.accent : AppTheme.border,
                 width: selected ? 2 : 1,
               ),
             ),
@@ -217,10 +217,14 @@ class _DriverPackageSelectionPageState
                   width: 44,
                   height: 44,
                   decoration: BoxDecoration(
-                    color: selected ? AppTheme.accent : const Color(0xFFF3F4F7),
-                    borderRadius: BorderRadius.circular(12),
+                    color: selected ? AppTheme.accent : AppTheme.surfaceAlt,
+                    borderRadius: BorderRadius.circular(AppTheme.radius),
                   ),
-                  child: Icon(option.icon, color: AppTheme.textDark, size: 22),
+                  child: Icon(
+                    option.icon,
+                    color: selected ? AppTheme.onAccent : AppTheme.textDark,
+                    size: 22,
+                  ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -229,7 +233,7 @@ class _DriverPackageSelectionPageState
                     children: [
                       Text(
                         option.label,
-                        style: const TextStyle(
+                        style: TextStyle(
                           color: AppTheme.textDark,
                           fontSize: 15,
                           fontWeight: FontWeight.w800,
@@ -238,7 +242,7 @@ class _DriverPackageSelectionPageState
                       const SizedBox(height: 2),
                       Text(
                         _optionDescription(option),
-                        style: const TextStyle(
+                        style: TextStyle(
                           color: AppTheme.textMuted,
                           fontSize: 12,
                           height: 1.3,
@@ -253,7 +257,7 @@ class _DriverPackageSelectionPageState
                   children: [
                     Text(
                       price,
-                      style: const TextStyle(
+                      style: TextStyle(
                         color: AppTheme.textDark,
                         fontSize: 17,
                         fontWeight: FontWeight.w800,
@@ -262,7 +266,7 @@ class _DriverPackageSelectionPageState
                     if (unit.isNotEmpty)
                       Text(
                         unit,
-                        style: const TextStyle(
+                        style: TextStyle(
                           color: AppTheme.textMuted,
                           fontSize: 11,
                           fontWeight: FontWeight.w600,
@@ -275,9 +279,7 @@ class _DriverPackageSelectionPageState
                   selected
                       ? Icons.radio_button_checked_rounded
                       : Icons.radio_button_off_rounded,
-                  color: selected
-                      ? const Color(0xFFB78300)
-                      : const Color(0xFFC3C7D0),
+                  color: selected ? AppTheme.accentText : AppTheme.borderStrong,
                 ),
               ],
             ),
@@ -297,11 +299,11 @@ class _DriverPackageSelectionPageState
         icon: Icon(icon),
         style: IconButton.styleFrom(
           backgroundColor: AppTheme.accent,
-          foregroundColor: AppTheme.textDark,
-          disabledBackgroundColor: const Color(0xFFF1F2F5),
-          disabledForegroundColor: const Color(0xFFB5B9C3),
+          foregroundColor: AppTheme.onAccent,
+          disabledBackgroundColor: AppTheme.surfaceAlt,
+          disabledForegroundColor: AppTheme.borderStrong,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(AppTheme.radius),
           ),
         ),
       ),
@@ -315,16 +317,16 @@ class _DriverPackageSelectionPageState
       width: double.infinity,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFE1E4EA)),
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.circular(AppTheme.radiusLarge),
+        border: Border.all(color: AppTheme.border),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
             _durationTitle(_selectedPlan),
-            style: const TextStyle(
+            style: TextStyle(
               color: AppTheme.textDark,
               fontSize: 14,
               fontWeight: FontWeight.w800,
@@ -343,7 +345,7 @@ class _DriverPackageSelectionPageState
                   children: [
                     Text(
                       '$_duration',
-                      style: const TextStyle(
+                      style: TextStyle(
                         color: AppTheme.textDark,
                         fontSize: 28,
                         fontWeight: FontWeight.w800,
@@ -352,7 +354,7 @@ class _DriverPackageSelectionPageState
                     ),
                     Text(
                       _durationUnit(_selectedPlan, _duration),
-                      style: const TextStyle(
+                      style: TextStyle(
                         color: AppTheme.textMuted,
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
@@ -374,7 +376,7 @@ class _DriverPackageSelectionPageState
                 ? 'Maximum of $max $maxUnit.'
                 : 'Up to $max $maxUnit.',
             textAlign: TextAlign.center,
-            style: const TextStyle(color: AppTheme.textMuted, fontSize: 11),
+            style: TextStyle(color: AppTheme.textMuted, fontSize: 11),
           ),
         ],
       ),
@@ -390,7 +392,7 @@ class _DriverPackageSelectionPageState
             child: Text(
               label,
               style: TextStyle(
-                color: strong ? AppTheme.textDark : const Color(0xFF565C6B),
+                color: strong ? AppTheme.textDark : AppTheme.textSecondary,
                 fontSize: strong ? 14 : 13,
                 fontWeight: strong ? FontWeight.w800 : FontWeight.w500,
               ),
@@ -440,14 +442,14 @@ class _DriverPackageSelectionPageState
       width: double.infinity,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFE1E4EA)),
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.circular(AppTheme.radiusLarge),
+        border: Border.all(color: AppTheme.border),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
+          Text(
             'Summary',
             style: TextStyle(
               color: AppTheme.textDark,
@@ -457,27 +459,23 @@ class _DriverPackageSelectionPageState
           ),
           const SizedBox(height: 8),
           ...lines,
-          const Padding(
+          Padding(
             padding: EdgeInsets.symmetric(vertical: 8),
-            child: Divider(height: 1, color: Color(0xFFEDEFF3)),
+            child: Divider(height: 1, color: AppTheme.border),
           ),
           _summaryLine('Total', _amountText(total), strong: true),
           const SizedBox(height: 8),
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Icon(
-                Icons.schedule_rounded,
-                size: 15,
-                color: AppTheme.textMuted,
-              ),
+              Icon(Icons.schedule_rounded, size: 15, color: AppTheme.textMuted),
               const SizedBox(width: 6),
               Expanded(
                 child: Text(
                   'If you park now, you are covered until '
                   '${_paidUntil(option.key, duration)}. Extra time is billed '
                   'per hour at the exit gate.',
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: AppTheme.textMuted,
                     fontSize: 11,
                     height: 1.3,
@@ -505,13 +503,13 @@ class _DriverPackageSelectionPageState
     return Scaffold(
       backgroundColor: AppTheme.background,
       appBar: AppBar(
-        backgroundColor: Colors.white,
-        surfaceTintColor: Colors.white,
+        backgroundColor: AppTheme.surface,
+        surfaceTintColor: AppTheme.surface,
         titleSpacing: 8,
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
+            Text(
               'Select Package',
               style: TextStyle(
                 color: AppTheme.textDark,
@@ -523,7 +521,7 @@ class _DriverPackageSelectionPageState
               widget.establishmentName,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
+              style: TextStyle(
                 color: AppTheme.textMuted,
                 fontSize: 11,
                 fontWeight: FontWeight.w600,
@@ -538,14 +536,14 @@ class _DriverPackageSelectionPageState
             Container(
               width: double.infinity,
               padding: const EdgeInsets.fromLTRB(20, 16, 20, 18),
-              color: const Color(0xFFFFF4CF),
-              child: const Column(
+              color: AppTheme.accentSoft,
+              child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
                     'Step 2 of 3',
                     style: TextStyle(
-                      color: Color(0xFF565C6B),
+                      color: AppTheme.textSecondary,
                       fontSize: 11,
                       fontWeight: FontWeight.w700,
                     ),
@@ -573,7 +571,7 @@ class _DriverPackageSelectionPageState
                     children: [
                       Text(
                         'Choose a package for your ${widget.vehicleLabel}',
-                        style: const TextStyle(
+                        style: TextStyle(
                           color: AppTheme.textDark,
                           fontSize: 18,
                           fontWeight: FontWeight.w800,
@@ -598,9 +596,9 @@ class _DriverPackageSelectionPageState
               ),
             ),
             Container(
-              decoration: const BoxDecoration(
-                color: Colors.white,
-                border: Border(top: BorderSide(color: Color(0xFFE8EAF0))),
+              decoration: BoxDecoration(
+                color: AppTheme.surface,
+                border: Border(top: BorderSide(color: AppTheme.border)),
               ),
               child: SafeArea(
                 top: false,
@@ -611,7 +609,7 @@ class _DriverPackageSelectionPageState
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
+                        Text(
                           'Total',
                           style: TextStyle(
                             color: AppTheme.textMuted,
@@ -621,7 +619,7 @@ class _DriverPackageSelectionPageState
                         ),
                         Text(
                           _amountText(totalAmount),
-                          style: const TextStyle(
+                          style: TextStyle(
                             color: AppTheme.textDark,
                             fontSize: 22,
                             fontWeight: FontWeight.w800,
@@ -635,11 +633,13 @@ class _DriverPackageSelectionPageState
                         onPressed: _continue,
                         style: ElevatedButton.styleFrom(
                           backgroundColor: AppTheme.accent,
-                          foregroundColor: const Color(0xFF22252C),
+                          foregroundColor: AppTheme.onAccent,
                           minimumSize: const Size.fromHeight(50),
                           elevation: 0,
                           shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
+                            borderRadius: BorderRadius.circular(
+                              AppTheme.radius,
+                            ),
                           ),
                         ),
                         child: const Text(
@@ -678,15 +678,15 @@ class _StepDot extends StatelessWidget {
       height: 24,
       alignment: Alignment.center,
       decoration: BoxDecoration(
-        color: emphasized ? AppTheme.textDark : const Color(0xFFFFEAA8),
+        color: emphasized ? AppTheme.textDark : AppTheme.accentLight,
         shape: BoxShape.circle,
       ),
       child: complete
-          ? const Icon(Icons.check_rounded, color: Colors.white, size: 15)
+          ? Icon(Icons.check_rounded, color: AppTheme.onInk, size: 15)
           : Text(
               number,
               style: TextStyle(
-                color: emphasized ? Colors.white : const Color(0xFF7A6030),
+                color: emphasized ? AppTheme.onInk : AppTheme.accentText,
                 fontSize: 12,
                 fontWeight: FontWeight.w800,
               ),
@@ -703,7 +703,7 @@ class _StepLine extends StatelessWidget {
     return const Expanded(
       child: Padding(
         padding: EdgeInsets.symmetric(horizontal: 8),
-        child: Divider(color: Color(0xFFE0B735), thickness: 2),
+        child: Divider(color: AppTheme.accent, thickness: 2),
       ),
     );
   }

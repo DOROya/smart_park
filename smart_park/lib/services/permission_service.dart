@@ -118,18 +118,18 @@ class PermissionService {
         return AlertDialog(
           backgroundColor: AppTheme.background,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(18),
+            borderRadius: BorderRadius.circular(AppTheme.radiusLarge),
           ),
           title: Text(
             title,
-            style: const TextStyle(
+            style: TextStyle(
               color: AppTheme.textDark,
               fontWeight: FontWeight.w700,
             ),
           ),
           content: Text(
             message,
-            style: const TextStyle(
+            style: TextStyle(
               color: AppTheme.textMuted,
               fontWeight: FontWeight.w500,
             ),
@@ -139,14 +139,14 @@ class PermissionService {
               onPressed: () => Navigator.of(dialogContext).pop(false),
               child: Text(
                 secondaryLabel,
-                style: const TextStyle(color: Color(0xFF6E7483)),
+                style: TextStyle(color: AppTheme.textMuted),
               ),
             ),
             ElevatedButton(
               onPressed: () => Navigator.of(dialogContext).pop(true),
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppTheme.accent,
-                foregroundColor: const Color(0xFF22252C),
+                foregroundColor: AppTheme.onAccent,
               ),
               child: Text(primaryLabel),
             ),

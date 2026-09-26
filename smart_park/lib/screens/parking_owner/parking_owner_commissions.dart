@@ -97,7 +97,7 @@ class _CommissionsListContentState extends State<_CommissionsListContent>
                             ConnectionState.waiting) {
                       return const Padding(
                         padding: EdgeInsets.symmetric(vertical: 24),
-                        child: Center(child: CircularProgressIndicator()),
+                        child: SpSkeletonList(),
                       );
                     }
 
@@ -402,9 +402,9 @@ class _TransactionCard extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: const Color(0xFFF8F9FC),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFE8EAF0)),
+        color: AppTheme.surfaceAlt,
+        borderRadius: BorderRadius.circular(AppTheme.radiusLarge),
+        border: Border.all(color: AppTheme.border),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -414,7 +414,7 @@ class _TransactionCard extends StatelessWidget {
             height: 40,
             decoration: BoxDecoration(
               color: statusColor.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(AppTheme.radius),
             ),
             child: Icon(Icons.receipt_rounded, color: statusColor, size: 20),
           ),
@@ -428,7 +428,7 @@ class _TransactionCard extends StatelessWidget {
                     Expanded(
                       child: Text(
                         'PHP ${record.grossAmount.toStringAsFixed(2)}',
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.w800,
                           color: AppTheme.textDark,
@@ -445,14 +445,11 @@ class _TransactionCard extends StatelessWidget {
                       : '${record.driverName} · $dateText',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: AppTheme.textMuted,
-                  ),
+                  style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
                 ),
-                const Padding(
+                Padding(
                   padding: EdgeInsets.only(top: 8, bottom: 2),
-                  child: Divider(height: 1, color: Color(0xFFE8EAF0)),
+                  child: Divider(height: 1, color: AppTheme.border),
                 ),
                 _line('Commission', record.platformFee),
                 _line('Processing', record.processingFee),

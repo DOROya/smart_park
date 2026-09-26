@@ -1,11 +1,15 @@
 import 'dart:async';
 
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
+import '../../services/auth_email_service.dart';
 import '../../services/email_rate_limiter.dart';
-import '../../widgets/auth_widgets.dart';
+import '../../theme/app_theme.dart';
+import '../../utils/friendly_error.dart';
 import '../../utils/staff_credentials.dart';
+import '../../widgets/auth_widgets.dart';
 import 'role_based_home_page.dart';
 import 'sign_up_screen.dart';
 import 'verify_email_screen.dart';
@@ -101,9 +105,12 @@ class _SignInScreenState extends State<SignInScreen> {
       if (!mounted) {
         return;
       }
-      final String message = error.message ?? 'Authentication failed.';
-      _showSnackBar('${error.code}: $message');
-      debugPrint('Sign-in FirebaseAuthException(${error.code}): $message');
+      _showSnackBar(
+        friendlyError(error, fallback: 'Unable to sign in. Please try again.'),
+      );
+      debugPrint(
+        'Sign-in FirebaseAuthException(${error.code}): ${error.message}',
+      );
     } on TimeoutException {
       if (!mounted) {
         return;
@@ -116,7 +123,9 @@ class _SignInScreenState extends State<SignInScreen> {
       if (!mounted) {
         return;
       }
-      _showSnackBar('Unexpected sign-in error: $error');
+      _showSnackBar(
+        friendlyError(error, fallback: 'Unable to sign in. Please try again.'),
+      );
       debugPrint('Unexpected sign-in error: $error');
       debugPrintStack(stackTrace: stackTrace);
     } finally {
@@ -134,7 +143,7 @@ class _SignInScreenState extends State<SignInScreen> {
       _showSnackBar(
         input.isEmpty
             ? 'Enter your email above, then tap Forgot Password.'
-            : 'Staff accounts are reset by your parking owner.',
+            : 'Username accounts are reset by whoever set up your account.',
       );
       return;
     }
@@ -150,20 +159,21 @@ class _SignInScreenState extends State<SignInScreen> {
     if (_sendingReset) return;
     _sendingReset = true;
     try {
-      await FirebaseAuth.instance.sendPasswordResetEmail(email: input);
+      await AuthEmailService().sendPasswordResetEmail(input);
       EmailRateLimiter.recordSend(rateLimitAction, input);
       if (mounted) {
         _showSnackBar('Password reset link sent to $input.');
       }
-    } on FirebaseAuthException catch (error) {
-      if (error.code == 'too-many-requests') {
+    } on FirebaseFunctionsException catch (error) {
+      final bool throttled = AuthEmailService.isThrottled(error);
+      if (throttled) {
         EmailRateLimiter.recordSend(rateLimitAction, input);
       }
       if (mounted) {
         _showSnackBar(
-          error.code == 'too-many-requests'
+          throttled
               ? EmailRateLimiter.tooManyRequestsMessage
-              : error.message ?? 'Unable to send reset email.',
+              : friendlyError(error, fallback: 'Unable to send reset email.'),
         );
       }
     } finally {
@@ -196,7 +206,7 @@ class _SignInScreenState extends State<SignInScreen> {
             title: 'Sign in details',
             children: [
               AuthTextField(
-                label: 'Email or Staff Username',
+                label: 'Email or Username',
                 hint: 'you@example.com',
                 icon: Icons.alternate_email_rounded,
                 keyboardType: TextInputType.emailAddress,
@@ -231,7 +241,7 @@ class _SignInScreenState extends State<SignInScreen> {
                 child: TextButton(
                   onPressed: _sendPasswordReset,
                   style: TextButton.styleFrom(
-                    foregroundColor: const Color(0xFF404552),
+                    foregroundColor: AppTheme.textSecondary,
                     textStyle: const TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w600,

@@ -8,7 +8,10 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 import '../../services/gate_scan_service.dart';
 import '../../services/permission_service.dart';
 import '../../theme/app_theme.dart';
+import '../../theme/theme_controller.dart';
+import '../../utils/friendly_error.dart';
 import '../../widgets/smartpark_ui.dart';
+import '../../widgets/sp_loading.dart';
 import '../auth/sign_in_screen.dart';
 import 'walk_in_panel.dart';
 
@@ -243,9 +246,9 @@ class _StaffHomePageState extends State<StaffHomePage>
 
             return Scaffold(
               appBar: AppBar(
-                backgroundColor: Colors.white,
+                backgroundColor: AppTheme.surface,
                 elevation: 0,
-                title: const Row(
+                title: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(Icons.local_parking_rounded, color: AppTheme.textDark),
@@ -261,6 +264,17 @@ class _StaffHomePageState extends State<StaffHomePage>
                 ),
                 actions: [
                   IconButton(
+                    onPressed: () => ThemeController.instance.setMode(
+                      AppTheme.isDark ? AppThemeMode.light : AppThemeMode.dark,
+                    ),
+                    icon: Icon(
+                      AppTheme.isDark
+                          ? Icons.light_mode_rounded
+                          : Icons.dark_mode_rounded,
+                    ),
+                    tooltip: AppTheme.isDark ? 'Light mode' : 'Dark mode',
+                  ),
+                  IconButton(
                     onPressed: _showChangePasswordDialog,
                     icon: const Icon(Icons.settings_rounded),
                     tooltip: 'Change Password',
@@ -275,8 +289,8 @@ class _StaffHomePageState extends State<StaffHomePage>
               body: _buildBody(userData),
               bottomNavigationBar: BottomNavigationBar(
                 currentIndex: _selectedNavIndex,
-                selectedItemColor: const Color(0xFF22252C),
-                unselectedItemColor: const Color(0xFF6C727F),
+                selectedItemColor: AppTheme.textDark,
+                unselectedItemColor: AppTheme.textMuted,
                 showSelectedLabels: true,
                 showUnselectedLabels: true,
                 type: BottomNavigationBarType.fixed,
@@ -360,13 +374,13 @@ class _StaffChangePasswordDialogState
     required VoidCallback onToggleObscure,
   }) {
     final OutlineInputBorder border = OutlineInputBorder(
-      borderRadius: BorderRadius.circular(12),
-      borderSide: const BorderSide(color: AppTheme.border),
+      borderRadius: BorderRadius.circular(AppTheme.radius),
+      borderSide: BorderSide(color: AppTheme.border),
     );
     return InputDecoration(
       labelText: label,
       filled: true,
-      fillColor: const Color(0xFFF8F9FC),
+      fillColor: AppTheme.surfaceAlt,
       prefixIcon: Icon(icon, color: AppTheme.textMuted, size: 20),
       suffixIcon: IconButton(
         icon: Icon(
@@ -382,7 +396,7 @@ class _StaffChangePasswordDialogState
         borderSide: const BorderSide(color: AppTheme.accent, width: 1.5),
       ),
       errorBorder: border.copyWith(
-        borderSide: const BorderSide(color: Colors.redAccent),
+        borderSide: BorderSide(color: AppTheme.danger),
       ),
       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
     );
@@ -419,7 +433,7 @@ class _StaffChangePasswordDialogState
       setState(() {
         _errorMessage = error.code == 'requires-recent-login'
             ? 'For security, please sign out and sign back in, then try again.'
-            : (error.message ?? 'Unable to update password.');
+            : friendlyError(error, fallback: 'Unable to update password.');
       });
     } finally {
       if (mounted) {
@@ -431,7 +445,9 @@ class _StaffChangePasswordDialogState
   @override
   Widget build(BuildContext context) {
     return Dialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppTheme.radiusXLarge),
+      ),
       insetPadding: const EdgeInsets.symmetric(horizontal: 24),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(24, 28, 24, 20),
@@ -447,15 +463,15 @@ class _StaffChangePasswordDialogState
                   height: 48,
                   decoration: BoxDecoration(
                     color: AppTheme.accent.withValues(alpha: 0.18),
-                    borderRadius: BorderRadius.circular(14),
+                    borderRadius: BorderRadius.circular(AppTheme.radiusLarge),
                   ),
-                  child: const Icon(
+                  child: Icon(
                     Icons.lock_reset_rounded,
-                    color: Color(0xFF9A7B12),
+                    color: AppTheme.accentText,
                   ),
                 ),
                 const SizedBox(height: 14),
-                const Text(
+                Text(
                   'Change Password',
                   style: TextStyle(
                     color: AppTheme.textDark,
@@ -464,7 +480,7 @@ class _StaffChangePasswordDialogState
                   ),
                 ),
                 const SizedBox(height: 4),
-                const Text(
+                Text(
                   'Set a new password for your staff account.',
                   style: TextStyle(
                     color: AppTheme.textMuted,
@@ -478,14 +494,14 @@ class _StaffChangePasswordDialogState
                     width: double.infinity,
                     padding: const EdgeInsets.all(10),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFFDECEC),
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: const Color(0xFFF3C6C6)),
+                      color: AppTheme.dangerSoft,
+                      borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
+                      border: Border.all(color: AppTheme.dangerBorder),
                     ),
                     child: Text(
                       _errorMessage!,
-                      style: const TextStyle(
-                        color: Color(0xFFB3261E),
+                      style: TextStyle(
+                        color: AppTheme.danger,
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
                       ),
@@ -524,14 +540,14 @@ class _StaffChangePasswordDialogState
                   width: double.infinity,
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFF1F4F9),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: const Color(0xFFE4E7EF)),
+                    color: AppTheme.surfaceAlt,
+                    borderRadius: BorderRadius.circular(AppTheme.radius),
+                    border: Border.all(color: AppTheme.border),
                   ),
-                  child: const Text(
+                  child: Text(
                     'Password should be at least 8 characters with one uppercase letter and one number.',
                     style: TextStyle(
-                      color: Color(0xFF596173),
+                      color: AppTheme.textSecondary,
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
                     ),
@@ -547,10 +563,12 @@ class _StaffChangePasswordDialogState
                             : () => Navigator.of(context).pop(),
                         style: OutlinedButton.styleFrom(
                           foregroundColor: AppTheme.textDark,
-                          side: const BorderSide(color: AppTheme.border),
+                          side: BorderSide(color: AppTheme.border),
                           minimumSize: const Size.fromHeight(46),
                           shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
+                            borderRadius: BorderRadius.circular(
+                              AppTheme.radius,
+                            ),
                           ),
                         ),
                         child: const Text('Cancel'),
@@ -562,20 +580,22 @@ class _StaffChangePasswordDialogState
                         onPressed: _submitting ? null : _submit,
                         style: ElevatedButton.styleFrom(
                           backgroundColor: AppTheme.accent,
-                          foregroundColor: const Color(0xFF22252C),
+                          foregroundColor: AppTheme.onAccent,
                           minimumSize: const Size.fromHeight(46),
                           elevation: 0,
                           shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
+                            borderRadius: BorderRadius.circular(
+                              AppTheme.radius,
+                            ),
                           ),
                         ),
                         child: _submitting
-                            ? const SizedBox(
+                            ? SizedBox(
                                 width: 18,
                                 height: 18,
                                 child: CircularProgressIndicator(
                                   strokeWidth: 2,
-                                  color: Color(0xFF22252C),
+                                  color: AppTheme.onAccent,
                                 ),
                               )
                             : const Text(

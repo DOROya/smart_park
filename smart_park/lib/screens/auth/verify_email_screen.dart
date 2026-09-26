@@ -1,11 +1,14 @@
 import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
+import '../../services/auth_email_service.dart';
 import '../../services/email_rate_limiter.dart';
 import '../../theme/app_theme.dart';
+import '../../utils/friendly_error.dart';
 import '../../widgets/auth_widgets.dart';
 import 'role_based_home_page.dart';
 import 'sign_in_screen.dart';
@@ -30,7 +33,8 @@ class VerifyEmailScreen extends StatefulWidget {
   State<VerifyEmailScreen> createState() => _VerifyEmailScreenState();
 }
 
-class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
+class _VerifyEmailScreenState extends State<VerifyEmailScreen>
+    with WidgetsBindingObserver {
   static const String _driverRole = 'Driver';
   static const String _parkingOwnerRole = 'Parking Owner';
   static const String _adminRole = 'admin';
@@ -41,10 +45,18 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
   bool _checking = false;
   Duration _resendWait = Duration.zero;
   Timer? _resendTimer;
+  Timer? _autoCheckTimer;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    // Pick up the verification on its own once the link is opened, so the
+    // user can just come back to the app instead of tapping the button.
+    _autoCheckTimer = Timer.periodic(
+      const Duration(seconds: 5),
+      (_) => _checkVerification(silent: true),
+    );
     WidgetsBinding.instance.addPostFrameCallback((_) {
       // Coming back to this screen within the cooldown should not trigger
       // another email; the countdown shows when the next one is allowed.
@@ -54,8 +66,17 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _resendTimer?.cancel();
+    _autoCheckTimer?.cancel();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _checkVerification(silent: true);
+    }
   }
 
   String get _rateLimitEmail =>
@@ -115,6 +136,10 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
       );
     }
 
+    // Save the chosen role now: if the app is closed before verifying, this
+    // screen comes back from sign-in without the sign-up details.
+    await _ensureUserDocument(createdUser);
+
     return createdUser;
   }
 
@@ -150,7 +175,7 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
 
     setState(() => _sendingVerification = true);
     try {
-      await user.sendEmailVerification();
+      final bool sent = await AuthEmailService().sendVerificationEmail();
       EmailRateLimiter.recordSend(
         _rateLimitAction,
         user.email ?? _rateLimitEmail,
@@ -158,17 +183,23 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
       if (!mounted) {
         return;
       }
-      _showSnackBar('Verification email sent. Check your inbox.');
-    } on FirebaseAuthException catch (error) {
+      _showSnackBar(
+        sent
+            ? 'Verification email sent. Check your inbox.'
+            : 'Your email is already verified. Tap "I Verified My Email".',
+      );
+    } on FirebaseFunctionsException catch (error) {
       if (!mounted) {
         return;
       }
-      if (error.code == 'too-many-requests') {
-        // Firebase is throttling this account; hold the button off too.
+      if (AuthEmailService.isThrottled(error)) {
+        // The server is throttling this address; hold the button off too.
         EmailRateLimiter.recordSend(_rateLimitAction, _rateLimitEmail);
         _showSnackBar(EmailRateLimiter.tooManyRequestsMessage);
       } else {
-        _showSnackBar(error.message ?? 'Unable to send verification email.');
+        _showSnackBar(
+          friendlyError(error, fallback: 'Unable to send verification email.'),
+        );
       }
     } finally {
       if (mounted) {
@@ -242,8 +273,20 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
         .set(userData, SetOptions(merge: true));
   }
 
-  Future<void> _checkVerification() async {
+  /// A [silent] check runs in the background: no spinner, no messages.
+  Future<void> _checkVerification({bool silent = false}) async {
     if (_checking) {
+      return;
+    }
+    if (silent) {
+      _checking = true;
+      try {
+        await _checkVerificationInner(silent: true);
+      } on FirebaseException {
+        // Offline or similar; the next tick will try again.
+      } finally {
+        _checking = false;
+      }
       return;
     }
     setState(() => _checking = true);
@@ -256,10 +299,10 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
     }
   }
 
-  Future<void> _checkVerificationInner() async {
+  Future<void> _checkVerificationInner({bool silent = false}) async {
     final User? user = FirebaseAuth.instance.currentUser;
     if (user == null) {
-      if (!mounted) {
+      if (silent || !mounted) {
         return;
       }
       unawaited(
@@ -280,6 +323,7 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
     }
 
     if (isVerified) {
+      _autoCheckTimer?.cancel();
       await refreshedUser!.getIdToken(true);
       await _ensureUserDocument(refreshedUser);
       if (!mounted) {
@@ -294,9 +338,11 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
       return;
     }
 
-    _showSnackBar(
-      'Your email is not verified yet. Check your inbox and try again.',
-    );
+    if (!silent) {
+      _showSnackBar(
+        'Your email is not verified yet. Check your inbox and try again.',
+      );
+    }
   }
 
   Future<void> _signOut() async {
@@ -322,7 +368,7 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
         onPressed: _signOut,
         icon: const Icon(Icons.logout_rounded, size: 18),
         label: const Text('Sign Out'),
-        style: TextButton.styleFrom(foregroundColor: const Color(0xFFAF2E2E)),
+        style: TextButton.styleFrom(foregroundColor: AppTheme.danger),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -336,10 +382,10 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
                 color: AppTheme.accent.withValues(alpha: 0.25),
                 shape: BoxShape.circle,
               ),
-              child: const Icon(
+              child: Icon(
                 Icons.mark_email_unread_rounded,
                 size: 42,
-                color: Color(0xFF8A6A0C),
+                color: AppTheme.accentText,
               ),
             ),
           ),
@@ -357,7 +403,7 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
               if (email.isNotEmpty) ...[
                 Text(
                   email,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontWeight: FontWeight.w800,
                     color: AppTheme.textDark,
                   ),
@@ -368,14 +414,14 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
                 widget.password == null
                     ? 'Open the link in the email we sent, then come back and tap the button below.'
                     : 'Your account is created. Open the link in the email we sent, then come back and tap the button below.',
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 13,
                   height: 1.45,
                   color: AppTheme.textMuted,
                 ),
               ),
               const SizedBox(height: 8),
-              const Text(
+              Text(
                 "Can't find it? Check your spam folder.",
                 style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
               ),

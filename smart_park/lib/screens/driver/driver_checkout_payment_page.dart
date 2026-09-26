@@ -82,13 +82,13 @@ class _DriverCheckoutPaymentPageState extends State<DriverCheckoutPaymentPage> {
     return Scaffold(
       backgroundColor: AppTheme.background,
       appBar: AppBar(
-        backgroundColor: Colors.white,
-        surfaceTintColor: Colors.white,
+        backgroundColor: AppTheme.surface,
+        surfaceTintColor: AppTheme.surface,
         titleSpacing: 8,
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
+            Text(
               'Payment Method',
               style: TextStyle(
                 color: AppTheme.textDark,
@@ -100,7 +100,7 @@ class _DriverCheckoutPaymentPageState extends State<DriverCheckoutPaymentPage> {
               widget.establishmentName,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
+              style: TextStyle(
                 color: AppTheme.textMuted,
                 fontSize: 11,
                 fontWeight: FontWeight.w600,
@@ -115,14 +115,14 @@ class _DriverCheckoutPaymentPageState extends State<DriverCheckoutPaymentPage> {
             Container(
               width: double.infinity,
               padding: const EdgeInsets.fromLTRB(20, 16, 20, 18),
-              color: const Color(0xFFFFF4CF),
+              color: AppTheme.accentSoft,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
+                  Text(
                     'Step 3 of 3',
                     style: TextStyle(
-                      color: Color(0xFF565C6B),
+                      color: AppTheme.textSecondary,
                       fontSize: 11,
                       fontWeight: FontWeight.w700,
                     ),
@@ -150,8 +150,8 @@ class _DriverCheckoutPaymentPageState extends State<DriverCheckoutPaymentPage> {
                       width: double.infinity,
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFFFF4CF),
-                        borderRadius: BorderRadius.circular(12),
+                        color: AppTheme.accentSoft,
+                        borderRadius: BorderRadius.circular(AppTheme.radius),
                         border: Border.all(color: const Color(0xFFF0D67A)),
                       ),
                       child: Row(
@@ -160,10 +160,10 @@ class _DriverCheckoutPaymentPageState extends State<DriverCheckoutPaymentPage> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                const Text(
+                                Text(
                                   'Amount to Pay',
                                   style: TextStyle(
-                                    color: Color(0xFF565C6B),
+                                    color: AppTheme.textSecondary,
                                     fontSize: 12,
                                     fontWeight: FontWeight.w700,
                                   ),
@@ -171,7 +171,7 @@ class _DriverCheckoutPaymentPageState extends State<DriverCheckoutPaymentPage> {
                                 const SizedBox(height: 4),
                                 Text(
                                   '${widget.vehicleLabel} · ${widget.duration} ${widget.plan}',
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     color: AppTheme.textDark,
                                     fontSize: 13,
                                     fontWeight: FontWeight.w800,
@@ -182,7 +182,7 @@ class _DriverCheckoutPaymentPageState extends State<DriverCheckoutPaymentPage> {
                           ),
                           Text(
                             _amountText(widget.amount),
-                            style: const TextStyle(
+                            style: TextStyle(
                               color: AppTheme.textDark,
                               fontSize: 26,
                               fontWeight: FontWeight.w800,
@@ -192,7 +192,7 @@ class _DriverCheckoutPaymentPageState extends State<DriverCheckoutPaymentPage> {
                       ),
                     ),
                     const SizedBox(height: 22),
-                    const Text(
+                    Text(
                       'Choose Payment Method',
                       style: TextStyle(
                         color: AppTheme.textDark,
@@ -211,18 +211,20 @@ class _DriverCheckoutPaymentPageState extends State<DriverCheckoutPaymentPage> {
                               _selectedMethod = method;
                             });
                           },
-                          borderRadius: BorderRadius.circular(12),
+                          borderRadius: BorderRadius.circular(AppTheme.radius),
                           child: Container(
                             padding: const EdgeInsets.all(14),
                             decoration: BoxDecoration(
                               color: isSelected
-                                  ? const Color(0xFFFFF4CF)
-                                  : Colors.white,
-                              borderRadius: BorderRadius.circular(12),
+                                  ? AppTheme.accentSoft
+                                  : AppTheme.surface,
+                              borderRadius: BorderRadius.circular(
+                                AppTheme.radius,
+                              ),
                               border: Border.all(
                                 color: isSelected
                                     ? AppTheme.accent
-                                    : const Color(0xFFE1E4EA),
+                                    : AppTheme.border,
                                 width: isSelected ? 1.6 : 1,
                               ),
                             ),
@@ -233,8 +235,10 @@ class _DriverCheckoutPaymentPageState extends State<DriverCheckoutPaymentPage> {
                                   height: 40,
                                   alignment: Alignment.center,
                                   decoration: BoxDecoration(
-                                    color: const Color(0xFFF5F6F9),
-                                    borderRadius: BorderRadius.circular(10),
+                                    color: AppTheme.surfaceAlt,
+                                    borderRadius: BorderRadius.circular(
+                                      AppTheme.radiusSmall,
+                                    ),
                                   ),
                                   child: Icon(
                                     method.icon,
@@ -249,7 +253,7 @@ class _DriverCheckoutPaymentPageState extends State<DriverCheckoutPaymentPage> {
                                     children: [
                                       Text(
                                         method.label,
-                                        style: const TextStyle(
+                                        style: TextStyle(
                                           color: AppTheme.textDark,
                                           fontWeight: FontWeight.w800,
                                         ),
@@ -262,7 +266,7 @@ class _DriverCheckoutPaymentPageState extends State<DriverCheckoutPaymentPage> {
                                                       DriverPaymentMethod.qrph
                                                   ? 'Pay using any QR Ph app'
                                                   : 'Pay with ${method.label}'),
-                                        style: const TextStyle(
+                                        style: TextStyle(
                                           color: AppTheme.textMuted,
                                           fontSize: 11,
                                         ),
@@ -275,8 +279,8 @@ class _DriverCheckoutPaymentPageState extends State<DriverCheckoutPaymentPage> {
                                       ? Icons.radio_button_checked_rounded
                                       : Icons.radio_button_off_rounded,
                                   color: isSelected
-                                      ? const Color(0xFFB78300)
-                                      : const Color(0xFFB8BDC8),
+                                      ? AppTheme.accentText
+                                      : AppTheme.borderStrong,
                                 ),
                               ],
                             ),
@@ -285,12 +289,12 @@ class _DriverCheckoutPaymentPageState extends State<DriverCheckoutPaymentPage> {
                       );
                     }),
                     if (!widget.isPayMongoConfigured)
-                      const Padding(
+                      Padding(
                         padding: EdgeInsets.only(top: 4),
                         child: Text(
                           'Payments are unavailable until PayMongo test keys are configured.',
                           style: TextStyle(
-                            color: Color(0xFF9A5A27),
+                            color: AppTheme.warning,
                             fontSize: 12,
                             fontWeight: FontWeight.w600,
                           ),
@@ -311,22 +315,22 @@ class _DriverCheckoutPaymentPageState extends State<DriverCheckoutPaymentPage> {
                       : null,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppTheme.accent,
-                    foregroundColor: const Color(0xFF22252C),
-                    disabledBackgroundColor: const Color(0xFFE7E9EE),
-                    disabledForegroundColor: const Color(0xFF8A909C),
+                    foregroundColor: AppTheme.onAccent,
+                    disabledBackgroundColor: AppTheme.border,
+                    disabledForegroundColor: AppTheme.textMuted,
                     minimumSize: const Size.fromHeight(50),
                     elevation: 0,
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
+                      borderRadius: BorderRadius.circular(AppTheme.radius),
                     ),
                   ),
                   child: _isProcessing
-                      ? const SizedBox(
+                      ? SizedBox(
                           height: 20,
                           width: 20,
                           child: CircularProgressIndicator(
                             strokeWidth: 2,
-                            color: Color(0xFF22252C),
+                            color: AppTheme.onAccent,
                           ),
                         )
                       : Text(
@@ -357,15 +361,15 @@ class _StepDot extends StatelessWidget {
       height: 24,
       alignment: Alignment.center,
       decoration: BoxDecoration(
-        color: emphasized ? AppTheme.textDark : const Color(0xFFFFEAA8),
+        color: emphasized ? AppTheme.textDark : AppTheme.accentLight,
         shape: BoxShape.circle,
       ),
       child: complete
-          ? const Icon(Icons.check_rounded, color: Colors.white, size: 15)
-          : const Text(
+          ? Icon(Icons.check_rounded, color: AppTheme.onInk, size: 15)
+          : Text(
               '3',
               style: TextStyle(
-                color: Colors.white,
+                color: AppTheme.onInk,
                 fontSize: 12,
                 fontWeight: FontWeight.w800,
               ),
@@ -382,7 +386,7 @@ class _StepLine extends StatelessWidget {
     return const Expanded(
       child: Padding(
         padding: EdgeInsets.symmetric(horizontal: 8),
-        child: Divider(color: Color(0xFFE0B735), thickness: 2),
+        child: Divider(color: AppTheme.accent, thickness: 2),
       ),
     );
   }

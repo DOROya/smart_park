@@ -7,6 +7,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 
 import '../../../theme/app_theme.dart';
 import '../../../widgets/smartpark_ui.dart';
+import '../../../widgets/sp_loading.dart';
 
 /// Rebuilds a scanner-compatible QR payload for tickets saved before the QR
 /// string was persisted. The gate scanner requires JSON containing at least
@@ -72,7 +73,7 @@ _TicketState _ticketState(Map<String, dynamic> data) {
     ),
     _TicketState.completed => (
       'Completed',
-      const Color(0xFF737A88),
+      AppTheme.textMuted,
       Icons.check_circle_outline_rounded,
     ),
     _TicketState.awaitingPayment => (
@@ -106,7 +107,7 @@ class _DriverTicketHistorySectionState extends State<DriverTicketHistorySection>
   Widget build(BuildContext context) {
     final String? uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) {
-      return const Center(
+      return Center(
         child: Text(
           'No logged-in driver found.',
           style: TextStyle(color: AppTheme.textMuted),
@@ -172,7 +173,7 @@ class _DriverTicketHistorySectionState extends State<DriverTicketHistorySection>
                 else if (snapshot.connectionState == ConnectionState.waiting)
                   const Padding(
                     padding: EdgeInsets.all(24),
-                    child: Center(child: CircularProgressIndicator()),
+                    child: SpSkeletonList(),
                   )
                 else if (tickets.isEmpty)
                   const SpEmptyState(
@@ -256,21 +257,23 @@ class _ActiveTicketCard extends StatelessWidget {
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.circular(AppTheme.radiusLarge),
         border: Border.all(color: spCardBorder),
       ),
       child: Column(
         children: [
           Container(
             padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
-            decoration: const BoxDecoration(
+            decoration: BoxDecoration(
               gradient: LinearGradient(
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
-                colors: <Color>[Color(0xFFFFEAA8), Color(0xFFF7C846)],
+                colors: <Color>[AppTheme.accentLight, AppTheme.accentWarm],
               ),
-              borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+              borderRadius: BorderRadius.vertical(
+                top: Radius.circular(AppTheme.radiusLarge),
+              ),
             ),
             child: Row(
               children: [
@@ -282,10 +285,10 @@ class _ActiveTicketCard extends StatelessWidget {
                         name.isEmpty ? 'Parking Ticket' : name,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.w800,
-                          color: Color(0xFF1F2532),
+                          color: AppTheme.textDark,
                         ),
                       ),
                       const SizedBox(height: 2),
@@ -293,10 +296,10 @@ class _ActiveTicketCard extends StatelessWidget {
                         state == _TicketState.parked && enteredAt != null
                             ? 'Entered ${spFormatClockTime(enteredAt)}'
                             : 'Show this at the entrance',
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w600,
-                          color: Color(0xFF3D4658),
+                          color: AppTheme.textSecondary,
                         ),
                       ),
                     ],
@@ -308,7 +311,7 @@ class _ActiveTicketCard extends StatelessWidget {
                     vertical: 4,
                   ),
                   decoration: BoxDecoration(
-                    color: Colors.white,
+                    color: AppTheme.surface,
                     borderRadius: BorderRadius.circular(999),
                   ),
                   child: Text(
@@ -330,9 +333,9 @@ class _ActiveTicketCard extends StatelessWidget {
                 Container(
                   padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
-                    color: Colors.white,
+                    color: AppTheme.surface,
                     border: Border.all(color: spCardBorder),
-                    borderRadius: BorderRadius.circular(14),
+                    borderRadius: BorderRadius.circular(AppTheme.radiusLarge),
                   ),
                   child: QrImageView(
                     data: _resolveTicketQrPayload(doc),
@@ -355,7 +358,7 @@ class _ActiveTicketCard extends StatelessWidget {
                     const Spacer(),
                     Text(
                       'PHP ${amount.toStringAsFixed(2)}',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w800,
                         color: AppTheme.textDark,
@@ -371,7 +374,7 @@ class _ActiveTicketCard extends StatelessWidget {
                         plan.isEmpty
                             ? _vehicleLabel(data)
                             : '${_vehicleLabel(data)} · $plan',
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 12,
                           color: AppTheme.textMuted,
                         ),
@@ -379,20 +382,14 @@ class _ActiveTicketCard extends StatelessWidget {
                     ),
                     Text(
                       _dateTimeLabel(_issuedAt(data)),
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: AppTheme.textMuted,
-                      ),
+                      style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
                     ),
                   ],
                 ),
                 const SizedBox(height: 8),
                 Text(
                   'Ticket #${doc.id}',
-                  style: const TextStyle(
-                    fontSize: 11,
-                    color: Color(0xFF9DA1AB),
-                  ),
+                  style: TextStyle(fontSize: 11, color: AppTheme.textMuted),
                 ),
               ],
             ),
@@ -432,8 +429,8 @@ class _PastTicketRow extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.circular(AppTheme.radiusLarge),
         border: Border.all(color: spCardBorder),
       ),
       child: Row(
@@ -444,7 +441,7 @@ class _PastTicketRow extends StatelessWidget {
             height: 40,
             decoration: BoxDecoration(
               color: stateColor.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(AppTheme.radius),
             ),
             child: Icon(stateIcon, color: stateColor, size: 20),
           ),
@@ -460,7 +457,7 @@ class _PastTicketRow extends StatelessWidget {
                         name.isEmpty ? 'Parking Ticket' : name,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontWeight: FontWeight.w700,
                           color: AppTheme.textDark,
                         ),
@@ -469,7 +466,7 @@ class _PastTicketRow extends StatelessWidget {
                     const SizedBox(width: 8),
                     Text(
                       'PHP ${amount.toStringAsFixed(2)}',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontWeight: FontWeight.w800,
                         color: AppTheme.textDark,
                       ),
@@ -486,7 +483,7 @@ class _PastTicketRow extends StatelessWidget {
                         _dateTimeLabel(_issuedAt(data)),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 11,
                           color: AppTheme.textMuted,
                         ),
@@ -498,10 +495,7 @@ class _PastTicketRow extends StatelessWidget {
                   const SizedBox(height: 4),
                   Text(
                     details.join(' · '),
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: AppTheme.textMuted,
-                    ),
+                    style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
                   ),
                 ],
                 if (overtimeHours > 0 && overtimeAmount > 0) ...[
@@ -512,12 +506,12 @@ class _PastTicketRow extends StatelessWidget {
                       vertical: 4,
                     ),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFFFF3D9),
-                      borderRadius: BorderRadius.circular(8),
+                      color: AppTheme.warningSoft,
+                      borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
                     ),
                     child: Text(
                       'Overtime ${overtimeHours}h · PHP ${overtimeAmount.toStringAsFixed(2)} cash',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w700,
                         color: spInsideColor,

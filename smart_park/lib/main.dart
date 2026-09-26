@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 
 import 'app.dart';
 import 'firebase_options.dart';
+import 'theme/theme_controller.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -20,5 +21,6 @@ Future<void> main() async {
     return true;
   };
 
+  await ThemeController.instance.load();
   runApp(const SmartParkApp());
 }

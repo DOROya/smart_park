@@ -5,22 +5,55 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-import 'services/app_version_guard.dart';
 import 'screens/auth/role_based_home_page.dart';
 import 'screens/auth/verify_email_screen.dart';
 import 'screens/auth/welcome_screen.dart';
+import 'services/app_version_guard.dart';
 import 'theme/app_theme.dart';
+import 'theme/theme_controller.dart';
+import 'utils/friendly_error.dart';
 import 'utils/staff_credentials.dart';
+import 'widgets/sp_loading.dart';
 
-class SmartParkApp extends StatelessWidget {
+class SmartParkApp extends StatefulWidget {
   const SmartParkApp({super.key});
+
+  @override
+  State<SmartParkApp> createState() => _SmartParkAppState();
+}
+
+class _SmartParkAppState extends State<SmartParkApp> {
+  @override
+  void initState() {
+    super.initState();
+    ThemeController.instance.addListener(_onThemeChanged);
+  }
+
+  @override
+  void dispose() {
+    ThemeController.instance.removeListener(_onThemeChanged);
+    super.dispose();
+  }
+
+  /// Screens read colours from AppTheme directly rather than through
+  /// Theme.of, so a palette switch has to rebuild every element (keeping
+  /// their state) instead of only Theme dependents.
+  void _onThemeChanged() {
+    setState(() {});
+    void rebuild(Element element) {
+      element.markNeedsBuild();
+      element.visitChildren(rebuild);
+    }
+
+    (context as Element).visitChildren(rebuild);
+  }
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'Smart Park',
-      theme: AppTheme.lightTheme,
+      theme: AppTheme.theme,
       home: const InternetGate(),
     );
   }
@@ -65,9 +98,7 @@ class _InternetGateState extends State<InternetGate> {
       future: _internetCheckFuture,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Scaffold(
-            body: Center(child: CircularProgressIndicator()),
-          );
+          return const SpLoadingScreen();
         }
 
         final bool hasInternet = snapshot.data ?? false;
@@ -80,23 +111,23 @@ class _InternetGateState extends State<InternetGate> {
                   mainAxisAlignment: MainAxisAlignment.center,
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Text(
+                    Text(
                       'SmartPark requires an internet connection to function.',
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.w700,
-                        color: Color(0xFF1E2026),
+                        color: AppTheme.textDark,
                       ),
                     ),
                     const SizedBox(height: 10),
-                    const Text(
+                    Text(
                       'Please connect to the internet and try again.',
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w500,
-                        color: Color(0xFF8E929C),
+                        color: AppTheme.textMuted,
                       ),
                     ),
                     const SizedBox(height: 18),
@@ -155,9 +186,7 @@ class _VersionGateState extends State<VersionGate> {
             AsyncSnapshot<AppVersionCheckResult> snapshot,
           ) {
             if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Scaffold(
-                body: Center(child: CircularProgressIndicator()),
-              );
+              return const SpLoadingScreen();
             }
 
             if (snapshot.hasError || !snapshot.hasData) {
@@ -168,23 +197,23 @@ class _VersionGateState extends State<VersionGate> {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Text(
+                        Text(
                           'Unable to verify installed app version.',
                           textAlign: TextAlign.center,
                           style: TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.w700,
-                            color: Color(0xFF1E2026),
+                            color: AppTheme.textDark,
                           ),
                         ),
                         const SizedBox(height: 10),
                         Text(
-                          snapshot.error.toString(),
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: Colors.black54,
+                          friendlyError(
+                            snapshot.error ?? 'unknown',
+                            fallback: 'Check your connection and try again.',
                           ),
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: AppTheme.textMuted),
                         ),
                         const SizedBox(height: 18),
                         ElevatedButton(
@@ -223,32 +252,32 @@ class _VersionGateState extends State<VersionGate> {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Text(
+                      Text(
                         'Outdated App Build Detected',
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           fontSize: 20,
                           fontWeight: FontWeight.w700,
-                          color: Color(0xFF1E2026),
+                          color: AppTheme.textDark,
                         ),
                       ),
                       const SizedBox(height: 10),
                       Text(
                         result.message,
                         textAlign: TextAlign.center,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.w500,
-                          color: Color(0xFF8E929C),
+                          color: AppTheme.textMuted,
                         ),
                       ),
                       const SizedBox(height: 14),
                       Text(
                         'Installed: ${result.currentVersion}\nExpected at least: ${result.requiredVersion}',
                         textAlign: TextAlign.center,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 13,
-                          color: Colors.black87,
+                          color: AppTheme.textDark,
                           height: 1.35,
                         ),
                       ),
@@ -298,9 +327,7 @@ class _AuthGateState extends State<AuthGate> {
       future: _initialUserFuture,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Scaffold(
-            body: Center(child: CircularProgressIndicator()),
-          );
+          return const SpLoadingScreen();
         }
 
         final User? user = snapshot.data;

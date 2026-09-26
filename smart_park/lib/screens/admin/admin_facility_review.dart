@@ -72,18 +72,14 @@ extension _AdminFacilityReview on _AdminHomePageState {
                           vertical: 10,
                         ),
                         filled: true,
-                        fillColor: const Color(0xFFF8F9FC),
+                        fillColor: AppTheme.surfaceAlt,
                         border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: const BorderSide(
-                            color: Color(0xFFE3E5EA),
-                          ),
+                          borderRadius: BorderRadius.circular(AppTheme.radius),
+                          borderSide: BorderSide(color: AppTheme.border),
                         ),
                         enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: const BorderSide(
-                            color: Color(0xFFE3E5EA),
-                          ),
+                          borderRadius: BorderRadius.circular(AppTheme.radius),
+                          borderSide: BorderSide(color: AppTheme.border),
                         ),
                       ),
                     ),
@@ -92,14 +88,14 @@ extension _AdminFacilityReview on _AdminHomePageState {
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFF8F9FC),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: const Color(0xFFE3E5EA)),
+                      color: AppTheme.surfaceAlt,
+                      borderRadius: BorderRadius.circular(AppTheme.radius),
+                      border: Border.all(color: AppTheme.border),
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(
+                        Icon(
                           Icons.sort_rounded,
                           color: AppTheme.textMuted,
                           size: 20,
@@ -109,7 +105,7 @@ extension _AdminFacilityReview on _AdminHomePageState {
                           child: DropdownButton<_FacilitySortOption>(
                             value: _facilitySort,
                             isDense: true,
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 13,
                               fontWeight: FontWeight.w600,
                               color: AppTheme.textDark,
@@ -146,7 +142,7 @@ extension _AdminFacilityReview on _AdminHomePageState {
                 title: 'Pending Facilities',
                 facilities: filteredPending,
                 emptyText: 'No facilities pending review.',
-                accentColor: const Color(0xFFD97706),
+                accentColor: AppTheme.warning,
                 icon: Icons.pending_actions_rounded,
                 initExpanded: true,
               ),
@@ -154,7 +150,7 @@ extension _AdminFacilityReview on _AdminHomePageState {
                 title: 'Approved Facilities',
                 facilities: filteredApproved,
                 emptyText: 'No approved facilities found.',
-                accentColor: const Color(0xFF059669),
+                accentColor: AppTheme.success,
                 icon: Icons.check_circle_outline_rounded,
                 initExpanded: false,
               ),
@@ -162,7 +158,7 @@ extension _AdminFacilityReview on _AdminHomePageState {
                 title: 'Rejected Facilities',
                 facilities: filteredRejected,
                 emptyText: 'No rejected facilities found.',
-                accentColor: const Color(0xFFDC2626),
+                accentColor: AppTheme.danger,
                 icon: Icons.cancel_outlined,
                 initExpanded: false,
               ),
@@ -186,10 +182,10 @@ extension _AdminFacilityReview on _AdminHomePageState {
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       child: Material(
-        color: const Color(0xFFF8F9FC),
+        color: AppTheme.surfaceAlt,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(14),
-          side: const BorderSide(color: Color(0xFFE6E8EE)),
+          borderRadius: BorderRadius.circular(AppTheme.radiusLarge),
+          side: BorderSide(color: AppTheme.border),
         ),
         clipBehavior: Clip.antiAlias,
         child: Theme(
@@ -204,7 +200,7 @@ extension _AdminFacilityReview on _AdminHomePageState {
               padding: const EdgeInsets.all(6),
               decoration: BoxDecoration(
                 color: accentColor.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
               ),
               child: Icon(icon, color: accentColor, size: 20),
             ),
@@ -215,7 +211,7 @@ extension _AdminFacilityReview on _AdminHomePageState {
                     title,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 15,
                       fontWeight: FontWeight.w700,
                       color: AppTheme.textDark,
@@ -230,7 +226,7 @@ extension _AdminFacilityReview on _AdminHomePageState {
                   ),
                   decoration: BoxDecoration(
                     color: accentColor.withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(10),
+                    borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
                   ),
                   child: Text(
                     '$count',
@@ -251,13 +247,15 @@ extension _AdminFacilityReview on _AdminHomePageState {
                         width: double.infinity,
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: const Color(0xFFEAECEF)),
+                          color: AppTheme.surface,
+                          borderRadius: BorderRadius.circular(
+                            AppTheme.radiusSmall,
+                          ),
+                          border: Border.all(color: AppTheme.border),
                         ),
                         child: Text(
                           emptyText,
-                          style: const TextStyle(
+                          style: TextStyle(
                             color: AppTheme.textMuted,
                             fontSize: 13,
                           ),
@@ -324,7 +322,7 @@ extension _AdminFacilityReview on _AdminHomePageState {
     );
   }
 
-  static const TextStyle _facilityTableHeaderStyle = TextStyle(
+  static final TextStyle _facilityTableHeaderStyle = TextStyle(
     fontSize: 11,
     fontWeight: FontWeight.w700,
     letterSpacing: 0.4,
@@ -337,14 +335,14 @@ extension _AdminFacilityReview on _AdminHomePageState {
   ) {
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE4E7EF)),
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.circular(AppTheme.radius),
+        border: Border.all(color: AppTheme.border),
       ),
       clipBehavior: Clip.antiAlias,
       child: Column(
         children: [
-          const Padding(
+          Padding(
             padding: EdgeInsets.fromLTRB(16, 10, 16, 10),
             child: Row(
               children: [
@@ -370,7 +368,7 @@ extension _AdminFacilityReview on _AdminHomePageState {
           ),
           for (final QueryDocumentSnapshot<Map<String, dynamic>> doc
               in facilities) ...[
-            const Divider(height: 1, thickness: 1, color: Color(0xFFF0F2F6)),
+            Divider(height: 1, thickness: 1, color: AppTheme.surfaceAlt),
             _buildFacilityTableRow(doc),
           ],
         ],
@@ -419,7 +417,7 @@ extension _AdminFacilityReview on _AdminHomePageState {
               bottom,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 12, color: AppTheme.textMuted),
+              style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
             ),
         ],
       );
@@ -433,7 +431,7 @@ extension _AdminFacilityReview on _AdminHomePageState {
           const SizedBox(width: 4),
           Text(
             '$count',
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 13,
               fontWeight: FontWeight.w600,
               color: AppTheme.textDark,
@@ -471,14 +469,10 @@ extension _AdminFacilityReview on _AdminHomePageState {
                 spacing: 12,
                 runSpacing: 4,
                 children: [
-                  slot(
-                    Icons.directions_car_outlined,
-                    const Color(0xFF2563EB),
-                    cars,
-                  ),
+                  slot(Icons.directions_car_outlined, AppTheme.info, cars),
                   slot(
                     Icons.two_wheeler_outlined,
-                    const Color(0xFF059669),
+                    AppTheme.success,
                     motorcycles,
                   ),
                 ],
@@ -491,22 +485,16 @@ extension _AdminFacilityReview on _AdminHomePageState {
                 children: [
                   Text(
                     submittedAt == null ? '—' : _relativeTime(submittedAt),
-                    style: const TextStyle(
-                      fontSize: 13,
-                      color: AppTheme.textDark,
-                    ),
+                    style: TextStyle(fontSize: 13, color: AppTheme.textDark),
                   ),
                   if (resubmitted) ...[
                     const SizedBox(height: 2),
-                    const SpChip(
-                      label: 'Resubmitted',
-                      color: Color(0xFFD97706),
-                    ),
+                    SpChip(label: 'Resubmitted', color: AppTheme.warning),
                   ],
                 ],
               ),
             ),
-            const Icon(Icons.chevron_right_rounded, color: AppTheme.textMuted),
+            Icon(Icons.chevron_right_rounded, color: AppTheme.textMuted),
           ],
         ),
       ),
@@ -521,16 +509,16 @@ extension _AdminFacilityReview on _AdminHomePageState {
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE4E7EF)),
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.circular(AppTheme.radius),
+        border: Border.all(color: AppTheme.border),
       ),
       clipBehavior: Clip.antiAlias,
       child: Column(
         children: [
           for (int i = 0; i < facilities.length; i++) ...[
             if (i > 0)
-              const Divider(height: 1, thickness: 1, color: Color(0xFFF0F2F6)),
+              Divider(height: 1, thickness: 1, color: AppTheme.surfaceAlt),
             _buildFacilityListRow(facilities[i]),
           ],
         ],
@@ -558,7 +546,7 @@ extension _AdminFacilityReview on _AdminHomePageState {
         _parseDateTime(data['createdAt']) ??
         _parseDateTime(data['createdAtClient']);
 
-    const TextStyle meta = TextStyle(fontSize: 12, color: AppTheme.textMuted);
+    final TextStyle meta = TextStyle(fontSize: 12, color: AppTheme.textMuted);
 
     return InkWell(
       onTap: () => _showEstablishmentReviewDialog(doc),
@@ -577,7 +565,7 @@ extension _AdminFacilityReview on _AdminHomePageState {
                           name.isEmpty ? 'Unnamed Establishment' : name,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.w700,
                             color: AppTheme.textDark,
@@ -586,10 +574,7 @@ extension _AdminFacilityReview on _AdminHomePageState {
                       ),
                       if (resubmitted) ...[
                         const SizedBox(width: 6),
-                        const SpChip(
-                          label: 'Resubmitted',
-                          color: Color(0xFFD97706),
-                        ),
+                        SpChip(label: 'Resubmitted', color: AppTheme.warning),
                       ],
                     ],
                   ),
@@ -603,23 +588,23 @@ extension _AdminFacilityReview on _AdminHomePageState {
                   const SizedBox(height: 4),
                   Row(
                     children: [
-                      const Icon(
+                      Icon(
                         Icons.directions_car_outlined,
                         size: 14,
-                        color: Color(0xFF2563EB),
+                        color: AppTheme.info,
                       ),
                       const SizedBox(width: 3),
                       Text('$cars', style: meta),
                       const SizedBox(width: 10),
-                      const Icon(
+                      Icon(
                         Icons.two_wheeler_outlined,
                         size: 14,
-                        color: Color(0xFF059669),
+                        color: AppTheme.success,
                       ),
                       const SizedBox(width: 3),
                       Text('$motorcycles', style: meta),
                       if (submittedAt != null) ...[
-                        const Text('  ·  ', style: meta),
+                        Text('  ·  ', style: meta),
                         Flexible(
                           child: Text(
                             _relativeTime(submittedAt),
@@ -634,7 +619,7 @@ extension _AdminFacilityReview on _AdminHomePageState {
                 ],
               ),
             ),
-            const Icon(Icons.chevron_right_rounded, color: AppTheme.textMuted),
+            Icon(Icons.chevron_right_rounded, color: AppTheme.textMuted),
           ],
         ),
       ),

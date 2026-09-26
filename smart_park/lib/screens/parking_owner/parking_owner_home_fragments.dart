@@ -13,25 +13,25 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
       hintText: hint,
       prefixIcon: icon == null ? null : Icon(icon, size: 20),
       filled: true,
-      fillColor: const Color(0xFFF8F9FC),
+      fillColor: AppTheme.surfaceAlt,
       border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: Color(0xFFE4E7EF)),
+        borderRadius: BorderRadius.circular(AppTheme.radius),
+        borderSide: BorderSide(color: AppTheme.border),
       ),
       enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: Color(0xFFE4E7EF)),
+        borderRadius: BorderRadius.circular(AppTheme.radius),
+        borderSide: BorderSide(color: AppTheme.border),
       ),
       focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(AppTheme.radius),
         borderSide: const BorderSide(color: AppTheme.accent, width: 1.4),
       ),
-      labelStyle: const TextStyle(
-        color: Color(0xFF737A88),
+      labelStyle: TextStyle(
+        color: AppTheme.textMuted,
         fontSize: 13,
         fontWeight: FontWeight.w500,
       ),
-      hintStyle: const TextStyle(color: Color(0xFF9AA0AE), fontSize: 12),
+      hintStyle: TextStyle(color: AppTheme.textMuted, fontSize: 12),
     );
   }
 
@@ -50,7 +50,7 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
       case 3:
         return _buildCommissionsTab(ownerId: ownerId, ownerData: ownerData);
       case 4:
-        return _buildProfileTab(ownerId: ownerId, role: role);
+        return _buildProfileTab();
       case 0:
       default:
         return _buildFacilityTab(ownerId: ownerId, ownerData: ownerData);
@@ -142,7 +142,7 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
               ),
               const SizedBox(height: 16),
               if (resolving)
-                const Center(child: CircularProgressIndicator())
+                const SpSkeletonList()
               else
                 const SpEmptyState(
                   icon: Icons.add_business_rounded,
@@ -439,7 +439,7 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
               children: [
                 Text(
                   label,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w600,
                     color: AppTheme.textMuted,
@@ -448,7 +448,7 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
                 const SizedBox(height: 1),
                 Text(
                   value,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w500,
                     color: AppTheme.textDark,
@@ -505,26 +505,22 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
           Container(
             padding: const EdgeInsets.fromLTRB(12, 4, 4, 4),
             decoration: BoxDecoration(
-              color: const Color(0xFFF6F7FA),
-              borderRadius: BorderRadius.circular(10),
+              color: AppTheme.surfaceAlt,
+              borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
             ),
             child: Row(
               children: [
-                const Icon(
-                  Icons.tag_rounded,
-                  size: 16,
-                  color: AppTheme.textMuted,
-                ),
+                Icon(Icons.tag_rounded, size: 16, color: AppTheme.textMuted),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
                     establishmentId,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
-                      color: Color(0xFF596173),
+                      color: AppTheme.textSecondary,
                     ),
                   ),
                 ),
@@ -564,7 +560,7 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
               ),
               const SizedBox(height: 16),
               if (resolving)
-                const Center(child: CircularProgressIndicator())
+                const SpSkeletonList()
               else
                 const SpEmptyState(
                   icon: Icons.storefront_outlined,
@@ -667,7 +663,7 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
                   );
                 } else if (snapshot.connectionState ==
                     ConnectionState.waiting) {
-                  content = const Center(child: CircularProgressIndicator());
+                  content = const SpSkeletonList();
                 } else if (staffDocs.isEmpty) {
                   content = const SpEmptyState(
                     boxed: false,
@@ -745,9 +741,9 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.fromLTRB(12, 10, 4, 10),
       decoration: BoxDecoration(
-        color: const Color(0xFFF8F9FC),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFE8EAF0)),
+        color: AppTheme.surfaceAlt,
+        borderRadius: BorderRadius.circular(AppTheme.radiusLarge),
+        border: Border.all(color: AppTheme.border),
       ),
       child: Row(
         children: [
@@ -756,7 +752,7 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
             backgroundColor: AppTheme.accent.withValues(alpha: 0.3),
             child: Text(
               _initials(name),
-              style: const TextStyle(
+              style: TextStyle(
                 fontWeight: FontWeight.w800,
                 color: AppTheme.textDark,
               ),
@@ -771,7 +767,7 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
                   name,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: AppTheme.textDark,
                     fontWeight: FontWeight.w700,
                   ),
@@ -779,7 +775,7 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
                 const SizedBox(height: 2),
                 Row(
                   children: [
-                    const Icon(
+                    Icon(
                       Icons.alternate_email_rounded,
                       size: 13,
                       color: AppTheme.textMuted,
@@ -790,7 +786,7 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
                         username.isEmpty ? 'No username' : username,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
+                        style: TextStyle(
                           color: AppTheme.textMuted,
                           fontSize: 12,
                         ),
@@ -803,10 +799,7 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
           ),
           IconButton(
             onPressed: () => _removeStaff(doc.id, name),
-            icon: const Icon(
-              Icons.delete_outline_rounded,
-              color: spDeniedColor,
-            ),
+            icon: Icon(Icons.delete_outline_rounded, color: spDeniedColor),
             tooltip: 'Remove staff',
           ),
         ],
@@ -831,7 +824,7 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
             ),
             const SizedBox(height: 16),
             if (resolving)
-              const Center(child: CircularProgressIndicator())
+              const SpSkeletonList()
             else if (facilityId.isEmpty)
               const SpEmptyState(
                 icon: Icons.storefront_outlined,
@@ -851,183 +844,17 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
     );
   }
 
-  Widget _buildProfileTab({required String ownerId, required String role}) {
-    final String firstName = _profileFirstNameController.text.trim();
-    final String lastName = _profileLastNameController.text.trim();
-    final String displayName = '$firstName $lastName'.trim().isEmpty
-        ? 'Parking Owner'
-        : '$firstName $lastName'.trim();
-    final String email = _profileEmailController.text.trim();
-
-    final Widget identityCard = Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: <Color>[Color(0xFFFFEAA8), Color(0xFFF7C846)],
-        ),
-        borderRadius: BorderRadius.circular(18),
-      ),
-      child: Row(
-        children: [
-          CircleAvatar(
-            radius: 30,
-            backgroundColor: const Color(0x40FFFFFF),
-            child: Text(
-              _initials(displayName),
-              style: const TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.w800,
-                color: Color(0xFF1F2532),
-              ),
-            ),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  displayName,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w800,
-                    color: Color(0xFF1F2532),
-                  ),
-                ),
-                if (email.isNotEmpty) ...[
-                  const SizedBox(height: 2),
-                  Text(
-                    email,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 13,
-                      color: Color(0xFF3D4658),
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ],
-                const SizedBox(height: 6),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 3,
-                  ),
-                  decoration: BoxDecoration(
-                    color: const Color(0x40FFFFFF),
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: const Text(
-                    'Parking Owner',
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                      color: Color(0xFF3D4658),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-    final Widget accountCard = SpSectionCard(
-      icon: Icons.manage_accounts_rounded,
-      title: 'Account Information',
-      subtitle: 'Personal details used across the platform.',
-      child: Column(
-        children: [
-          TextFormField(
-            controller: _profileFirstNameController,
-            decoration: _ownerFieldDecoration(
-              label: 'First Name',
-              icon: Icons.person_outline_rounded,
-            ),
-          ),
-          const SizedBox(height: 10),
-          TextFormField(
-            controller: _profileLastNameController,
-            decoration: _ownerFieldDecoration(
-              label: 'Last Name',
-              icon: Icons.person_outline_rounded,
-            ),
-          ),
-          const SizedBox(height: 10),
-          TextFormField(
-            controller: _profileEmailController,
-            decoration: _ownerFieldDecoration(
-              label: 'Email',
-              icon: Icons.alternate_email_rounded,
-            ),
-          ),
-          const SizedBox(height: 12),
-          SpPrimaryButton(
-            icon: Icons.save_rounded,
-            label: _savingProfile ? 'Saving Profile...' : 'Save Changes',
-            busy: _savingProfile,
-            onPressed: () => _saveProfile(ownerId, role),
-          ),
-        ],
-      ),
-    );
-    final Widget signOutButton = SizedBox(
-      width: double.infinity,
-      child: OutlinedButton.icon(
-        onPressed: _signOut,
-        icon: const Icon(Icons.logout_rounded),
-        label: const Text(
-          'Sign Out',
-          style: TextStyle(fontWeight: FontWeight.w700),
-        ),
-        style: OutlinedButton.styleFrom(
-          minimumSize: const Size(double.infinity, 48),
-          foregroundColor: const Color(0xFFAF2E2E),
-          side: const BorderSide(color: Color(0xFFF0C9C9)),
-          backgroundColor: const Color(0xFFFFF6F6),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-        ),
-      ),
-    );
-
-    const Widget header = SpPageHeader(
-      title: 'Profile',
-      subtitle: 'Your account details and session.',
-    );
-
-    if (_isTablet) {
-      return ListView(
-        padding: const EdgeInsets.only(top: 8),
-        children: [
-          header,
-          const SizedBox(height: 20),
-          _ownerTabletColumns(
-            leftFlex: 2,
-            rightFlex: 3,
-            left: [identityCard, const SizedBox(height: 12), signOutButton],
-            right: [accountCard],
-          ),
-        ],
-      );
-    }
-
-    return ListView(
+  Widget _buildProfileTab() {
+    return SpProfileView(
+      roleLabel: 'Parking Owner',
+      firstNameController: _profileFirstNameController,
+      lastNameController: _profileLastNameController,
+      email: _profileEmailController.text.isNotEmpty
+          ? _profileEmailController.text
+          : FirebaseAuth.instance.currentUser?.email ?? '',
+      onSignOut: _signOut,
       padding: const EdgeInsets.only(top: 8),
-      children: [
-        header,
-        const SizedBox(height: 16),
-        identityCard,
-        const SizedBox(height: 12),
-        accountCard,
-        const SizedBox(height: 12),
-        signOutButton,
-      ],
+      wide: _isTablet,
     );
   }
 }

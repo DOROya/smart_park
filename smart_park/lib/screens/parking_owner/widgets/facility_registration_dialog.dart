@@ -473,7 +473,7 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
               onPressed: () => Navigator.of(dialogContext).pop(true),
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppTheme.accent,
-                foregroundColor: const Color(0xFF22252C),
+                foregroundColor: AppTheme.onAccent,
               ),
               child: const Text('Submit for Review'),
             ),
@@ -641,9 +641,9 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
       width: double.infinity,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFE4E7EF)),
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.circular(AppTheme.radiusLarge),
+        border: Border.all(color: AppTheme.border),
         boxShadow: const [
           BoxShadow(
             color: Color(0x12000000),
@@ -661,10 +661,10 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
                 width: 36,
                 height: 36,
                 decoration: BoxDecoration(
-                  color: const Color(0xFFFFF4CF),
-                  borderRadius: BorderRadius.circular(10),
+                  color: AppTheme.accentSoft,
+                  borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
                 ),
-                child: Icon(icon, color: const Color(0xFF2F3544), size: 20),
+                child: Icon(icon, color: AppTheme.textDark, size: 20),
               ),
               const SizedBox(width: 10),
               Expanded(
@@ -673,7 +673,7 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
                   children: [
                     Text(
                       title,
-                      style: const TextStyle(
+                      style: TextStyle(
                         color: AppTheme.textDark,
                         fontSize: 16,
                         fontWeight: FontWeight.w700,
@@ -682,8 +682,8 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
                     const SizedBox(height: 2),
                     Text(
                       subtitle,
-                      style: const TextStyle(
-                        color: Color(0xFF737A88),
+                      style: TextStyle(
+                        color: AppTheme.textMuted,
                         fontSize: 12,
                         fontWeight: FontWeight.w500,
                       ),
@@ -774,15 +774,13 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
     final int? minutes = opening ? _openMinutes : _closeMinutes;
     return InkWell(
       onTap: _open24Hours ? null : () => _pickTime(opening: opening),
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: BorderRadius.circular(AppTheme.radius),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
-          color: _open24Hours
-              ? const Color(0xFFF1F2F5)
-              : const Color(0xFFF8F9FC),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: const Color(0xFFE4E7EF)),
+          color: _open24Hours ? AppTheme.surfaceAlt : AppTheme.surfaceAlt,
+          borderRadius: BorderRadius.circular(AppTheme.radius),
+          border: Border.all(color: AppTheme.border),
         ),
         child: Row(
           children: [
@@ -798,10 +796,7 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
                 children: [
                   Text(
                     opening ? 'Opens' : 'Closes',
-                    style: const TextStyle(
-                      fontSize: 11,
-                      color: AppTheme.textMuted,
-                    ),
+                    style: TextStyle(fontSize: 11, color: AppTheme.textMuted),
                   ),
                   Text(
                     minutes == null
@@ -834,7 +829,7 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
       children: [
         Row(
           children: [
-            const Expanded(
+            Expanded(
               child: Text(
                 'Operating Hours',
                 style: TextStyle(
@@ -843,7 +838,7 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
                 ),
               ),
             ),
-            const Text(
+            Text(
               'Open 24 hours',
               style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
             ),
@@ -864,7 +859,7 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
         ),
         if (!_open24Hours && hours.overnight) ...[
           const SizedBox(height: 6),
-          const Text(
+          Text(
             'Closes after midnight (overnight).',
             style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
           ),
@@ -886,7 +881,7 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
       children: [
         Text(
           label,
-          style: const TextStyle(
+          style: TextStyle(
             color: AppTheme.textDark,
             fontWeight: FontWeight.w600,
           ),
@@ -901,24 +896,24 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
           decoration: InputDecoration(
             hintText: hint,
             filled: true,
-            fillColor: const Color(0xFFF8F9FC),
+            fillColor: AppTheme.surfaceAlt,
             contentPadding: const EdgeInsets.symmetric(
               horizontal: 14,
               vertical: 12,
             ),
             border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(color: Color(0xFFE4E7EF)),
+              borderRadius: BorderRadius.circular(AppTheme.radius),
+              borderSide: BorderSide(color: AppTheme.border),
             ),
             enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(color: Color(0xFFE4E7EF)),
+              borderRadius: BorderRadius.circular(AppTheme.radius),
+              borderSide: BorderSide(color: AppTheme.border),
             ),
             focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(AppTheme.radius),
               borderSide: const BorderSide(color: AppTheme.accent, width: 1.4),
             ),
-            hintStyle: const TextStyle(color: Color(0xFF9AA0AE), fontSize: 12),
+            hintStyle: TextStyle(color: AppTheme.textMuted, fontSize: 12),
           ),
         ),
       ],
@@ -947,14 +942,14 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
             width: double.infinity,
             padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
-              color: const Color(0xFFF8F9FC),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: const Color(0xFFE4E7EF)),
+              color: AppTheme.surfaceAlt,
+              borderRadius: BorderRadius.circular(AppTheme.radius),
+              border: Border.all(color: AppTheme.border),
             ),
             child: Text(
               _mapHint,
-              style: const TextStyle(
-                color: Color(0xFF596173),
+              style: TextStyle(
+                color: AppTheme.textSecondary,
                 fontSize: 12,
                 fontWeight: FontWeight.w600,
               ),
@@ -964,7 +959,7 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
           SizedBox(
             height: 240,
             child: ClipRRect(
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(AppTheme.radius),
               child: GoogleMap(
                 initialCameraPosition: CameraPosition(
                   target: _cameraCenter,
@@ -993,8 +988,8 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
             Text(
               'Lat: ${_selectedLocation!.latitude.toStringAsFixed(6)}, '
               'Lng: ${_selectedLocation!.longitude.toStringAsFixed(6)}',
-              style: const TextStyle(
-                color: Color(0xFF596173),
+              style: TextStyle(
+                color: AppTheme.textSecondary,
                 fontWeight: FontWeight.w600,
               ),
             ),
@@ -1007,8 +1002,8 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
               OutlinedButton.icon(
                 onPressed: _fetchingLocation ? null : _initializeMapCenter,
                 style: OutlinedButton.styleFrom(
-                  foregroundColor: const Color(0xFF2F3544),
-                  side: const BorderSide(color: Color(0xFFDDE1EA)),
+                  foregroundColor: AppTheme.textDark,
+                  side: BorderSide(color: AppTheme.border),
                 ),
                 icon: const Icon(Icons.my_location_rounded),
                 label: const Text('Use My Location'),
@@ -1016,8 +1011,8 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
               OutlinedButton.icon(
                 onPressed: _reverseGeocodePin,
                 style: OutlinedButton.styleFrom(
-                  foregroundColor: const Color(0xFF2F3544),
-                  side: const BorderSide(color: Color(0xFFDDE1EA)),
+                  foregroundColor: AppTheme.textDark,
+                  side: BorderSide(color: AppTheme.border),
                 ),
                 icon: const Icon(Icons.place_rounded),
                 label: const Text('Use Pin Address'),
@@ -1036,7 +1031,7 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
     return Stack(
       children: [
         ClipRRect(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(AppTheme.radius),
           child: SizedBox(width: 92, height: 92, child: image),
         ),
         Positioned(
@@ -1090,18 +1085,18 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
               if (canAddMore)
                 InkWell(
                   onTap: _pickPhoto,
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(AppTheme.radius),
                   child: Container(
                     width: 92,
                     height: 92,
                     decoration: BoxDecoration(
-                      color: const Color(0xFFF8F9FC),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: const Color(0xFFE4E7EF)),
+                      color: AppTheme.surfaceAlt,
+                      borderRadius: BorderRadius.circular(AppTheme.radius),
+                      border: Border.all(color: AppTheme.border),
                     ),
-                    child: const Icon(
+                    child: Icon(
                       Icons.add_a_photo_rounded,
-                      color: Color(0xFF737A88),
+                      color: AppTheme.textMuted,
                     ),
                   ),
                 ),
@@ -1110,8 +1105,8 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
           const SizedBox(height: 8),
           Text(
             '$_totalPhotoCount / ${ParkingStorageService.maxPhotosPerEstablishment} photos added',
-            style: const TextStyle(
-              color: Color(0xFF737A88),
+            style: TextStyle(
+              color: AppTheme.textMuted,
               fontSize: 12,
               fontWeight: FontWeight.w600,
             ),
@@ -1151,18 +1146,18 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
               if (canAddMore)
                 InkWell(
                   onTap: _pickDocument,
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(AppTheme.radius),
                   child: Container(
                     width: 92,
                     height: 92,
                     decoration: BoxDecoration(
-                      color: const Color(0xFFF8F9FC),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: const Color(0xFFE4E7EF)),
+                      color: AppTheme.surfaceAlt,
+                      borderRadius: BorderRadius.circular(AppTheme.radius),
+                      border: Border.all(color: AppTheme.border),
                     ),
-                    child: const Icon(
+                    child: Icon(
                       Icons.note_add_rounded,
-                      color: Color(0xFF737A88),
+                      color: AppTheme.textMuted,
                     ),
                   ),
                 ),
@@ -1171,8 +1166,8 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
           const SizedBox(height: 8),
           Text(
             '$_totalDocumentCount / ${ParkingStorageService.maxBusinessDocuments} documents added',
-            style: const TextStyle(
-              color: Color(0xFF737A88),
+            style: TextStyle(
+              color: AppTheme.textMuted,
               fontSize: 12,
               fontWeight: FontWeight.w600,
             ),
@@ -1198,7 +1193,7 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
             const SizedBox(width: 6),
             Text(
               title,
-              style: const TextStyle(
+              style: TextStyle(
                 color: AppTheme.textDark,
                 fontWeight: FontWeight.w700,
                 fontSize: 13,
@@ -1258,10 +1253,10 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
           // Material (not a coloured Container) so the tile's ink splash
           // paints on this background instead of being hidden behind it.
           Material(
-            color: const Color(0xFFF8F9FC),
+            color: AppTheme.surfaceAlt,
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-              side: const BorderSide(color: Color(0xFFE4E7EF)),
+              borderRadius: BorderRadius.circular(AppTheme.radius),
+              side: BorderSide(color: AppTheme.border),
             ),
             clipBehavior: Clip.antiAlias,
             child: SwitchListTile(
@@ -1270,7 +1265,7 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
                 vertical: 4,
               ),
               activeThumbColor: AppTheme.accent,
-              title: const Text(
+              title: Text(
                 'Allow Long-Term Parking (Weekly & Monthly)',
                 style: TextStyle(
                   color: AppTheme.textDark,
@@ -1278,7 +1273,7 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
                   fontSize: 13,
                 ),
               ),
-              subtitle: const Text(
+              subtitle: Text(
                 'By default, only hourly & daily rates are enabled.',
                 style: TextStyle(color: AppTheme.textMuted, fontSize: 11),
               ),
@@ -1323,9 +1318,9 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
             ),
           ],
           const SizedBox(height: 16),
-          const Divider(color: Color(0xFFE4E7EF)),
+          Divider(color: AppTheme.border),
           const SizedBox(height: 12),
-          const Text(
+          Text(
             'Slot Counts (Car / Motorcycle)',
             style: TextStyle(
               color: AppTheme.textDark,
@@ -1365,12 +1360,12 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
     return Scaffold(
       backgroundColor: AppTheme.background,
       appBar: AppBar(
-        backgroundColor: Colors.white,
-        surfaceTintColor: Colors.white,
+        backgroundColor: AppTheme.surface,
+        surfaceTintColor: AppTheme.surface,
         elevation: 0,
         title: Text(
           pageTitle,
-          style: const TextStyle(
+          style: TextStyle(
             color: AppTheme.textDark,
             fontWeight: FontWeight.w700,
           ),
@@ -1391,12 +1386,17 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
                       width: double.infinity,
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
-                        gradient: const LinearGradient(
+                        gradient: LinearGradient(
                           begin: Alignment.topLeft,
                           end: Alignment.bottomRight,
-                          colors: <Color>[Color(0xFFFFEAA8), Color(0xFFF7C846)],
+                          colors: <Color>[
+                            AppTheme.accentLight,
+                            AppTheme.accentWarm,
+                          ],
                         ),
-                        borderRadius: BorderRadius.circular(16),
+                        borderRadius: BorderRadius.circular(
+                          AppTheme.radiusLarge,
+                        ),
                         boxShadow: const [
                           BoxShadow(
                             color: Color(0x22000000),
@@ -1412,11 +1412,13 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
                             height: 48,
                             decoration: BoxDecoration(
                               color: const Color(0x35FFFFFF),
-                              borderRadius: BorderRadius.circular(14),
+                              borderRadius: BorderRadius.circular(
+                                AppTheme.radiusLarge,
+                              ),
                             ),
-                            child: const Icon(
+                            child: Icon(
                               Icons.storefront_rounded,
-                              color: Color(0xFF2F3544),
+                              color: AppTheme.textDark,
                               size: 26,
                             ),
                           ),
@@ -1424,8 +1426,8 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
                           Expanded(
                             child: Text(
                               pageTitle,
-                              style: const TextStyle(
-                                color: Color(0xFF1F2532),
+                              style: TextStyle(
+                                color: AppTheme.textDark,
                                 fontSize: 20,
                                 fontWeight: FontWeight.w800,
                               ),
@@ -1435,7 +1437,7 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
                       ),
                     ),
                     const SizedBox(height: 6),
-                    const Text(
+                    Text(
                       'Complete the establishment details and pin its location on the map.',
                       style: TextStyle(color: AppTheme.textMuted),
                     ),
@@ -1518,7 +1520,7 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
                 onPressed: _saving ? null : _handleSave,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppTheme.accent,
-                  foregroundColor: const Color(0xFF22252C),
+                  foregroundColor: AppTheme.onAccent,
                 ),
                 child: Text(_saving ? 'Saving...' : 'Save'),
               ),

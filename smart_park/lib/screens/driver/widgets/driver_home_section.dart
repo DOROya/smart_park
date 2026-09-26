@@ -3,10 +3,11 @@ import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
+import '../../../services/operating_hours.dart';
 import '../../../theme/app_theme.dart';
 import '../../../widgets/smartpark_ui.dart';
+import '../../../widgets/sp_loading.dart';
 import '../services/driver_establishment_service.dart';
-import '../../../services/operating_hours.dart';
 
 class DriverHomeSection extends StatefulWidget {
   const DriverHomeSection({
@@ -65,19 +66,19 @@ class _DriverHomeSectionState extends State<DriverHomeSection>
             : Icon(
                 icon,
                 size: 16,
-                color: selected ? AppTheme.textDark : AppTheme.textMuted,
+                color: selected ? AppTheme.onAccent : AppTheme.textMuted,
               ),
         label: Text(label),
         selected: selected,
         showCheckmark: false,
         onSelected: (_) => onTap(),
         selectedColor: AppTheme.accent,
-        backgroundColor: Colors.white,
+        backgroundColor: AppTheme.surface,
         side: BorderSide(color: selected ? AppTheme.accent : spCardBorder),
         labelStyle: TextStyle(
           fontWeight: FontWeight.w700,
           fontSize: 12,
-          color: selected ? AppTheme.textDark : AppTheme.textMuted,
+          color: selected ? AppTheme.onAccent : AppTheme.textMuted,
         ),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
         visualDensity: VisualDensity.compact,
@@ -234,10 +235,10 @@ class _DriverHomeSectionState extends State<DriverHomeSection>
           left: 16,
           right: 16,
           child: Material(
-            color: Colors.white,
+            color: AppTheme.surface,
             elevation: 4,
             shadowColor: const Color(0x33000000),
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(AppTheme.radiusLarge),
             child: TextField(
               controller: widget.searchController,
               textInputAction: TextInputAction.search,
@@ -271,9 +272,11 @@ class _DriverHomeSectionState extends State<DriverHomeSection>
             snapSizes: const <double>[0.1, 0.5, 0.85],
             builder: (BuildContext context, ScrollController scrollController) {
               return DecoratedBox(
-                decoration: const BoxDecoration(
+                decoration: BoxDecoration(
                   color: AppTheme.background,
-                  borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+                  borderRadius: BorderRadius.vertical(
+                    top: Radius.circular(AppTheme.radiusXLarge),
+                  ),
                   boxShadow: [
                     BoxShadow(
                       color: Color(0x23000000),
@@ -302,7 +305,7 @@ class _DriverHomeSectionState extends State<DriverHomeSection>
                       const SliverToBoxAdapter(
                         child: Padding(
                           padding: EdgeInsets.all(24),
-                          child: Center(child: CircularProgressIndicator()),
+                          child: SpSkeletonList(),
                         ),
                       )
                     else if (displayedDocs.isEmpty)
@@ -366,7 +369,7 @@ class _DriverHomeSectionState extends State<DriverHomeSection>
               width: 42,
               height: 5,
               decoration: BoxDecoration(
-                color: const Color(0xFFD1D5DE),
+                color: AppTheme.borderStrong,
                 borderRadius: BorderRadius.circular(999),
               ),
             ),
@@ -381,7 +384,7 @@ class _DriverHomeSectionState extends State<DriverHomeSection>
             widget.currentPosition == null
                 ? 'Turn on location to see parking around you.'
                 : 'Within ${_formatKm(_selectedRadiusKm)} km of you. Tap a card for details.',
-            style: const TextStyle(fontSize: 12, color: AppTheme.textMuted),
+            style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
           ),
           const SizedBox(height: 10),
           SingleChildScrollView(
@@ -469,7 +472,7 @@ class _DriverParkingCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppTheme.surface,
         borderRadius: BorderRadius.circular(999),
         boxShadow: const [BoxShadow(color: Color(0x22000000), blurRadius: 6)],
       ),
@@ -495,8 +498,8 @@ class _DriverParkingCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
       decoration: BoxDecoration(
-        color: const Color(0xFFF6F7FA),
-        borderRadius: BorderRadius.circular(8),
+        color: AppTheme.surfaceAlt,
+        borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -509,7 +512,7 @@ class _DriverParkingCard extends StatelessWidget {
               text,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 11,
                 fontWeight: FontWeight.w700,
                 color: AppTheme.textDark,
@@ -547,11 +550,11 @@ class _DriverParkingCard extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Material(
-        color: Colors.white,
+        color: AppTheme.surface,
         clipBehavior: Clip.antiAlias,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(18),
-          side: const BorderSide(color: spCardBorder),
+          borderRadius: BorderRadius.circular(AppTheme.radiusLarge),
+          side: BorderSide(color: spCardBorder),
         ),
         child: InkWell(
           onTap: onTap,
@@ -565,11 +568,11 @@ class _DriverParkingCard extends StatelessWidget {
                   fit: StackFit.expand,
                   children: [
                     if (thumbnailUrl == null)
-                      const ColoredBox(
-                        color: Color(0xFFF1F3F7),
+                      ColoredBox(
+                        color: AppTheme.surfaceAlt,
                         child: Icon(
                           Icons.local_parking_rounded,
-                          color: Color(0xFF9DA1AB),
+                          color: AppTheme.textMuted,
                           size: 40,
                         ),
                       )
@@ -577,11 +580,11 @@ class _DriverParkingCard extends StatelessWidget {
                       Image.network(
                         thumbnailUrl,
                         fit: BoxFit.cover,
-                        errorBuilder: (_, _, _) => const ColoredBox(
-                          color: Color(0xFFF1F3F7),
+                        errorBuilder: (_, _, _) => ColoredBox(
+                          color: AppTheme.surfaceAlt,
                           child: Icon(
                             Icons.local_parking_rounded,
-                            color: Color(0xFF9DA1AB),
+                            color: AppTheme.textMuted,
                             size: 40,
                           ),
                         ),
@@ -620,7 +623,7 @@ class _DriverParkingCard extends StatelessWidget {
                             name.isEmpty ? 'Parking Establishment' : name,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.w800,
                               color: AppTheme.textDark,
@@ -637,7 +640,7 @@ class _DriverParkingCard extends StatelessWidget {
                           const SizedBox(width: 2),
                           Text(
                             rating.toStringAsFixed(1),
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 13,
                               fontWeight: FontWeight.w800,
                               color: AppTheme.textDark,
@@ -649,7 +652,7 @@ class _DriverParkingCard extends StatelessWidget {
                     const SizedBox(height: 3),
                     Row(
                       children: [
-                        const Icon(
+                        Icon(
                           Icons.location_on_outlined,
                           size: 14,
                           color: AppTheme.textMuted,
@@ -660,7 +663,7 @@ class _DriverParkingCard extends StatelessWidget {
                             address.isEmpty ? 'Address not available' : address,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 12,
                               color: AppTheme.textMuted,
                             ),
@@ -720,7 +723,7 @@ class _DriverParkingCard extends StatelessWidget {
                       children: [
                         Expanded(
                           child: price == null
-                              ? const Text(
+                              ? Text(
                                   'See rates',
                                   style: TextStyle(
                                     fontSize: 12,
@@ -729,7 +732,7 @@ class _DriverParkingCard extends StatelessWidget {
                                 )
                               : Text.rich(
                                   TextSpan(
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       fontSize: 12,
                                       color: AppTheme.textMuted,
                                     ),
@@ -738,7 +741,7 @@ class _DriverParkingCard extends StatelessWidget {
                                       TextSpan(
                                         text:
                                             'PHP ${price.toStringAsFixed(price % 1 == 0 ? 0 : 2)}',
-                                        style: const TextStyle(
+                                        style: TextStyle(
                                           fontSize: 15,
                                           fontWeight: FontWeight.w800,
                                           color: AppTheme.textDark,
@@ -751,7 +754,7 @@ class _DriverParkingCard extends StatelessWidget {
                                   ),
                                 ),
                         ),
-                        const Text(
+                        Text(
                           'View details',
                           style: TextStyle(
                             fontSize: 12,
@@ -759,7 +762,7 @@ class _DriverParkingCard extends StatelessWidget {
                             color: spExitColor,
                           ),
                         ),
-                        const Icon(
+                        Icon(
                           Icons.chevron_right_rounded,
                           size: 18,
                           color: spExitColor,

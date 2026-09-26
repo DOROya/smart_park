@@ -3,8 +3,8 @@ import 'package:flutter/material.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/auth_widgets.dart';
 import '../../widgets/smartpark_ui.dart';
-import 'sign_in_screen.dart';
 import 'select_role_screen.dart';
+import 'sign_in_screen.dart';
 import 'welcome_screen.dart';
 
 class SignUpScreen extends StatefulWidget {
@@ -130,13 +130,13 @@ class _SignUpScreenState extends State<SignUpScreen> {
             width: 18,
             height: 18,
             decoration: BoxDecoration(
-              color: met ? spEntryColor : const Color(0xFFE4E7EF),
+              color: met ? spEntryColor : AppTheme.border,
               shape: BoxShape.circle,
             ),
             child: Icon(
               Icons.check_rounded,
               size: 12,
-              color: met ? Colors.white : Colors.transparent,
+              color: met ? AppTheme.onInk : Colors.transparent,
             ),
           ),
           const SizedBox(width: 8),

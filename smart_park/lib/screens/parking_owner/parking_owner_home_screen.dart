@@ -11,15 +11,18 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 
 import '../../models/facility_registration_data.dart';
-import '../../theme/app_theme.dart';
-import '../../services/establishment_repository.dart';
 import '../../services/error_reporter.dart';
+import '../../services/establishment_repository.dart';
 import '../../services/platform_fees.dart';
+import '../../theme/app_theme.dart';
+import '../../utils/friendly_error.dart';
 import '../../utils/staff_credentials.dart';
 import '../../widgets/smartpark_ui.dart';
+import '../../widgets/sp_loading.dart';
+import '../../widgets/sp_profile_view.dart';
+import '../auth/sign_in_screen.dart';
 import 'widgets/facility_registration_dialog.dart';
 import 'widgets/facility_review_status_banner.dart';
-import '../auth/sign_in_screen.dart';
 
 part 'parking_owner_home_fragments.dart';
 part 'parking_owner_commissions.dart';
@@ -42,7 +45,6 @@ class _ParkingOwnerHomePageState extends State<ParkingOwnerHomePage>
 
   int _selectedIndex = 0;
   bool _addingStaff = false;
-  bool _savingProfile = false;
   bool _railExtended = false;
 
   final GlobalKey<FormState> _staffFormKey = GlobalKey<FormState>();
@@ -382,7 +384,10 @@ class _ParkingOwnerHomePageState extends State<ParkingOwnerHomePage>
       _showSnackBar(
         error.code == 'email-already-in-use'
             ? 'That staff username is already taken. Try again.'
-            : (error.message ?? 'Unable to create the staff account.'),
+            : friendlyError(
+                error,
+                fallback: 'Unable to create the staff account.',
+              ),
       );
     } finally {
       if (staffCreationApp != null) {
@@ -458,9 +463,7 @@ class _ParkingOwnerHomePageState extends State<ParkingOwnerHomePage>
             ),
             TextButton(
               onPressed: () => Navigator.of(dialogContext).pop(true),
-              style: TextButton.styleFrom(
-                foregroundColor: const Color(0xFFB14141),
-              ),
+              style: TextButton.styleFrom(foregroundColor: AppTheme.danger),
               child: const Text('Remove'),
             ),
           ],
@@ -479,33 +482,9 @@ class _ParkingOwnerHomePageState extends State<ParkingOwnerHomePage>
       _showSnackBar('Staff account removed.');
     } catch (error, stack) {
       reportError(error, stack, reason: 'Removing staff account failed');
-      _showSnackBar('Unable to remove staff: $error');
-    }
-  }
-
-  Future<void> _saveProfile(String ownerId, String role) async {
-    if (_savingProfile) return;
-    final String firstName = _profileFirstNameController.text.trim();
-    final String lastName = _profileLastNameController.text.trim();
-    final String email = _profileEmailController.text.trim();
-
-    if (firstName.isEmpty || lastName.isEmpty || email.isEmpty) {
-      _showSnackBar('Please complete profile fields.');
-      return;
-    }
-
-    setState(() => _savingProfile = true);
-    try {
-      await FirebaseFirestore.instance.collection('users').doc(ownerId).update({
-        'firstName': firstName,
-        'lastName': lastName,
-        'email': email,
-        'role': role,
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
-      _showSnackBar('Profile updated.');
-    } finally {
-      if (mounted) setState(() => _savingProfile = false);
+      _showSnackBar(
+        friendlyError(error, fallback: 'Unable to remove this staff member.'),
+      );
     }
   }
 
@@ -615,7 +594,9 @@ class _ParkingOwnerHomePageState extends State<ParkingOwnerHomePage>
         );
       } catch (error, stack) {
         reportError(error, stack, reason: 'Saving facility failed');
-        _showSnackBar('Unable to save facility: $error');
+        _showSnackBar(
+          friendlyError(error, fallback: 'Unable to save the facility.'),
+        );
         return null;
       }
 
@@ -655,9 +636,7 @@ class _ParkingOwnerHomePageState extends State<ParkingOwnerHomePage>
       future: _userFuture,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Scaffold(
-            body: Center(child: CircularProgressIndicator()),
-          );
+          return const SpLoadingScreen();
         }
         if (snapshot.hasError || !snapshot.hasData || !snapshot.data!.exists) {
           return const Scaffold(
@@ -681,7 +660,7 @@ class _ParkingOwnerHomePageState extends State<ParkingOwnerHomePage>
 
         return Scaffold(
           appBar: AppBar(
-            backgroundColor: Colors.white,
+            backgroundColor: AppTheme.surface,
             elevation: 0,
             scrolledUnderElevation: 0,
             automaticallyImplyLeading: false,
@@ -694,7 +673,7 @@ class _ParkingOwnerHomePageState extends State<ParkingOwnerHomePage>
                 : null,
             titleSpacing: isTablet ? 0 : null,
             actions: [_buildProfileAvatarButton(), const SizedBox(width: 12)],
-            title: const Row(
+            title: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Icon(Icons.local_parking_rounded, color: AppTheme.textDark),
@@ -731,10 +710,10 @@ class _ParkingOwnerHomePageState extends State<ParkingOwnerHomePage>
               ? null
               : BottomNavigationBar(
                   currentIndex: _selectedIndex,
-                  backgroundColor: Colors.white,
+                  backgroundColor: AppTheme.surface,
                   elevation: 10,
-                  selectedItemColor: const Color(0xFF22252C),
-                  unselectedItemColor: const Color(0xFF6C727F),
+                  selectedItemColor: AppTheme.textDark,
+                  unselectedItemColor: AppTheme.textMuted,
                   showSelectedLabels: true,
                   showUnselectedLabels: true,
                   type: BottomNavigationBarType.fixed,

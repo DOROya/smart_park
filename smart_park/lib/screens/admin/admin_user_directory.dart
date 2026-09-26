@@ -42,14 +42,14 @@ extension _AdminUserDirectory on _AdminHomePageState {
                   prefixIcon: const Icon(Icons.search_rounded),
                   isDense: true,
                   filled: true,
-                  fillColor: const Color(0xFFF8F9FC),
+                  fillColor: AppTheme.surfaceAlt,
                   border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: Color(0xFFE3E5EA)),
+                    borderRadius: BorderRadius.circular(AppTheme.radius),
+                    borderSide: BorderSide(color: AppTheme.border),
                   ),
                   enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: Color(0xFFE3E5EA)),
+                    borderRadius: BorderRadius.circular(AppTheme.radius),
+                    borderSide: BorderSide(color: AppTheme.border),
                   ),
                 ),
               ),
@@ -97,10 +97,10 @@ extension _AdminUserDirectory on _AdminHomePageState {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Material(
-        color: const Color(0xFFF8F9FC),
+        color: AppTheme.surfaceAlt,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(14),
-          side: const BorderSide(color: Color(0xFFE8EAF0)),
+          borderRadius: BorderRadius.circular(AppTheme.radiusLarge),
+          side: BorderSide(color: AppTheme.border),
         ),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
@@ -114,7 +114,7 @@ extension _AdminUserDirectory on _AdminHomePageState {
                   backgroundColor: AppTheme.accent.withValues(alpha: 0.3),
                   child: Text(
                     _initials(fullName.isEmpty ? '?' : fullName),
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontWeight: FontWeight.w800,
                       color: AppTheme.textDark,
                     ),
@@ -129,7 +129,7 @@ extension _AdminUserDirectory on _AdminHomePageState {
                         fullName.isEmpty ? 'Unnamed User' : fullName,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontWeight: FontWeight.w700,
                           color: AppTheme.textDark,
                         ),
@@ -139,7 +139,7 @@ extension _AdminUserDirectory on _AdminHomePageState {
                           email,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 12,
                             color: AppTheme.textMuted,
                           ),
@@ -152,10 +152,7 @@ extension _AdminUserDirectory on _AdminHomePageState {
                   label: isOwner ? 'Owner' : 'Driver',
                   color: isOwner ? spEntryColor : spExitColor,
                 ),
-                const Icon(
-                  Icons.chevron_right_rounded,
-                  color: AppTheme.textMuted,
-                ),
+                Icon(Icons.chevron_right_rounded, color: AppTheme.textMuted),
               ],
             ),
           ),
@@ -189,9 +186,9 @@ extension _AdminUserDirectory on _AdminHomePageState {
       context: context,
       builder: (BuildContext dialogContext) {
         return AlertDialog(
-          backgroundColor: Colors.white,
+          backgroundColor: AppTheme.surface,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
+            borderRadius: BorderRadius.circular(AppTheme.radiusXLarge),
           ),
           title: Row(
             children: [
@@ -199,17 +196,17 @@ extension _AdminUserDirectory on _AdminHomePageState {
                 width: 44,
                 height: 44,
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF8F0CC),
-                  borderRadius: BorderRadius.circular(12),
+                  color: AppTheme.accentSoft,
+                  borderRadius: BorderRadius.circular(AppTheme.radius),
                 ),
-                child: const Icon(
+                child: Icon(
                   Icons.person_rounded,
                   color: AppTheme.textDark,
                   size: 24,
                 ),
               ),
               const SizedBox(width: 12),
-              const Expanded(
+              Expanded(
                 child: Text(
                   'User Details',
                   style: TextStyle(
@@ -266,7 +263,7 @@ extension _AdminUserDirectory on _AdminHomePageState {
           actions: [
             TextButton(
               onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text(
+              child: Text(
                 'Close',
                 style: TextStyle(
                   fontWeight: FontWeight.w700,
@@ -289,9 +286,9 @@ extension _AdminUserDirectory on _AdminHomePageState {
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
-        color: const Color(0xFFF8F9FC),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE8EAF0)),
+        color: AppTheme.surfaceAlt,
+        borderRadius: BorderRadius.circular(AppTheme.radius),
+        border: Border.all(color: AppTheme.border),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -304,7 +301,7 @@ extension _AdminUserDirectory on _AdminHomePageState {
               children: [
                 Text(
                   label,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w600,
                     color: AppTheme.textMuted,
@@ -313,7 +310,7 @@ extension _AdminUserDirectory on _AdminHomePageState {
                 const SizedBox(height: 2),
                 Text(
                   value,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.w700,
                     color: AppTheme.textDark,

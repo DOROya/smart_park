@@ -38,8 +38,8 @@ class AuthShell extends StatelessWidget {
                     children: [
                       if (showBack) ...[
                         Material(
-                          color: Colors.white,
-                          shape: const CircleBorder(
+                          color: AppTheme.surface,
+                          shape: CircleBorder(
                             side: BorderSide(color: spCardBorder),
                           ),
                           child: IconButton(
@@ -53,7 +53,7 @@ class AuthShell extends StatelessWidget {
                                 Navigator.of(context).pop();
                               }
                             },
-                            icon: const Icon(
+                            icon: Icon(
                               Icons.arrow_back_rounded,
                               color: AppTheme.textDark,
                               size: 20,
@@ -93,16 +93,16 @@ class AuthBrandMark extends StatelessWidget {
           height: 32,
           decoration: BoxDecoration(
             color: AppTheme.accent,
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
           ),
-          child: const Icon(
+          child: Icon(
             Icons.local_parking_rounded,
             size: 20,
-            color: Color(0xFF1F2532),
+            color: AppTheme.onAccent,
           ),
         ),
         const SizedBox(width: 8),
-        const Text(
+        Text(
           'SmartPark',
           style: TextStyle(
             fontSize: 17,
@@ -133,13 +133,13 @@ class AuthBadge extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 15, color: const Color(0xFF8A6A0C)),
+          Icon(icon, size: 15, color: AppTheme.accentText),
           const SizedBox(width: 6),
           Flexible(
             child: Text(
               label,
-              style: const TextStyle(
-                color: Color(0xFF8A6A0C),
+              style: TextStyle(
+                color: AppTheme.accentText,
                 fontSize: 12,
                 fontWeight: FontWeight.w700,
               ),
@@ -174,11 +174,11 @@ class AuthHeader extends StatelessWidget {
             children: [
               TextSpan(
                 text: first,
-                style: const TextStyle(color: AppTheme.textDark),
+                style: TextStyle(color: AppTheme.textDark),
               ),
               TextSpan(
                 text: accent,
-                style: const TextStyle(color: Color(0xFFB58A10)),
+                style: TextStyle(color: AppTheme.accentText),
               ),
             ],
             style: const TextStyle(
@@ -192,7 +192,7 @@ class AuthHeader extends StatelessWidget {
         const SizedBox(height: 8),
         Text(
           subtitle,
-          style: const TextStyle(
+          style: TextStyle(
             color: AppTheme.textMuted,
             fontSize: 15,
             fontWeight: FontWeight.w500,
@@ -222,8 +222,8 @@ class AuthFormCard extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.circular(AppTheme.radiusLarge),
         border: Border.all(color: spCardBorder),
         boxShadow: const [
           BoxShadow(
@@ -243,7 +243,7 @@ class AuthFormCard extends StatelessWidget {
               Expanded(
                 child: Text(
                   title,
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: AppTheme.textDark,
                     fontSize: 15,
                     fontWeight: FontWeight.w700,
@@ -289,8 +289,8 @@ class AuthTextField extends StatelessWidget {
       children: [
         Text(
           label,
-          style: const TextStyle(
-            color: Color(0xFF373A43),
+          style: TextStyle(
+            color: AppTheme.textDark,
             fontSize: 13,
             fontWeight: FontWeight.w600,
           ),
@@ -303,13 +303,13 @@ class AuthTextField extends StatelessWidget {
           textInputAction: textInputAction,
           decoration: InputDecoration(
             hintText: hint,
-            hintStyle: const TextStyle(
-              color: Color(0xFFB4B7BF),
+            hintStyle: TextStyle(
+              color: AppTheme.textHint,
               fontSize: 14,
               fontWeight: FontWeight.w500,
             ),
             filled: true,
-            fillColor: const Color(0xFFF8F9FC),
+            fillColor: AppTheme.surfaceAlt,
             prefixIcon: icon == null
                 ? null
                 : Icon(icon, size: 20, color: AppTheme.textMuted),
@@ -319,11 +319,11 @@ class AuthTextField extends StatelessWidget {
               vertical: 14,
             ),
             enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(color: Color(0xFFE4E7EF)),
+              borderRadius: BorderRadius.circular(AppTheme.radius),
+              borderSide: BorderSide(color: AppTheme.border),
             ),
             focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(AppTheme.radius),
               borderSide: const BorderSide(color: AppTheme.accent, width: 1.4),
             ),
             suffixIcon: suffixIcon,
@@ -358,22 +358,22 @@ class PrimaryAuthButton extends StatelessWidget {
         onPressed: enabled && !isLoading ? onPressed : null,
         style: ElevatedButton.styleFrom(
           backgroundColor: AppTheme.accent,
-          foregroundColor: const Color(0xFF202228),
+          foregroundColor: AppTheme.onAccent,
           disabledBackgroundColor: AppTheme.accent.withValues(alpha: 0.45),
           minimumSize: const Size.fromHeight(52),
           elevation: 0,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(30),
+            borderRadius: BorderRadius.circular(AppTheme.radiusXLarge),
           ),
           textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
         ),
         child: isLoading
-            ? const SizedBox(
+            ? SizedBox(
                 width: 20,
                 height: 20,
                 child: CircularProgressIndicator(
                   strokeWidth: 2.4,
-                  valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF202228)),
+                  valueColor: AlwaysStoppedAnimation<Color>(AppTheme.onAccent),
                 ),
               )
             : Row(
@@ -412,12 +412,12 @@ class SecondaryAuthButton extends StatelessWidget {
         onPressed: isLoading ? null : onPressed,
         style: OutlinedButton.styleFrom(
           minimumSize: const Size.fromHeight(52),
-          backgroundColor: Colors.white,
-          side: const BorderSide(color: Color(0xFFD9DCE4)),
+          backgroundColor: AppTheme.surface,
+          side: BorderSide(color: AppTheme.borderStrong),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(30),
+            borderRadius: BorderRadius.circular(AppTheme.radiusXLarge),
           ),
-          foregroundColor: const Color(0xFF2B3241),
+          foregroundColor: AppTheme.textDark,
           textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
         ),
         child: isLoading
@@ -454,8 +454,8 @@ class AuthSwitchPrompt extends StatelessWidget {
         children: [
           Text(
             question,
-            style: const TextStyle(
-              color: Color(0xFF8E929C),
+            style: TextStyle(
+              color: AppTheme.textMuted,
               fontSize: 14,
               fontWeight: FontWeight.w500,
             ),
@@ -463,7 +463,7 @@ class AuthSwitchPrompt extends StatelessWidget {
           TextButton(
             onPressed: onTap,
             style: TextButton.styleFrom(
-              foregroundColor: const Color(0xFF8A6A0C),
+              foregroundColor: AppTheme.accentText,
               padding: const EdgeInsets.symmetric(horizontal: 6),
               minimumSize: Size.zero,
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,

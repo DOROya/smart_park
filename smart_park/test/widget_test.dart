@@ -6,7 +6,7 @@ import 'package:smart_park/theme/app_theme.dart';
 void main() {
   testWidgets('Welcome screen renders', (WidgetTester tester) async {
     await tester.pumpWidget(
-      MaterialApp(theme: AppTheme.lightTheme, home: const WelcomeScreen()),
+      MaterialApp(theme: AppTheme.theme, home: const WelcomeScreen()),
     );
 
     expect(

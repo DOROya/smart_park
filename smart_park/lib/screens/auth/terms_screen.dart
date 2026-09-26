@@ -105,12 +105,12 @@ class _TermsScreenState extends State<TermsScreen> {
                 width: double.infinity,
                 padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF6F7FA),
-                  borderRadius: BorderRadius.circular(12),
+                  color: AppTheme.surfaceAlt,
+                  borderRadius: BorderRadius.circular(AppTheme.radius),
                 ),
                 child: Text(
                   _getPlaceholderContent(),
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 13.5,
                     color: AppTheme.textDark,
                     height: 1.5,
@@ -121,9 +121,9 @@ class _TermsScreenState extends State<TermsScreen> {
           ),
           const SizedBox(height: 14),
           Material(
-            color: _agreed ? const Color(0xFFFFF7DD) : Colors.white,
+            color: _agreed ? AppTheme.accentSoft : AppTheme.surface,
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(14),
+              borderRadius: BorderRadius.circular(AppTheme.radiusLarge),
               side: BorderSide(color: _agreed ? AppTheme.accent : spCardBorder),
             ),
             clipBehavior: Clip.antiAlias,
@@ -134,7 +134,7 @@ class _TermsScreenState extends State<TermsScreen> {
                   _agreed = value ?? false;
                 });
               },
-              activeColor: const Color(0xFFB58A10),
+              activeColor: AppTheme.accentText,
               title: const Text(
                 'I have read and agree to the Terms and Conditions.',
                 style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600),

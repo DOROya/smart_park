@@ -14,7 +14,7 @@ DateTime? _parseDateTime(dynamic value) {
 extension _StaffHomePageFragments on _StaffHomePageState {
   Widget _buildDashboardTab(Map<String, dynamic> userData) {
     if (_assignedFacilityId == null || _assignedFacilityId!.isEmpty) {
-      return const Center(
+      return Center(
         child: Text(
           'No facility assignment found yet.',
           style: TextStyle(color: AppTheme.textMuted),
@@ -198,8 +198,8 @@ extension _StaffHomePageFragments on _StaffHomePageState {
     return Container(
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
-        color: const Color(0xFFF1F3F8),
-        borderRadius: BorderRadius.circular(12),
+        color: AppTheme.surfaceAlt,
+        borderRadius: BorderRadius.circular(AppTheme.radius),
       ),
       child: Row(
         children: <Widget>[
@@ -227,8 +227,8 @@ extension _StaffHomePageFragments on _StaffHomePageState {
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 10),
         decoration: BoxDecoration(
-          color: selected ? Colors.white : Colors.transparent,
-          borderRadius: BorderRadius.circular(9),
+          color: selected ? AppTheme.surface : Colors.transparent,
+          borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
           boxShadow: selected
               ? const <BoxShadow>[
                   BoxShadow(
@@ -267,7 +267,7 @@ extension _StaffHomePageFragments on _StaffHomePageState {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        const Text(
+        Text(
           'Scan Customer QR Code',
           style: TextStyle(
             fontSize: 20,
@@ -276,7 +276,7 @@ extension _StaffHomePageFragments on _StaffHomePageState {
           ),
         ),
         const SizedBox(height: 8),
-        const Text(
+        Text(
           'Set Entry or Exit first, then place the QR code in the frame.',
           style: TextStyle(color: AppTheme.textMuted),
         ),
@@ -287,7 +287,7 @@ extension _StaffHomePageFragments on _StaffHomePageState {
           _gateMode == 'entry'
               ? 'Entry mode: tickets are verified and checked in.'
               : 'Exit mode: stay time is checked, overtime is billed.',
-          style: const TextStyle(
+          style: TextStyle(
             color: AppTheme.textMuted,
             fontSize: 12,
             fontWeight: FontWeight.w600,
@@ -307,7 +307,7 @@ extension _StaffHomePageFragments on _StaffHomePageState {
                 }
 
                 if (permissionSnapshot.data != true) {
-                  return const SizedBox(
+                  return SizedBox(
                     height: 280,
                     child: Center(
                       child: Text(
@@ -321,7 +321,7 @@ extension _StaffHomePageFragments on _StaffHomePageState {
                 return SizedBox(
                   height: 280,
                   child: ClipRRect(
-                    borderRadius: BorderRadius.circular(14),
+                    borderRadius: BorderRadius.circular(AppTheme.radiusLarge),
                     child: Stack(
                       fit: StackFit.expand,
                       children: [
@@ -338,7 +338,9 @@ extension _StaffHomePageFragments on _StaffHomePageState {
                                 color: AppTheme.accent,
                                 width: 4,
                               ),
-                              borderRadius: BorderRadius.circular(10),
+                              borderRadius: BorderRadius.circular(
+                                AppTheme.radiusSmall,
+                              ),
                             ),
                           ),
                         ),
@@ -361,7 +363,7 @@ extension _StaffHomePageFragments on _StaffHomePageState {
         const SizedBox(height: 12),
         Row(
           children: [
-            const Expanded(
+            Expanded(
               child: Text(
                 'Recent Scans',
                 style: TextStyle(
@@ -470,16 +472,17 @@ extension _StaffHomePageFragments on _StaffHomePageState {
                       child: Padding(
                         padding: const EdgeInsets.all(16),
                         child: Text(
-                          'Could not load history.\n${snapshot.error}',
+                          'Could not load history.\n'
+                          '${friendlyError(snapshot.error!, fallback: 'Please try again.')}',
                           textAlign: TextAlign.center,
-                          style: const TextStyle(color: AppTheme.textMuted),
+                          style: TextStyle(color: AppTheme.textMuted),
                         ),
                       ),
                     );
                   }
 
                   if (!snapshot.hasData) {
-                    return const Center(child: CircularProgressIndicator());
+                    return const SpSkeletonList();
                   }
 
                   final List<Map<String, dynamic>> dayLogs = snapshot.data!.docs
@@ -519,31 +522,23 @@ extension _StaffHomePageFragments on _StaffHomePageState {
                     children: [
                       Row(
                         children: [
-                          _historyStat(
-                            'Entries',
-                            entries,
-                            const Color(0xFF1F7A4A),
-                          ),
+                          _historyStat('Entries', entries, AppTheme.success),
                           const SizedBox(width: 8),
-                          _historyStat('Exits', exits, const Color(0xFF2563EB)),
+                          _historyStat('Exits', exits, AppTheme.info),
                           const SizedBox(width: 8),
-                          _historyStat(
-                            'Denied',
-                            denied,
-                            const Color(0xFFB3261E),
-                          ),
+                          _historyStat('Denied', denied, AppTheme.danger),
                         ],
                       ),
                       const SizedBox(height: 12),
                       if (filtered.isEmpty)
-                        const Padding(
+                        Padding(
                           padding: EdgeInsets.symmetric(vertical: 40),
                           child: Column(
                             children: [
                               Icon(
                                 Icons.receipt_long_rounded,
                                 size: 44,
-                                color: Color(0xFFC9CCD4),
+                                color: AppTheme.borderStrong,
                               ),
                               SizedBox(height: 8),
                               Text(
@@ -570,9 +565,9 @@ extension _StaffHomePageFragments on _StaffHomePageState {
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
         decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: const Color(0xFFE3E5EA)),
+          color: AppTheme.surface,
+          borderRadius: BorderRadius.circular(AppTheme.radius),
+          border: Border.all(color: AppTheme.border),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -587,7 +582,7 @@ extension _StaffHomePageFragments on _StaffHomePageState {
             ),
             Text(
               label,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 11,
                 fontWeight: FontWeight.w600,
                 color: AppTheme.textMuted,
@@ -640,12 +635,8 @@ class _GateResultCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bool allowed = result.isAllowed;
-    final Color accent = allowed
-        ? const Color(0xFF1F7A4A)
-        : const Color(0xFFB3261E);
-    final Color bg = allowed
-        ? const Color(0xFFE8F6EF)
-        : const Color(0xFFFDECEA);
+    final Color accent = allowed ? AppTheme.success : AppTheme.danger;
+    final Color bg = allowed ? AppTheme.successSoft : AppTheme.dangerSoft;
     final String title = allowed
         ? (result.scanType == 'exit' ? 'Exit allowed' : 'Entry allowed')
         : (result.decision == 'ERROR' ? 'Scan error' : 'Scan denied');
@@ -653,7 +644,7 @@ class _GateResultCard extends StatelessWidget {
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: bg,
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(AppTheme.radiusLarge),
         border: Border.all(color: accent.withValues(alpha: 0.35)),
       ),
       child: Column(
@@ -682,7 +673,7 @@ class _GateResultCard extends StatelessWidget {
                   vertical: 5,
                 ),
                 decoration: BoxDecoration(
-                  color: Colors.white,
+                  color: AppTheme.surface,
                   borderRadius: BorderRadius.circular(999),
                 ),
                 child: Text(
@@ -718,13 +709,13 @@ class _GateResultCard extends StatelessWidget {
             Container(
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: const Color(0xFFFFF3D9),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: const Color(0xFFE8B93E)),
+                color: AppTheme.warningSoft,
+                borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
+                border: Border.all(color: AppTheme.accent),
               ),
               child: Row(
                 children: <Widget>[
-                  const Icon(Icons.payments_rounded, color: Color(0xFF946200)),
+                  Icon(Icons.payments_rounded, color: AppTheme.accentText),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
@@ -743,7 +734,7 @@ class _GateResultCard extends StatelessWidget {
             const SizedBox(height: 6),
             Text(
               'Ticket ${result.transactionId}',
-              style: const TextStyle(fontSize: 11, color: Color(0xFF737A88)),
+              style: TextStyle(fontSize: 11, color: AppTheme.textMuted),
             ),
           ],
         ],
@@ -785,9 +776,9 @@ class _ManualPlateLookupState extends State<_ManualPlateLookup> {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFE3E5EA)),
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.circular(AppTheme.radiusLarge),
+        border: Border.all(color: AppTheme.border),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -797,7 +788,7 @@ class _ManualPlateLookupState extends State<_ManualPlateLookup> {
             style: TextStyle(fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: 4),
-          const Text(
+          Text(
             'Type the plate from the ticket to verify it manually.',
             style: TextStyle(color: AppTheme.textMuted, fontSize: 12),
           ),
@@ -811,7 +802,7 @@ class _ManualPlateLookupState extends State<_ManualPlateLookup> {
                   decoration: InputDecoration(
                     hintText: 'ABC 1234',
                     border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10),
+                      borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
                     ),
                     contentPadding: const EdgeInsets.symmetric(
                       horizontal: 12,

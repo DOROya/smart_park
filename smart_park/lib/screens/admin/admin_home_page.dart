@@ -6,7 +6,9 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../../theme/app_theme.dart';
+import '../../utils/friendly_error.dart';
 import '../../widgets/smartpark_ui.dart';
+import '../../widgets/sp_profile_view.dart';
 import '../auth/sign_in_screen.dart';
 
 part 'admin_home_page_fragments.dart';
@@ -342,7 +344,9 @@ class _AdminHomePageState extends State<AdminHomePage>
     } on FirebaseFunctionsException catch (error) {
       messenger.showSnackBar(
         SnackBar(
-          content: Text(error.message ?? 'Unable to rebuild statistics.'),
+          content: Text(
+            friendlyError(error, fallback: 'Unable to rebuild statistics.'),
+          ),
         ),
       );
     } finally {
@@ -495,19 +499,11 @@ class _AdminHomePageState extends State<AdminHomePage>
       Color foreground,
       String label,
     ) = switch (_normalize(status)) {
-      'approved' => (
-        const Color(0xFFE8F6EF),
-        const Color(0xFF1E8E5A),
-        'Approved',
-      ),
-      'rejected' => (
-        const Color(0xFFFDECEC),
-        const Color(0xFFC53B3B),
-        'Rejected',
-      ),
+      'approved' => (AppTheme.successSoft, AppTheme.success, 'Approved'),
+      'rejected' => (AppTheme.dangerSoft, AppTheme.danger, 'Rejected'),
       _ => (
-        const Color(0xFFFFF3D9),
-        const Color(0xFFB7791F),
+        AppTheme.warningSoft,
+        AppTheme.warning,
         resubmitted ? 'Resubmitted' : 'Pending Review',
       ),
     };
@@ -540,9 +536,9 @@ class _AdminHomePageState extends State<AdminHomePage>
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFE8E9EE)),
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.circular(AppTheme.radiusLarge),
+        border: Border.all(color: AppTheme.border),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -554,7 +550,7 @@ class _AdminHomePageState extends State<AdminHomePage>
               Expanded(
                 child: Text(
                   title,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontWeight: FontWeight.w700,
                     color: AppTheme.textDark,
                   ),
@@ -563,7 +559,7 @@ class _AdminHomePageState extends State<AdminHomePage>
               if (trailing != null)
                 Text(
                   trailing,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 12,
                     color: AppTheme.textMuted,
                     fontWeight: FontWeight.w600,
@@ -586,7 +582,7 @@ class _AdminHomePageState extends State<AdminHomePage>
         children: [
           Text(
             label,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 11,
               color: AppTheme.textMuted,
               fontWeight: FontWeight.w600,
@@ -595,7 +591,7 @@ class _AdminHomePageState extends State<AdminHomePage>
           const SizedBox(height: 2),
           Text(
             value,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 13,
               color: AppTheme.textDark,
               fontWeight: FontWeight.w500,
@@ -615,7 +611,7 @@ class _AdminHomePageState extends State<AdminHomePage>
           GestureDetector(
             onTap: () => _showDocumentViewer(url),
             child: ClipRRect(
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
               child: SizedBox(
                 width: size,
                 height: size,
@@ -626,8 +622,8 @@ class _AdminHomePageState extends State<AdminHomePage>
                     if (progress == null) {
                       return child;
                     }
-                    return const ColoredBox(
-                      color: Color(0xFFF1F2F5),
+                    return ColoredBox(
+                      color: AppTheme.surfaceAlt,
                       child: Center(
                         child: SizedBox(
                           width: 18,
@@ -637,8 +633,8 @@ class _AdminHomePageState extends State<AdminHomePage>
                       ),
                     );
                   },
-                  errorBuilder: (_, _, _) => const ColoredBox(
-                    color: Color(0xFFE3E5EA),
+                  errorBuilder: (_, _, _) => ColoredBox(
+                    color: AppTheme.border,
                     child: Icon(Icons.broken_image_rounded),
                   ),
                 ),
@@ -655,23 +651,19 @@ class _AdminHomePageState extends State<AdminHomePage>
         width: double.infinity,
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: const Color(0xFFFDECEC),
-          borderRadius: BorderRadius.circular(10),
+          color: AppTheme.dangerSoft,
+          borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
         ),
-        child: const Row(
+        child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(
-              Icons.warning_amber_rounded,
-              size: 18,
-              color: Color(0xFFC53B3B),
-            ),
+            Icon(Icons.warning_amber_rounded, size: 18, color: AppTheme.danger),
             SizedBox(width: 8),
             Expanded(
               child: Text(
                 'No business documents submitted. Ask the owner to upload '
                 'proof of business before approving.',
-                style: TextStyle(fontSize: 12, color: Color(0xFFC53B3B)),
+                style: TextStyle(fontSize: 12, color: AppTheme.danger),
               ),
             ),
           ],
@@ -684,7 +676,7 @@ class _AdminHomePageState extends State<AdminHomePage>
       children: [
         _buildImageGrid(documentUrls),
         const SizedBox(height: 6),
-        const Text(
+        Text(
           'Tap a document to view it full screen.',
           style: TextStyle(fontSize: 11, color: AppTheme.textMuted),
         ),
@@ -793,7 +785,12 @@ class _AdminHomePageState extends State<AdminHomePage>
                     if (mounted) {
                       ScaffoldMessenger.of(this.context).showSnackBar(
                         SnackBar(
-                          content: Text('Unable to update status: $error'),
+                          content: Text(
+                            friendlyError(
+                              error,
+                              fallback: 'Unable to update status.',
+                            ),
+                          ),
                         ),
                       );
                     }
@@ -807,7 +804,7 @@ class _AdminHomePageState extends State<AdminHomePage>
                     vertical: 24,
                   ),
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(20),
+                    borderRadius: BorderRadius.circular(AppTheme.radiusXLarge),
                   ),
                   child: ConstrainedBox(
                     constraints: BoxConstraints(
@@ -830,9 +827,11 @@ class _AdminHomePageState extends State<AdminHomePage>
                                   color: AppTheme.accent.withValues(
                                     alpha: 0.25,
                                   ),
-                                  borderRadius: BorderRadius.circular(12),
+                                  borderRadius: BorderRadius.circular(
+                                    AppTheme.radius,
+                                  ),
                                 ),
-                                child: const Icon(
+                                child: Icon(
                                   Icons.local_parking_rounded,
                                   color: AppTheme.textDark,
                                 ),
@@ -847,7 +846,7 @@ class _AdminHomePageState extends State<AdminHomePage>
                                         data['name'],
                                         fallback: 'Unnamed Establishment',
                                       ),
-                                      style: const TextStyle(
+                                      style: TextStyle(
                                         fontSize: 17,
                                         fontWeight: FontWeight.w700,
                                         color: AppTheme.textDark,
@@ -859,7 +858,7 @@ class _AdminHomePageState extends State<AdminHomePage>
                                         data['address'],
                                         fallback: 'No address',
                                       ),
-                                      style: const TextStyle(
+                                      style: TextStyle(
                                         fontSize: 12,
                                         color: AppTheme.textMuted,
                                       ),
@@ -879,7 +878,7 @@ class _AdminHomePageState extends State<AdminHomePage>
                                           Text(
                                             '${resubmitted ? 'Resubmitted' : 'Submitted'} '
                                             '${_formatReviewDate(submittedAt)}',
-                                            style: const TextStyle(
+                                            style: TextStyle(
                                               fontSize: 11,
                                               color: AppTheme.textMuted,
                                             ),
@@ -898,7 +897,7 @@ class _AdminHomePageState extends State<AdminHomePage>
                             ],
                           ),
                         ),
-                        const Divider(height: 1, color: Color(0xFFE3E5EA)),
+                        Divider(height: 1, color: AppTheme.border),
                         Flexible(
                           child: SingleChildScrollView(
                             padding: const EdgeInsets.fromLTRB(16, 14, 16, 4),
@@ -983,13 +982,13 @@ class _AdminHomePageState extends State<AdminHomePage>
                                     title: 'Previous Rejection Reason',
                                     child: Text(
                                       previousRejection,
-                                      style: const TextStyle(
+                                      style: TextStyle(
                                         fontSize: 13,
                                         color: AppTheme.textDark,
                                       ),
                                     ),
                                   ),
-                                const Text(
+                                Text(
                                   'Rejection Reason (Optional)',
                                   style: TextStyle(
                                     fontWeight: FontWeight.w700,
@@ -1006,17 +1005,21 @@ class _AdminHomePageState extends State<AdminHomePage>
                                         'Shown to the owner so they can fix issues before resubmitting.',
                                     hintStyle: const TextStyle(fontSize: 12),
                                     filled: true,
-                                    fillColor: Colors.white,
+                                    fillColor: AppTheme.surface,
                                     border: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                      borderSide: const BorderSide(
-                                        color: Color(0xFFE3E5EA),
+                                      borderRadius: BorderRadius.circular(
+                                        AppTheme.radius,
+                                      ),
+                                      borderSide: BorderSide(
+                                        color: AppTheme.border,
                                       ),
                                     ),
                                     enabledBorder: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                      borderSide: const BorderSide(
-                                        color: Color(0xFFE3E5EA),
+                                      borderRadius: BorderRadius.circular(
+                                        AppTheme.radius,
+                                      ),
+                                      borderSide: BorderSide(
+                                        color: AppTheme.border,
                                       ),
                                     ),
                                   ),
@@ -1026,7 +1029,7 @@ class _AdminHomePageState extends State<AdminHomePage>
                             ),
                           ),
                         ),
-                        const Divider(height: 1, color: Color(0xFFE3E5EA)),
+                        Divider(height: 1, color: AppTheme.border),
                         Padding(
                           padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
                           child: Row(
@@ -1037,15 +1040,15 @@ class _AdminHomePageState extends State<AdminHomePage>
                                       ? null
                                       : () => submit('rejected'),
                                   style: OutlinedButton.styleFrom(
-                                    foregroundColor: const Color(0xFFC53B3B),
-                                    side: const BorderSide(
-                                      color: Color(0xFFC53B3B),
-                                    ),
+                                    foregroundColor: AppTheme.danger,
+                                    side: BorderSide(color: AppTheme.danger),
                                     padding: const EdgeInsets.symmetric(
                                       vertical: 12,
                                     ),
                                     shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(12),
+                                      borderRadius: BorderRadius.circular(
+                                        AppTheme.radius,
+                                      ),
                                     ),
                                   ),
                                   icon: const Icon(
@@ -1068,13 +1071,15 @@ class _AdminHomePageState extends State<AdminHomePage>
                                       : () => submit('approved'),
                                   style: ElevatedButton.styleFrom(
                                     backgroundColor: AppTheme.accent,
-                                    foregroundColor: const Color(0xFF22252C),
+                                    foregroundColor: AppTheme.onAccent,
                                     elevation: 0,
                                     padding: const EdgeInsets.symmetric(
                                       vertical: 12,
                                     ),
                                     shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(12),
+                                      borderRadius: BorderRadius.circular(
+                                        AppTheme.radius,
+                                      ),
                                     ),
                                   ),
                                   icon: isSubmitting
@@ -1134,7 +1139,7 @@ class _AdminHomePageState extends State<AdminHomePage>
 
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: Colors.white,
+        backgroundColor: AppTheme.surface,
         elevation: 0,
         scrolledUnderElevation: 0,
         automaticallyImplyLeading: false,
@@ -1154,7 +1159,7 @@ class _AdminHomePageState extends State<AdminHomePage>
           ),
           const SizedBox(width: 12),
         ],
-        title: const Row(
+        title: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(Icons.local_parking_rounded, color: AppTheme.textDark),

@@ -8,11 +8,11 @@ import '../theme/app_theme.dart';
 /// look the same: hero banner, stat tiles, section cards, the parking-slot
 /// card and gate-scan cards.
 
-const Color spCardBorder = Color(0xFFE3E5EA);
-const Color spEntryColor = Color(0xFF1F7A4A);
-const Color spExitColor = Color(0xFF2563EB);
-const Color spInsideColor = Color(0xFF946200);
-const Color spDeniedColor = Color(0xFFB3261E);
+Color get spCardBorder => AppTheme.border;
+Color get spEntryColor => AppTheme.success;
+Color get spExitColor => AppTheme.info;
+Color get spInsideColor => AppTheme.accentText;
+Color get spDeniedColor => AppTheme.danger;
 
 /// Hours covered by a facility's base rate ("Base Package"). Gate exit scans
 /// bill anything beyond this as overtime.
@@ -152,23 +152,23 @@ class SpNavRail extends StatelessWidget {
       onDestinationSelected: onSelected,
       extended: extended,
       minExtendedWidth: 208,
-      backgroundColor: Colors.white,
+      backgroundColor: AppTheme.surface,
       indicatorColor: AppTheme.accent.withValues(alpha: 0.3),
       labelType: extended
           ? NavigationRailLabelType.none
           : NavigationRailLabelType.all,
       groupAlignment: -0.9,
-      selectedIconTheme: const IconThemeData(color: Color(0xFF22252C)),
-      unselectedIconTheme: const IconThemeData(color: Color(0xFF6C727F)),
-      selectedLabelTextStyle: const TextStyle(
+      selectedIconTheme: IconThemeData(color: AppTheme.textDark),
+      unselectedIconTheme: IconThemeData(color: AppTheme.textMuted),
+      selectedLabelTextStyle: TextStyle(
         fontSize: 13,
         fontWeight: FontWeight.w700,
-        color: Color(0xFF22252C),
+        color: AppTheme.textDark,
       ),
-      unselectedLabelTextStyle: const TextStyle(
+      unselectedLabelTextStyle: TextStyle(
         fontSize: 13,
         fontWeight: FontWeight.w500,
-        color: Color(0xFF6C727F),
+        color: AppTheme.textMuted,
       ),
       destinations: [
         for (final (IconData icon, IconData activeIcon, String label) in items)
@@ -196,7 +196,7 @@ class SpRailLayout extends StatelessWidget {
     return Row(
       children: [
         rail,
-        const VerticalDivider(width: 1, thickness: 1, color: spCardBorder),
+        VerticalDivider(width: 1, thickness: 1, color: spCardBorder),
         Expanded(
           child: Align(
             alignment: Alignment.topCenter,
@@ -228,7 +228,7 @@ class SpMenuToggleButton extends StatelessWidget {
     return IconButton(
       onPressed: onPressed,
       tooltip: extended ? 'Collapse menu' : 'Expand menu',
-      icon: const Icon(Icons.menu_rounded, color: Color(0xFF3B4252)),
+      icon: Icon(Icons.menu_rounded, color: AppTheme.textSecondary),
     );
   }
 }
@@ -268,13 +268,13 @@ class SpAccountAvatarButton extends StatelessWidget {
             radius: 16,
             backgroundColor: AppTheme.accent.withValues(alpha: 0.3),
             child: DefaultTextStyle.merge(
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.w800,
                 color: AppTheme.textDark,
               ),
               child: IconTheme.merge(
-                data: const IconThemeData(size: 18, color: AppTheme.textDark),
+                data: IconThemeData(size: 18, color: AppTheme.textDark),
                 child: child,
               ),
             ),
@@ -345,7 +345,7 @@ class SpPageHeader extends StatelessWidget {
             children: [
               Text(
                 title,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 22,
                   fontWeight: FontWeight.w700,
                   color: AppTheme.textDark,
@@ -355,10 +355,7 @@ class SpPageHeader extends StatelessWidget {
                 const SizedBox(height: 2),
                 Text(
                   subtitle!,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: AppTheme.textMuted,
-                  ),
+                  style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
                 ),
               ],
             ],
@@ -390,12 +387,12 @@ class SpHeroBanner extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
+        gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: <Color>[Color(0xFFFFEAA8), Color(0xFFF7C846)],
+          colors: <Color>[AppTheme.accentLight, AppTheme.accentWarm],
         ),
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(AppTheme.radiusLarge),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -405,10 +402,10 @@ class SpHeroBanner extends StatelessWidget {
               Expanded(
                 child: Text(
                   title,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 20,
                     fontWeight: FontWeight.w800,
-                    color: Color(0xFF1F2532),
+                    color: AppTheme.textDark,
                   ),
                 ),
               ),
@@ -424,10 +421,10 @@ class SpHeroBanner extends StatelessWidget {
                   ),
                   child: Text(
                     badge!,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.w700,
-                      color: Color(0xFF3D4658),
+                      color: AppTheme.textSecondary,
                     ),
                   ),
                 ),
@@ -437,17 +434,17 @@ class SpHeroBanner extends StatelessWidget {
             const SizedBox(height: 4),
             Row(
               children: [
-                Icon(icon, size: 15, color: const Color(0xFF3D4658)),
+                Icon(icon, size: 15, color: AppTheme.textSecondary),
                 const SizedBox(width: 6),
                 Expanded(
                   child: Text(
                     text,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w600,
-                      color: Color(0xFF3D4658),
+                      color: AppTheme.textSecondary,
                     ),
                   ),
                 ),
@@ -481,12 +478,12 @@ class SpHeroButton extends StatelessWidget {
       child: ElevatedButton.icon(
         onPressed: onPressed,
         style: ElevatedButton.styleFrom(
-          backgroundColor: const Color(0xFF1F2532),
-          foregroundColor: Colors.white,
+          backgroundColor: AppTheme.textDark,
+          foregroundColor: AppTheme.onInk,
           elevation: 0,
           padding: const EdgeInsets.symmetric(vertical: 12),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(AppTheme.radius),
           ),
         ),
         icon: Icon(icon),
@@ -519,11 +516,11 @@ class SpPrimaryButton extends StatelessWidget {
         onPressed: busy ? null : onPressed,
         style: ElevatedButton.styleFrom(
           backgroundColor: AppTheme.accent,
-          foregroundColor: const Color(0xFF22252C),
+          foregroundColor: AppTheme.onAccent,
           elevation: 0,
           minimumSize: const Size(double.infinity, 48),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(AppTheme.radius),
           ),
         ),
         icon: busy
@@ -553,7 +550,7 @@ class SpSectionLabel extends StatelessWidget {
         Expanded(
           child: Text(
             text,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.w700,
               color: AppTheme.textDark,
@@ -594,8 +591,8 @@ class SpSectionCard extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.circular(AppTheme.radiusLarge),
         border: Border.all(color: spCardBorder),
       ),
       child: Column(
@@ -608,7 +605,7 @@ class SpSectionCard extends StatelessWidget {
               Expanded(
                 child: Text(
                   title,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w700,
                     color: AppTheme.textDark,
@@ -622,7 +619,7 @@ class SpSectionCard extends StatelessWidget {
             const SizedBox(height: 4),
             Text(
               subtitle!,
-              style: const TextStyle(fontSize: 12, color: AppTheme.textMuted),
+              style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
             ),
           ],
           const SizedBox(height: 14),
@@ -682,8 +679,8 @@ class SpStatTile extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.circular(AppTheme.radiusLarge),
         border: Border.all(color: spCardBorder),
       ),
       child: Column(
@@ -693,7 +690,7 @@ class SpStatTile extends StatelessWidget {
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
               color: color.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
             ),
             child: Icon(icon, size: 18, color: color),
           ),
@@ -703,7 +700,7 @@ class SpStatTile extends StatelessWidget {
             alignment: Alignment.centerLeft,
             child: Text(
               value,
-              style: const TextStyle(
+              style: TextStyle(
                 color: AppTheme.textDark,
                 fontWeight: FontWeight.w800,
                 fontSize: 24,
@@ -716,7 +713,7 @@ class SpStatTile extends StatelessWidget {
             label,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
+            style: TextStyle(
               color: AppTheme.textDark,
               fontWeight: FontWeight.w700,
               fontSize: 13,
@@ -727,7 +724,7 @@ class SpStatTile extends StatelessWidget {
               caption!,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(color: AppTheme.textMuted, fontSize: 11),
+              style: TextStyle(color: AppTheme.textMuted, fontSize: 11),
             ),
         ],
       ),
@@ -837,13 +834,10 @@ class SpEmptyState extends StatelessWidget {
   Widget build(BuildContext context) {
     final Widget content = Row(
       children: [
-        Icon(icon, color: const Color(0xFFC9CCD4)),
+        Icon(icon, color: AppTheme.borderStrong),
         const SizedBox(width: 10),
         Expanded(
-          child: Text(
-            message,
-            style: const TextStyle(color: AppTheme.textMuted),
-          ),
+          child: Text(message, style: TextStyle(color: AppTheme.textMuted)),
         ),
       ],
     );
@@ -853,8 +847,8 @@ class SpEmptyState extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.circular(AppTheme.radiusLarge),
         border: Border.all(color: spCardBorder),
       ),
       child: content,
@@ -984,7 +978,7 @@ class SpSlotsCard extends StatelessWidget {
           ? SpChip(label: levelLabel, color: barColor)
           : null,
       child: totalSlots == 0
-          ? const Text(
+          ? Text(
               'No slot capacity set for this facility yet.',
               style: TextStyle(color: AppTheme.textMuted),
             )
@@ -1003,7 +997,7 @@ class SpSlotsCard extends StatelessWidget {
                               value: occupancy,
                               strokeWidth: 10,
                               strokeCap: StrokeCap.round,
-                              backgroundColor: const Color(0xFFE8EBF2),
+                              backgroundColor: AppTheme.border,
                               valueColor: AlwaysStoppedAnimation<Color>(
                                 barColor,
                               ),
@@ -1014,13 +1008,13 @@ class SpSlotsCard extends StatelessWidget {
                             children: [
                               Text(
                                 '${(occupancy * 100).toStringAsFixed(0)}%',
-                                style: const TextStyle(
+                                style: TextStyle(
                                   color: AppTheme.textDark,
                                   fontWeight: FontWeight.w800,
                                   fontSize: 22,
                                 ),
                               ),
-                              const Text(
+                              Text(
                                 'occupied',
                                 style: TextStyle(
                                   fontSize: 11,
@@ -1038,14 +1032,10 @@ class SpSlotsCard extends StatelessWidget {
                         children: [
                           _legend(barColor, 'Occupied', occupied),
                           const SizedBox(height: 10),
-                          _legend(
-                            const Color(0xFFE8EBF2),
-                            'Available',
-                            available,
-                          ),
-                          const Padding(
+                          _legend(AppTheme.border, 'Available', available),
+                          Padding(
                             padding: EdgeInsets.symmetric(vertical: 10),
-                            child: Divider(height: 1, color: Color(0xFFEDEFF3)),
+                            child: Divider(height: 1, color: AppTheme.border),
                           ),
                           _legend(
                             AppTheme.textDark,
@@ -1096,12 +1086,12 @@ class SpSlotsCard extends StatelessWidget {
         Expanded(
           child: Text(
             label,
-            style: const TextStyle(fontSize: 13, color: AppTheme.textMuted),
+            style: TextStyle(fontSize: 13, color: AppTheme.textMuted),
           ),
         ),
         Text(
           '$value',
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 15,
             fontWeight: FontWeight.w800,
             color: AppTheme.textDark,
@@ -1124,8 +1114,8 @@ class SpSlotsCard extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
         decoration: BoxDecoration(
-          color: const Color(0xFFF6F7FA),
-          borderRadius: BorderRadius.circular(10),
+          color: AppTheme.surfaceAlt,
+          borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
         ),
         child: Row(
           children: [
@@ -1136,12 +1126,12 @@ class SpSlotsCard extends StatelessWidget {
                 label,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 12, color: AppTheme.textMuted),
+                style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
               ),
             ),
             Text(
               value,
-              style: const TextStyle(
+              style: TextStyle(
                 fontWeight: FontWeight.w800,
                 color: AppTheme.textDark,
               ),
@@ -1165,15 +1155,15 @@ class SpPlateBadge extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
       decoration: BoxDecoration(
-        color: const Color(0xFFF4F4F6),
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: const Color(0xFFD5D8DF)),
+        color: AppTheme.background,
+        borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
+        border: Border.all(color: AppTheme.borderStrong),
       ),
       child: Text(
         text.isEmpty ? 'NO PLATE' : text,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
-        style: const TextStyle(
+        style: TextStyle(
           fontWeight: FontWeight.w800,
           letterSpacing: 1,
           color: AppTheme.textDark,
@@ -1225,7 +1215,7 @@ class SpActivityCard extends StatelessWidget {
         ? ('Inside', spInsideColor)
         : isExit
         ? ('Exited', spExitColor)
-        : ('Checked out', const Color(0xFF737A88));
+        : ('Checked out', AppTheme.textMuted);
     final String timeText = time == null
         ? ''
         : showDate
@@ -1236,8 +1226,8 @@ class SpActivityCard extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.circular(AppTheme.radiusLarge),
         border: Border.all(color: spCardBorder),
       ),
       child: Row(
@@ -1248,7 +1238,7 @@ class SpActivityCard extends StatelessWidget {
             height: 40,
             decoration: BoxDecoration(
               color: accent.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(AppTheme.radius),
             ),
             child: Icon(icon, color: accent, size: 20),
           ),
@@ -1274,7 +1264,7 @@ class SpActivityCard extends StatelessWidget {
                 const SizedBox(height: 6),
                 Text(
                   '$typeLabel scan$timeText',
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
                     color: AppTheme.textDark,
@@ -1285,10 +1275,7 @@ class SpActivityCard extends StatelessWidget {
                   Text(
                     'Stayed ${spFormatDuration(Duration(seconds: elapsedSeconds))}'
                     '${billableHours == null ? '' : ' · Billed ${billableHours}h'}',
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: AppTheme.textMuted,
-                    ),
+                    style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
                   ),
                 ],
                 if (overtimeHours > 0) ...<Widget>[
@@ -1299,14 +1286,14 @@ class SpActivityCard extends StatelessWidget {
                       vertical: 4,
                     ),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFFFF3D9),
-                      borderRadius: BorderRadius.circular(8),
+                      color: AppTheme.warningSoft,
+                      borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
                     ),
                     child: Text(
                       overtimeAmount > 0
                           ? 'Overtime ${overtimeHours}h · collect PHP ${overtimeAmount.toStringAsFixed(2)} cash'
                           : 'Overtime ${overtimeHours}h · rate missing',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w700,
                         color: spInsideColor,
@@ -1327,10 +1314,7 @@ class SpActivityCard extends StatelessWidget {
                   const SizedBox(height: 4),
                   Text(
                     'Ticket #${transactionId.length > 8 ? transactionId.substring(transactionId.length - 8) : transactionId}',
-                    style: const TextStyle(
-                      fontSize: 11,
-                      color: Color(0xFF9DA1AB),
-                    ),
+                    style: TextStyle(fontSize: 11, color: AppTheme.textMuted),
                   ),
                 ],
               ],
@@ -1352,20 +1336,20 @@ class SpDateButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: Colors.white,
+      color: AppTheme.surface,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: const BorderSide(color: spCardBorder),
+        borderRadius: BorderRadius.circular(AppTheme.radius),
+        side: BorderSide(color: spCardBorder),
       ),
       child: InkWell(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(AppTheme.radius),
         onTap: onTap,
         child: Padding(
           padding: const EdgeInsets.fromLTRB(12, 8, 6, 8),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(
+              Icon(
                 Icons.calendar_today_rounded,
                 size: 16,
                 color: AppTheme.textDark,
@@ -1373,15 +1357,12 @@ class SpDateButton extends StatelessWidget {
               const SizedBox(width: 6),
               Text(
                 spSameDate(date, DateTime.now()) ? 'Today' : spFormatDate(date),
-                style: const TextStyle(
+                style: TextStyle(
                   fontWeight: FontWeight.w700,
                   color: AppTheme.textDark,
                 ),
               ),
-              const Icon(
-                Icons.arrow_drop_down_rounded,
-                color: AppTheme.textMuted,
-              ),
+              Icon(Icons.arrow_drop_down_rounded, color: AppTheme.textMuted),
             ],
           ),
         ),
@@ -1399,7 +1380,7 @@ class SpBarChart extends StatelessWidget {
     required this.values,
     required this.labels,
     required this.formatValue,
-    this.color = spExitColor,
+    this._color,
     this.height = 170,
     this.labelEvery = 1,
   });
@@ -1407,7 +1388,8 @@ class SpBarChart extends StatelessWidget {
   final List<double> values;
   final List<String> labels;
   final String Function(double value) formatValue;
-  final Color color;
+  final Color? _color;
+  Color get color => _color ?? spExitColor;
   final double height;
   final int labelEvery;
 
@@ -1456,7 +1438,7 @@ class SpBarChart extends StatelessWidget {
                                       formatValue(values[i]),
                                       maxLines: 1,
                                       style: TextStyle(
-                                        fontSize: 10,
+                                        fontSize: 11,
                                         fontWeight: FontWeight.w800,
                                         color: color,
                                       ),
@@ -1467,7 +1449,7 @@ class SpBarChart extends StatelessWidget {
                                 height: barHeight,
                                 decoration: BoxDecoration(
                                   color: values[i] <= 0
-                                      ? const Color(0xFFE8EBF2)
+                                      ? AppTheme.border
                                       : (i == peakIndex
                                             ? color
                                             : color.withValues(alpha: 0.55)),
@@ -1487,7 +1469,7 @@ class SpBarChart extends StatelessWidget {
               ],
             ),
           ),
-          const Divider(height: 1, color: Color(0xFFE3E5EA)),
+          Divider(height: 1, color: AppTheme.border),
           const SizedBox(height: 6),
           // Fixed height: an unbounded label row makes the overflow boxes
           // below infinitely tall and breaks layout on every frame.
@@ -1505,8 +1487,8 @@ class SpBarChart extends StatelessWidget {
                         maxLines: 1,
                         softWrap: false,
                         textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          fontSize: 10,
+                        style: TextStyle(
+                          fontSize: 11,
                           color: AppTheme.textMuted,
                           fontWeight: FontWeight.w600,
                         ),
@@ -1562,8 +1544,8 @@ class SpSegmentedControl<T> extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
-        color: const Color(0xFFEDEFF4),
-        borderRadius: BorderRadius.circular(14),
+        color: AppTheme.border,
+        borderRadius: BorderRadius.circular(AppTheme.radiusLarge),
       ),
       child: Row(
         children: [
@@ -1580,9 +1562,9 @@ class SpSegmentedControl<T> extends StatelessWidget {
                   padding: const EdgeInsets.symmetric(vertical: 9),
                   decoration: BoxDecoration(
                     color: value == selected
-                        ? Colors.white
+                        ? AppTheme.surface
                         : Colors.transparent,
-                    borderRadius: BorderRadius.circular(10),
+                    borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
                     boxShadow: value == selected
                         ? const <BoxShadow>[
                             BoxShadow(

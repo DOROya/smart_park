@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 
+import '../../services/parking_pricing.dart';
+import '../../theme/app_theme.dart';
 import 'driver_checkout_payment_page.dart';
 import 'driver_package_selection_page.dart';
 import 'driver_payment_page.dart';
-import '../../services/parking_pricing.dart';
-import '../../theme/app_theme.dart';
 
 class DriverVehicleOption {
   const DriverVehicleOption({
@@ -97,11 +97,11 @@ class _DriverVehicleSelectionPageState
         return;
       }
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
+        SnackBar(
           content: Text(
             'Plate number is required. Please enter your plate number.',
           ),
-          backgroundColor: Colors.redAccent,
+          backgroundColor: AppTheme.danger,
         ),
       );
       return;
@@ -233,13 +233,13 @@ class _DriverVehicleSelectionPageState
     return Scaffold(
       backgroundColor: AppTheme.background,
       appBar: AppBar(
-        backgroundColor: Colors.white,
-        surfaceTintColor: Colors.white,
+        backgroundColor: AppTheme.surface,
+        surfaceTintColor: AppTheme.surface,
         titleSpacing: 8,
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
+            Text(
               'Select Vehicle',
               style: TextStyle(
                 color: AppTheme.textDark,
@@ -251,7 +251,7 @@ class _DriverVehicleSelectionPageState
               widget.establishmentName,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
+              style: TextStyle(
                 color: AppTheme.textMuted,
                 fontSize: 11,
                 fontWeight: FontWeight.w600,
@@ -266,14 +266,14 @@ class _DriverVehicleSelectionPageState
             Container(
               width: double.infinity,
               padding: const EdgeInsets.fromLTRB(20, 16, 20, 18),
-              color: const Color(0xFFFFF4CF),
+              color: AppTheme.accentSoft,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
+                  Text(
                     'Step 1 of 3',
                     style: TextStyle(
-                      color: Color(0xFF565C6B),
+                      color: AppTheme.textSecondary,
                       fontSize: 11,
                       fontWeight: FontWeight.w700,
                     ),
@@ -297,7 +297,7 @@ class _DriverVehicleSelectionPageState
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
+                    Text(
                       'Select Vehicle Type',
                       style: TextStyle(
                         color: AppTheme.textDark,
@@ -337,7 +337,9 @@ class _DriverVehicleSelectionPageState
                                   _selectedVehicleType = option.key;
                                 });
                               },
-                              borderRadius: BorderRadius.circular(12),
+                              borderRadius: BorderRadius.circular(
+                                AppTheme.radius,
+                              ),
                               child: Container(
                                 padding: const EdgeInsets.symmetric(
                                   horizontal: 12,
@@ -345,13 +347,15 @@ class _DriverVehicleSelectionPageState
                                 ),
                                 decoration: BoxDecoration(
                                   color: isSelected
-                                      ? const Color(0xFFFFF4CF)
-                                      : Colors.white,
-                                  borderRadius: BorderRadius.circular(12),
+                                      ? AppTheme.accentSoft
+                                      : AppTheme.surface,
+                                  borderRadius: BorderRadius.circular(
+                                    AppTheme.radius,
+                                  ),
                                   border: Border.all(
                                     color: isSelected
                                         ? AppTheme.accent
-                                        : const Color(0xFFE1E1EA),
+                                        : AppTheme.border,
                                     width: isSelected ? 1.6 : 1,
                                   ),
                                 ),
@@ -367,9 +371,9 @@ class _DriverVehicleSelectionPageState
                                         ),
                                         const Spacer(),
                                         if (isSelected)
-                                          const Icon(
+                                          Icon(
                                             Icons.check_circle_rounded,
-                                            color: Color(0xFFB78300),
+                                            color: AppTheme.accentText,
                                             size: 19,
                                           ),
                                       ],
@@ -379,7 +383,7 @@ class _DriverVehicleSelectionPageState
                                       option.label,
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(
+                                      style: TextStyle(
                                         color: AppTheme.textDark,
                                         fontSize: 13,
                                         fontWeight: FontWeight.w800,
@@ -390,9 +394,9 @@ class _DriverVehicleSelectionPageState
                                       '$available slots available',
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(
+                                      style: TextStyle(
                                         color: AppTheme.textMuted,
-                                        fontSize: 10,
+                                        fontSize: 11,
                                         fontWeight: FontWeight.w600,
                                       ),
                                     ),
@@ -401,7 +405,7 @@ class _DriverVehicleSelectionPageState
                                       option.rate,
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(
+                                      style: TextStyle(
                                         color: AppTheme.textDark,
                                         fontSize: 12,
                                         fontWeight: FontWeight.w800,
@@ -417,7 +421,7 @@ class _DriverVehicleSelectionPageState
                     ),
                     const SizedBox(height: 24),
                     Row(
-                      children: const [
+                      children: [
                         Text(
                           'Plate Number',
                           style: TextStyle(
@@ -429,7 +433,7 @@ class _DriverVehicleSelectionPageState
                         Text(
                           ' *',
                           style: TextStyle(
-                            color: Colors.red,
+                            color: AppTheme.danger,
                             fontSize: 14,
                             fontWeight: FontWeight.w800,
                           ),
@@ -443,21 +447,17 @@ class _DriverVehicleSelectionPageState
                       decoration: InputDecoration(
                         hintText: 'E.G. ABC 1234',
                         filled: true,
-                        fillColor: Colors.white,
+                        fillColor: AppTheme.surface,
                         border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: const BorderSide(
-                            color: Color(0xFFE1E4EA),
-                          ),
+                          borderRadius: BorderRadius.circular(AppTheme.radius),
+                          borderSide: BorderSide(color: AppTheme.border),
                         ),
                         enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: const BorderSide(
-                            color: Color(0xFFE1E4EA),
-                          ),
+                          borderRadius: BorderRadius.circular(AppTheme.radius),
+                          borderSide: BorderSide(color: AppTheme.border),
                         ),
                         focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
+                          borderRadius: BorderRadius.circular(AppTheme.radius),
                           borderSide: const BorderSide(
                             color: AppTheme.accent,
                             width: 1.5,
@@ -478,11 +478,11 @@ class _DriverVehicleSelectionPageState
                   onPressed: _continue,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppTheme.accent,
-                    foregroundColor: const Color(0xFF22252C),
+                    foregroundColor: AppTheme.onAccent,
                     minimumSize: const Size.fromHeight(50),
                     elevation: 0,
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
+                      borderRadius: BorderRadius.circular(AppTheme.radius),
                     ),
                   ),
                   child: const Text(
@@ -512,13 +512,13 @@ class _StepDot extends StatelessWidget {
       height: 24,
       alignment: Alignment.center,
       decoration: BoxDecoration(
-        color: selected ? AppTheme.textDark : const Color(0xFFFFEAA8),
+        color: selected ? AppTheme.textDark : AppTheme.accentLight,
         shape: BoxShape.circle,
       ),
       child: Text(
         number,
         style: TextStyle(
-          color: selected ? Colors.white : const Color(0xFF7A6030),
+          color: selected ? AppTheme.onInk : AppTheme.accentText,
           fontSize: 12,
           fontWeight: FontWeight.w800,
         ),
@@ -535,7 +535,7 @@ class _StepLine extends StatelessWidget {
     return const Expanded(
       child: Padding(
         padding: EdgeInsets.symmetric(horizontal: 8),
-        child: Divider(color: Color(0xFFE0B735), thickness: 2),
+        child: Divider(color: AppTheme.accent, thickness: 2),
       ),
     );
   }

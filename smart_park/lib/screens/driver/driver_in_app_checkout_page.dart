@@ -224,13 +224,13 @@ class _DriverInAppCheckoutPageState extends State<DriverInAppCheckoutPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: Colors.white,
-        surfaceTintColor: Colors.white,
+        backgroundColor: AppTheme.surface,
+        surfaceTintColor: AppTheme.surface,
         titleSpacing: 8,
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
+            Text(
               'Secure Payment',
               style: TextStyle(
                 color: AppTheme.textDark,
@@ -242,7 +242,7 @@ class _DriverInAppCheckoutPageState extends State<DriverInAppCheckoutPage> {
               widget.establishmentName,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
+              style: TextStyle(
                 color: AppTheme.textMuted,
                 fontSize: 11,
                 fontWeight: FontWeight.w600,
@@ -272,13 +272,13 @@ class _DriverInAppCheckoutPageState extends State<DriverInAppCheckoutPage> {
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          const Icon(
+                          Icon(
                             Icons.error_outline_rounded,
                             size: 40,
-                            color: Color(0xFF9A5A27),
+                            color: AppTheme.warning,
                           ),
                           const SizedBox(height: 12),
-                          const Text(
+                          Text(
                             'Unable to load secure checkout.',
                             style: TextStyle(
                               color: AppTheme.textDark,
@@ -289,7 +289,7 @@ class _DriverInAppCheckoutPageState extends State<DriverInAppCheckoutPage> {
                           Text(
                             _errorMessage!,
                             textAlign: TextAlign.center,
-                            style: const TextStyle(color: AppTheme.textMuted),
+                            style: TextStyle(color: AppTheme.textMuted),
                           ),
                           const SizedBox(height: 12),
                           OutlinedButton.icon(
@@ -308,15 +308,15 @@ class _DriverInAppCheckoutPageState extends State<DriverInAppCheckoutPage> {
             top: false,
             child: Container(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-              decoration: const BoxDecoration(
-                color: Colors.white,
-                border: Border(top: BorderSide(color: Color(0xFFE2E5EC))),
+              decoration: BoxDecoration(
+                color: AppTheme.surface,
+                border: Border(top: BorderSide(color: AppTheme.border)),
               ),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   if (widget.checkPaid != null)
-                    const Padding(
+                    Padding(
                       padding: EdgeInsets.only(bottom: 8),
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.center,
@@ -356,17 +356,19 @@ class _DriverInAppCheckoutPageState extends State<DriverInAppCheckoutPage> {
                               height: 18,
                               child: CircularProgressIndicator(
                                 strokeWidth: 2,
-                                color: Colors.white,
+                                color: AppTheme.onAccent,
                               ),
                             )
                           : const Icon(Icons.verified_outlined),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: AppTheme.accent,
-                        foregroundColor: const Color(0xFF22252C),
+                        foregroundColor: AppTheme.onAccent,
                         minimumSize: const Size.fromHeight(48),
                         elevation: 0,
                         shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10),
+                          borderRadius: BorderRadius.circular(
+                            AppTheme.radiusSmall,
+                          ),
                         ),
                       ),
                       label: Text(
