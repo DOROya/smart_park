@@ -345,6 +345,41 @@ class _DriverHomePageState extends State<DriverHomePage>
     );
   }
 
+  String _initials() {
+    final String first = _profileFirstNameController.text.trim();
+    final String last = _profileLastNameController.text.trim();
+    final String initials =
+        '${first.isEmpty ? '' : first[0]}${last.isEmpty ? '' : last[0]}';
+    return initials.isEmpty ? 'D' : initials.toUpperCase();
+  }
+
+  PreferredSizeWidget _locationBar() {
+    return PreferredSize(
+      preferredSize: const Size.fromHeight(30),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+        child: Row(
+          children: [
+            Icon(Icons.place_rounded, size: 14, color: spEntryColor),
+            const SizedBox(width: 4),
+            Expanded(
+              child: Text(
+                _locationLabel,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: AppTheme.textMuted,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildBodyByIndex() {
     switch (_selectedIndex) {
       case 1:
@@ -396,62 +431,45 @@ class _DriverHomePageState extends State<DriverHomePage>
             AsyncSnapshot<DocumentSnapshot<Map<String, dynamic>>> snapshot,
           ) {
             final Map<String, dynamic>? data = snapshot.data?.data();
-            final String firstName = ((data?['firstName'] as String?) ?? '')
-                .trim();
-            final String greeting = spGreeting(DateTime.now());
-
             _seedProfileControllers(data);
 
             return Scaffold(
               appBar: AppBar(
+                backgroundColor: AppTheme.surface,
                 elevation: 0,
                 scrolledUnderElevation: 0,
-                backgroundColor: AppTheme.surface,
-                titleSpacing: 16,
                 automaticallyImplyLeading: false,
-                actions: [
-                  IconButton(
-                    onPressed: _refreshCurrentLocation,
-                    icon: const Icon(Icons.my_location_rounded),
-                    tooltip: 'Refresh location',
-                  ),
-                ],
-                title: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                title: Row(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
+                    Icon(Icons.local_parking_rounded, color: AppTheme.textDark),
+                    const SizedBox(width: 8),
                     Text(
-                      firstName.isEmpty ? greeting : '$greeting, $firstName',
+                      'SmartPark',
                       style: TextStyle(
                         color: AppTheme.textDark,
-                        fontSize: 17,
                         fontWeight: FontWeight.w700,
                       ),
                     ),
-                    const SizedBox(height: 2),
-                    Row(
-                      children: [
-                        Icon(
-                          Icons.place_rounded,
-                          size: 14,
-                          color: spEntryColor,
-                        ),
-                        const SizedBox(width: 4),
-                        Flexible(
-                          child: Text(
-                            _locationLabel,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: AppTheme.textMuted,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
                   ],
                 ),
+                actions: [
+                  if (_selectedIndex == 0)
+                    IconButton(
+                      onPressed: _refreshCurrentLocation,
+                      icon: const Icon(Icons.my_location_rounded),
+                      tooltip: 'Refresh location',
+                    ),
+                  SpAccountAvatarButton(
+                    active: _selectedIndex == 2,
+                    onTap: () => setState(() => _selectedIndex = 2),
+                    child: Text(_initials()),
+                  ),
+                  const SizedBox(width: 12),
+                ],
+                // Drivers pick parking by distance, so the map tab keeps
+                // showing where the app thinks they are.
+                bottom: _selectedIndex == 0 ? _locationBar() : null,
               ),
               body: _buildBodyByIndex(),
               bottomNavigationBar: BottomNavigationBar(
