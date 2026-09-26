@@ -66,6 +66,68 @@ const String kOvertimeCashDue = 'cash_due';
 const String kOvertimeCollected = 'collected';
 const String kOvertimeRateUnresolved = 'rate_unresolved';
 
+/// The owner let the driver off the overtime charge.
+const String kOvertimeWaived = 'waived';
+
+/// Statuses an owner may switch an overtime exit between.
+const List<String> kOwnerOvertimeStatuses = <String>[
+  kOvertimeCashDue,
+  kOvertimeCollected,
+  kOvertimeWaived,
+];
+
+/// Owner override of an exit's overtime status (e.g. cash handed over without
+/// staff confirming it, a wrong confirmation, or a waived charge). Updates the
+/// ticket and its exit log. Only exits that billed overtime cash can change.
+Future<void> setOvertimeStatusAsOwner({
+  required String ownerId,
+  required String transactionId,
+  required String status,
+  FirebaseFirestore? firestore,
+}) async {
+  if (!kOwnerOvertimeStatuses.contains(status)) {
+    throw ArgumentError.value(status, 'status');
+  }
+  final FirebaseFirestore db = firestore ?? FirebaseFirestore.instance;
+  final DocumentReference<Map<String, dynamic>> ticketRef = db
+      .collection('transactions')
+      .doc(transactionId);
+  final Map<String, dynamic> ticket =
+      (await ticketRef.get()).data() ?? <String, dynamic>{};
+  final String current = ((ticket['overtimeStatus'] as String?) ?? '')
+      .toLowerCase();
+  if (!kOwnerOvertimeStatuses.contains(current)) {
+    throw StateError('This exit has no overtime cash to update.');
+  }
+  if (current == status) return;
+  final Map<String, dynamic> fields = <String, dynamic>{
+    'overtimeStatus': status,
+    'overtimeStatusBy': ownerId,
+    'overtimeStatusAt': FieldValue.serverTimestamp(),
+    // Only a collected exit names who took the cash.
+    'overtimeCollectedBy': status == kOvertimeCollected
+        ? ownerId
+        : FieldValue.delete(),
+    'overtimeCollectedAt': status == kOvertimeCollected
+        ? FieldValue.serverTimestamp()
+        : FieldValue.delete(),
+  };
+  final String logId = ((ticket['exitLogId'] as String?) ?? '').trim();
+  final WriteBatch batch = db.batch();
+  batch.set(ticketRef, <String, dynamic>{
+    ...fields,
+    'updatedAt': FieldValue.serverTimestamp(),
+  }, SetOptions(merge: true));
+  if (logId.isNotEmpty) {
+    batch.set(
+      db.collection('activity_logs').doc(logId),
+      fields,
+      SetOptions(merge: true),
+    );
+  }
+  await batch.commit();
+}
+
 /// The signed-in staff member operating the gate.
 class GateStaff {
   const GateStaff({

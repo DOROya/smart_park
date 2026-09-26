@@ -511,7 +511,11 @@ class _PastTicketRow extends StatelessWidget {
                     ),
                     child: Text(
                       'Overtime ${overtimeHours}h · PHP ${overtimeAmount.toStringAsFixed(2)} cash'
-                      '${data['overtimeStatus'] == 'collected' ? ' · paid' : ''}',
+                      '${switch (data['overtimeStatus']) {
+                        'collected' => ' · paid',
+                        'waived' => ' · waived',
+                        _ => '',
+                      }}',
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w700,

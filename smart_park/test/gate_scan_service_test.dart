@@ -365,6 +365,58 @@ void main() {
       expect(exitLog['overtimeStatus'], 'collected');
     });
 
+    test(
+      'owner switches overtime between owed, collected and waived',
+      () async {
+        await db.collection('activity_logs').doc('exit-1').set(
+          <String, dynamic>{
+            'establishmentID': facilityId,
+            'overtimeStatus': 'cash_due',
+          },
+        );
+        await seedTicket('t1', <String, dynamic>{
+          'overtimeStatus': 'cash_due',
+          'exitLogId': 'exit-1',
+        });
+        Future<Map<String, dynamic>> exitLog() async =>
+            (await db.collection('activity_logs').doc('exit-1').get()).data()!;
+
+        await setOvertimeStatusAsOwner(
+          firestore: db,
+          ownerId: 'owner-1',
+          transactionId: 't1',
+          status: 'collected',
+        );
+        expect((await ticket('t1'))['overtimeCollectedBy'], 'owner-1');
+        expect((await exitLog())['overtimeStatus'], 'collected');
+
+        await setOvertimeStatusAsOwner(
+          firestore: db,
+          ownerId: 'owner-1',
+          transactionId: 't1',
+          status: 'waived',
+        );
+        final Map<String, dynamic> t = await ticket('t1');
+        expect(t['overtimeStatus'], 'waived');
+        expect(t['overtimeStatusBy'], 'owner-1');
+        expect(t.containsKey('overtimeCollectedBy'), isFalse);
+        expect((await exitLog())['overtimeStatus'], 'waived');
+      },
+    );
+
+    test('owner cannot set overtime on an exit without overtime', () async {
+      await seedTicket('t1', <String, dynamic>{'overtimeStatus': 'none'});
+      await expectLater(
+        setOvertimeStatusAsOwner(
+          firestore: db,
+          ownerId: 'owner-1',
+          transactionId: 't1',
+          status: 'collected',
+        ),
+        throwsStateError,
+      );
+    });
+
     test('will not mark collected when no overtime cash is due', () async {
       await seedTicket('t1', <String, dynamic>{'overtimeStatus': 'none'});
       await expectLater(

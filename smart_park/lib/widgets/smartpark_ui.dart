@@ -1258,9 +1258,10 @@ class SpActivityCard extends StatelessWidget {
     final int overtimeHours = ((data['overtimeHours'] as num?) ?? 0).toInt();
     final double overtimeAmount = ((data['overtimeAmount'] as num?) ?? 0)
         .toDouble();
-    final bool overtimeCollected =
-        ((data['overtimeStatus'] as String?) ?? '').toLowerCase() ==
-        'collected';
+    final String overtimeStatus = ((data['overtimeStatus'] as String?) ?? '')
+        .toLowerCase();
+    final bool overtimeCollected = overtimeStatus == 'collected';
+    final bool overtimeWaived = overtimeStatus == 'waived';
     final String transactionId = ((data['transactionId'] as String?) ?? '')
         .trim();
     final String? staffName = spLogStaffName(data, staffNames);
@@ -1377,6 +1378,8 @@ class SpActivityCard extends StatelessWidget {
                   decoration: BoxDecoration(
                     color: overtimeCollected
                         ? AppTheme.successSoft
+                        : overtimeWaived
+                        ? AppTheme.surfaceAlt
                         : AppTheme.warningSoft,
                     borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
                   ),
@@ -1385,11 +1388,17 @@ class SpActivityCard extends StatelessWidget {
                         ? 'Overtime ${overtimeHours}h · rate missing'
                         : overtimeCollected
                         ? 'Overtime ${overtimeHours}h · PHP ${overtimeAmount.toStringAsFixed(2)} cash collected'
+                        : overtimeWaived
+                        ? 'Overtime ${overtimeHours}h · PHP ${overtimeAmount.toStringAsFixed(2)} waived'
                         : 'Overtime ${overtimeHours}h · collect PHP ${overtimeAmount.toStringAsFixed(2)} cash',
                     style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w700,
-                      color: overtimeCollected ? spEntryColor : spInsideColor,
+                      color: overtimeCollected
+                          ? spEntryColor
+                          : overtimeWaived
+                          ? AppTheme.textMuted
+                          : spInsideColor,
                     ),
                   ),
                 ),

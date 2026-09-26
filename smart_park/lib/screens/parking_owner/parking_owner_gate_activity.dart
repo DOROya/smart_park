@@ -17,6 +17,35 @@ Map<String, String> _staffNameMap(
   return names;
 }
 
+/// Owner changes an exit's overtime status from the scan details sheet.
+/// Shows the error and rethrows so the sheet keeps the old status.
+Future<void> _ownerSetOvertimeStatus(
+  BuildContext context,
+  Map<String, dynamic> log,
+  String status,
+) async {
+  final String ownerId = FirebaseAuth.instance.currentUser?.uid ?? '';
+  final String transactionId = ((log['transactionId'] as String?) ?? '').trim();
+  try {
+    await setOvertimeStatusAsOwner(
+      ownerId: ownerId,
+      transactionId: transactionId,
+      status: status,
+    );
+  } catch (error) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            friendlyError(error, fallback: 'Could not update overtime.'),
+          ),
+        ),
+      );
+    }
+    rethrow;
+  }
+}
+
 class _GateActivityContent extends StatefulWidget {
   const _GateActivityContent({
     required this.facilityId,
@@ -203,8 +232,13 @@ class _GateActivityContentState extends State<_GateActivityContent>
           data: data,
           showDate: _filter == 'inside',
           staffNames: staffNames,
-          onTap: () =>
-              showSpActivityDetails(context, log: data, staffNames: staffNames),
+          onTap: () => showSpActivityDetails(
+            context,
+            log: data,
+            staffNames: staffNames,
+            onSetOvertimeStatus: (Map<String, dynamic> log, String status) =>
+                _ownerSetOvertimeStatus(context, log, status),
+          ),
         );
 
         return ListView(

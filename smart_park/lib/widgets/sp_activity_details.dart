@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
@@ -13,12 +15,16 @@ import 'smartpark_ui.dart';
 /// than the list the log was tapped in.
 ///
 /// Pass [onMarkOvertimeCollected] (staff only) to offer confirming the
-/// overtime cash on an exit still flagged "collect cash".
+/// overtime cash on an exit still flagged "collect cash", or
+/// [onSetOvertimeStatus] (owners) to switch it between owed, collected and
+/// waived.
 Future<void> showSpActivityDetails(
   BuildContext context, {
   required Map<String, dynamic> log,
   Map<String, String>? staffNames,
   Future<void> Function(Map<String, dynamic> log)? onMarkOvertimeCollected,
+  Future<void> Function(Map<String, dynamic> log, String status)?
+  onSetOvertimeStatus,
 }) {
   return showModalBottomSheet<void>(
     context: context,
@@ -29,6 +35,7 @@ Future<void> showSpActivityDetails(
       log: log,
       staffNames: staffNames,
       onMarkOvertimeCollected: onMarkOvertimeCollected,
+      onSetOvertimeStatus: onSetOvertimeStatus,
     ),
   );
 }
@@ -45,12 +52,15 @@ class _ActivityDetailsSheet extends StatefulWidget {
     required this.log,
     required this.staffNames,
     this.onMarkOvertimeCollected,
+    this.onSetOvertimeStatus,
   });
 
   final Map<String, dynamic> log;
   final Map<String, String>? staffNames;
   final Future<void> Function(Map<String, dynamic> log)?
   onMarkOvertimeCollected;
+  final Future<void> Function(Map<String, dynamic> log, String status)?
+  onSetOvertimeStatus;
 
   @override
   State<_ActivityDetailsSheet> createState() => _ActivityDetailsSheetState();
@@ -60,9 +70,12 @@ class _ActivityDetailsSheetState extends State<_ActivityDetailsSheet> {
   late final Future<List<Map<String, dynamic>>> _timeline = _loadTimeline();
   bool _marking = false;
 
-  /// Set once this sheet marked the cash collected (the log map is a
-  /// snapshot and does not update).
-  bool _markedCollected = false;
+  /// Status this sheet saved (the log map is a snapshot and does not
+  /// update).
+  String? _statusOverride;
+
+  /// Whether this sheet's own change was made by the viewer (the owner).
+  bool _changedHere = false;
 
   Map<String, dynamic> get log => widget.log;
   Map<String, String>? get staffNames => widget.staffNames;
@@ -244,55 +257,104 @@ class _ActivityDetailsSheetState extends State<_ActivityDetailsSheet> {
     );
   }
 
+  Future<void> _save(Future<void> Function() action, String status) async {
+    setState(() => _marking = true);
+    try {
+      await action();
+      if (mounted) {
+        setState(() {
+          _statusOverride = status;
+          _changedHere = true;
+        });
+      }
+    } catch (_) {
+      // The caller already told the user what went wrong.
+    } finally {
+      if (mounted) setState(() => _marking = false);
+    }
+  }
+
   Widget _overtimeRow() {
     final int hours = ((log['overtimeHours'] as num?) ?? 0).toInt();
     final double amount = ((log['overtimeAmount'] as num?) ?? 0).toDouble();
-    final String status = ((log['overtimeStatus'] as String?) ?? '')
-        .toLowerCase();
-    final bool collected = _markedCollected || status == 'collected';
-    final bool due = !collected && status == 'cash_due';
+    final String status =
+        _statusOverride ??
+        ((log['overtimeStatus'] as String?) ?? '').toLowerCase();
     final String collectorId = ((log['overtimeCollectedBy'] as String?) ?? '')
         .trim();
     final DateTime? collectedAt = spParseDateTime(log['overtimeCollectedAt']);
-    String? collector = staffNames?[collectorId];
+    final bool byOwner =
+        (_changedHere && widget.onSetOvertimeStatus != null) ||
+        (!_changedHere &&
+            collectorId.isNotEmpty &&
+            collectorId == log['overtimeStatusBy']);
+    String? collector = byOwner ? 'owner' : staffNames?[collectorId];
     if ((collector ?? '').isEmpty && collectorId == log['staffId']) {
       collector = _staffLabel(log);
     }
+    final String money = 'PHP ${amount.toStringAsFixed(2)} for ${hours}h';
     final String value = amount <= 0
         ? '${hours}h · no rate set, nothing billed'
-        : collected
-        ? 'PHP ${amount.toStringAsFixed(2)} for ${hours}h · collected'
-              '${(collector ?? '').isEmpty ? '' : ' by $collector'}'
-              '${collectedAt == null ? '' : ', ${spFormatClockTime(collectedAt)}'}'
-        : 'PHP ${amount.toStringAsFixed(2)} for ${hours}h · not yet confirmed '
-              'collected';
+        : switch (status) {
+            'collected' =>
+              '$money · collected'
+                  '${(collector ?? '').isEmpty ? '' : ' by $collector'}'
+                  '${_changedHere || collectedAt == null ? '' : ', ${spFormatClockTime(collectedAt)}'}',
+            'waived' => '$money · waived by owner',
+            _ => '$money · not yet confirmed collected',
+          };
     final Future<void> Function(Map<String, dynamic> log)? onMark =
         widget.onMarkOvertimeCollected;
+    final Future<void> Function(Map<String, dynamic> log, String status)?
+    onSet = widget.onSetOvertimeStatus;
+    final bool ownerCanSet =
+        onSet != null &&
+        amount > 0 &&
+        <String>['cash_due', 'collected', 'waived'].contains(status);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
         _row(Icons.payments_outlined, 'Overtime cash', value),
-        if (due && onMark != null)
+        if (status == 'cash_due' && onMark != null)
           Padding(
             padding: const EdgeInsets.only(bottom: 12),
             child: FilledButton.icon(
               onPressed: _marking
                   ? null
-                  : () async {
-                      setState(() => _marking = true);
-                      try {
-                        await onMark(log);
-                        if (mounted) setState(() => _markedCollected = true);
-                      } finally {
-                        if (mounted) setState(() => _marking = false);
-                      }
-                    },
+                  : () => _save(() => onMark(log), 'collected'),
               icon: const Icon(Icons.check_rounded),
               label: Text(
                 _marking
                     ? 'Saving...'
                     : 'Cash collected (PHP ${amount.toStringAsFixed(2)})',
               ),
+            ),
+          ),
+        if (ownerCanSet)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: SegmentedButton<String>(
+              showSelectedIcon: false,
+              segments: const <ButtonSegment<String>>[
+                ButtonSegment<String>(
+                  value: 'cash_due',
+                  label: Text('Not collected'),
+                ),
+                ButtonSegment<String>(
+                  value: 'collected',
+                  label: Text('Collected'),
+                ),
+                ButtonSegment<String>(value: 'waived', label: Text('Waived')),
+              ],
+              selected: <String>{status},
+              onSelectionChanged: _marking
+                  ? null
+                  : (Set<String> picked) {
+                      final String next = picked.first;
+                      if (next != status) {
+                        unawaited(_save(() => onSet(log, next), next));
+                      }
+                    },
             ),
           ),
       ],

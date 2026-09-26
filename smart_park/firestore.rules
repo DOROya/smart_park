@@ -211,16 +211,30 @@ service cloud.firestore {
         request.resource.data.overtimeCollectedBy == uid();
     }
 
+    // Owners may switch an overtime exit between owed, collected and waived
+    // (on the ticket and its exit log), and change nothing else.
+    function ownerOvertimeUpdateOk() {
+      let statuses = ['cash_due', 'collected', 'waived'];
+      return resource.data.get('overtimeStatus', '') in statuses &&
+        request.resource.data.get('overtimeStatus', '') in statuses &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'overtimeStatus', 'overtimeStatusBy', 'overtimeStatusAt',
+          'overtimeCollectedBy', 'overtimeCollectedAt', 'updatedAt'
+        ]) &&
+        request.resource.data.get('overtimeStatusBy', null) == uid();
+    }
+
     match /activity_logs/{logId} {
       allow read: if canSeeEstablishment(resource.data.establishmentID);
       allow create: if isStaffOf(request.resource.data.establishmentID) &&
         request.resource.data.staffId == uid();
       // Exit scans close the open entry log (isActive=false), and staff
       // mark overtime cash collected on the exit log.
-      allow update: if isStaffOf(resource.data.establishmentID) &&
-        unchanged('establishmentID') &&
-        unchanged('transactionId') &&
-        overtimeCollectorOk();
+      allow update: if (isStaffOf(resource.data.establishmentID) &&
+          unchanged('establishmentID') &&
+          unchanged('transactionId') &&
+          overtimeCollectorOk()) ||
+        (isOwnerOf(resource.data.establishmentID) && ownerOvertimeUpdateOk());
       allow delete: if false;
     }
 
@@ -268,8 +282,9 @@ service cloud.firestore {
         canSeeEstablishment(resource.data.establishmentId);
       allow create: if walkInCreateOk();
       allow delete: if false;
-      allow update: if isStaffOf(resource.data.establishmentId) &&
-        staffTicketUpdateOk();
+      allow update: if (isStaffOf(resource.data.establishmentId) &&
+          staffTicketUpdateOk()) ||
+        (isOwnerOf(resource.data.establishmentId) && ownerOvertimeUpdateOk());
     }
 
     match /payments/{paymentId} {

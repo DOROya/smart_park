@@ -402,7 +402,12 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
   Widget _recentScanCard(Map<String, dynamic> data) {
     return SpActivityCard(
       data: data,
-      onTap: () => showSpActivityDetails(context, log: data),
+      onTap: () => showSpActivityDetails(
+        context,
+        log: data,
+        onSetOvertimeStatus: (Map<String, dynamic> log, String status) =>
+            _ownerSetOvertimeStatus(context, log, status),
+      ),
     );
   }
 
