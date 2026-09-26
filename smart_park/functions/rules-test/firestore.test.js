@@ -210,6 +210,59 @@ test("staff read and check in their facility's tickets only", async () => {
   await assertFails(updateDoc(doc(staff(), "transactions/tx2"), { entryStatus: "checked_in" }));
 });
 
+test("staff record overtime cash as collected in their own name only", async () => {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const d = ctx.firestore();
+    await setDoc(doc(d, "transactions/tx1"), { overtimeStatus: "cash_due", overtimeAmount: 40 }, { merge: true });
+    await setDoc(doc(d, "activity_logs/exit1"), {
+      establishmentID: "est1", transactionId: "tx1", scanType: "exit", staffId: "staff1", overtimeStatus: "cash_due",
+    });
+  });
+  const collectedBy = (uid) => ({
+    overtimeStatus: "collected", overtimeCollectedBy: uid, overtimeCollectedAt: serverTimestamp(),
+  });
+  await assertFails(setDoc(doc(staff(), "transactions/tx1"), collectedBy("staff2"), { merge: true }));
+  await assertFails(setDoc(doc(staff(), "activity_logs/exit1"), collectedBy("staff2"), { merge: true }));
+  // Owners must stamp themselves as the one changing it.
+  await assertFails(setDoc(doc(owner(), "transactions/tx1"), collectedBy("owner1"), { merge: true }));
+  await assertSucceeds(
+    setDoc(doc(staff(), "transactions/tx1"), { ...collectedBy("staff1"), updatedAt: serverTimestamp() }, { merge: true }),
+  );
+  await assertSucceeds(setDoc(doc(staff(), "activity_logs/exit1"), collectedBy("staff1"), { merge: true }));
+  // The owner's live overtime card lists vehicles still checked in.
+  await assertSucceeds(
+    getDocs(query(collection(owner(), "transactions"),
+      where("establishmentId", "==", "est1"), where("entryStatus", "==", "checked_in"))),
+  );
+});
+
+test("owners change overtime status on their own exits only", async () => {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const d = ctx.firestore();
+    await setDoc(doc(d, "transactions/tx1"), { overtimeStatus: "cash_due", overtimeAmount: 40 }, { merge: true });
+    await setDoc(doc(d, "transactions/tx2"), { overtimeStatus: "cash_due" }, { merge: true });
+    await setDoc(doc(d, "transactions/tx3"), { establishmentId: "est1", overtimeStatus: "none" });
+    await setDoc(doc(d, "activity_logs/exit1"), {
+      establishmentID: "est1", transactionId: "tx1", scanType: "exit", overtimeStatus: "cash_due",
+    });
+  });
+  const set = (status) => ({
+    overtimeStatus: status, overtimeStatusBy: "owner1", overtimeStatusAt: serverTimestamp(),
+  });
+  await assertSucceeds(setDoc(doc(owner(), "transactions/tx1"), set("waived"), { merge: true }));
+  await assertSucceeds(setDoc(doc(owner(), "activity_logs/exit1"), set("waived"), { merge: true }));
+  await assertSucceeds(
+    setDoc(doc(owner(), "transactions/tx1"),
+      { ...set("collected"), overtimeCollectedBy: "owner1", overtimeCollectedAt: serverTimestamp() }, { merge: true }),
+  );
+  // Nothing else, no other statuses, no exits without overtime, no other owners.
+  await assertFails(setDoc(doc(owner(), "transactions/tx1"), { ...set("cash_due"), amount: 0 }, { merge: true }));
+  await assertFails(setDoc(doc(owner(), "transactions/tx1"), set("none"), { merge: true }));
+  await assertFails(setDoc(doc(owner(), "transactions/tx3"), set("waived"), { merge: true }));
+  await assertFails(setDoc(doc(owner(), "transactions/tx2"), set("waived"), { merge: true }));
+  await assertFails(setDoc(doc(otherOwner(), "activity_logs/exit1"), set("cash_due"), { merge: true }));
+});
+
 test("staff log gate scans for their facility only", async () => {
   await assertSucceeds(setDoc(doc(staff(), "activity_logs/new"), { establishmentID: "est1", staffId: "staff1", scanType: "entry" }));
   await assertFails(setDoc(doc(staff(), "activity_logs/new2"), { establishmentID: "est2", staffId: "staff1" }));
@@ -223,6 +276,19 @@ test("staff log gate scans for their facility only", async () => {
   await assertSucceeds(setDoc(doc(staff(), "StaffActivityLogs/s1"), { staffID: "staff1", establishmentID: "est1", action: "scan_entry" }));
   await assertSucceeds(getDocs(query(collection(owner(), "activity_logs"), where("establishmentID", "==", "est1"))));
   await assertFails(getDocs(query(collection(otherOwner(), "activity_logs"), where("establishmentID", "==", "est1"))));
+});
+
+test("deactivated staff lose gate access until reactivated", async () => {
+  await assertFails(updateDoc(doc(otherOwner(), "staff_accounts/staff1"), { active: false }));
+  await assertSucceeds(updateDoc(doc(owner(), "staff_accounts/staff1"), { active: false }));
+  await assertFails(setDoc(doc(staff(), "activity_logs/new"), { establishmentID: "est1", staffId: "staff1", scanType: "entry" }));
+  await assertFails(getDocs(query(collection(staff(), "activity_logs"), where("establishmentID", "==", "est1"))));
+  await assertFails(setDoc(doc(staff(), "transactions/tx1"), { entryStatus: "checked_in" }, { merge: true }));
+  // They can still read their own record, to see that they were deactivated.
+  await assertSucceeds(getDoc(doc(staff(), "staff_accounts/staff1")));
+
+  await assertSucceeds(updateDoc(doc(owner(), "staff_accounts/staff1"), { active: true }));
+  await assertSucceeds(setDoc(doc(staff(), "activity_logs/new"), { establishmentID: "est1", staffId: "staff1", scanType: "entry" }));
 });
 
 // ---------- staff accounts ----------

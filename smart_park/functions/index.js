@@ -9,6 +9,7 @@ const { defineSecret } = require("firebase-functions/params");
 const authEmails = require("./src/auth_emails");
 const checkout = require("./src/checkout");
 const occupancy = require("./src/occupancy");
+const staff = require("./src/staff");
 const { platformFeeCentavosFor } = require("./src/pricing");
 const { dayKeyManila, dayStartManila } = require("./src/dates");
 
@@ -64,6 +65,18 @@ exports.updateOccupancy = onDocumentWritten("transactions/{transactionId}", asyn
     await occupancy.recountOccupancy(db, establishmentId);
   }
 });
+
+// Disables a staff member's sign-in when their owner deactivates them, and
+// re-enables it on reactivation.
+exports.setStaffSignInState = onDocumentWritten("staff_accounts/{staffId}", (event) =>
+  staff.applyStaffSignInChange(
+    staff.staffSignInChange(
+      event.params.staffId,
+      event.data?.before?.data(),
+      event.data?.after?.data(),
+    ),
+  ),
+);
 
 /**
  * Admin-only: rebuilds `stats_daily` and `stats/platform` from every paid

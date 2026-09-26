@@ -17,10 +17,12 @@ class WalkInPanel extends StatefulWidget {
     super.key,
     required this.facilityId,
     required this.ownerId,
+    this.staffName = '',
   });
 
   final String facilityId;
   final String? ownerId;
+  final String staffName;
 
   @override
   State<WalkInPanel> createState() => _WalkInPanelState();
@@ -64,6 +66,8 @@ class _WalkInPanelState extends State<WalkInPanel> {
       'ownerId': widget.ownerId,
       'staffId': staffId,
       'staffEmail': (FirebaseAuth.instance.currentUser?.email ?? '').trim(),
+      if (widget.staffName.trim().isNotEmpty)
+        'staffName': widget.staffName.trim(),
       'vehiclePlate': plate.isEmpty ? 'WALK-IN' : plate,
       'vehicleType': vehicleType,
       'source': 'walk_in',

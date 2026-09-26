@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../services/parking_pricing.dart';
 import '../theme/app_theme.dart';
+import '../utils/staff_credentials.dart';
 
 /// Shared dashboard building blocks so the staff and parking-owner screens
 /// look the same: hero banner, stat tiles, section cards, the parking-slot
@@ -83,16 +84,66 @@ bool spIsInsideLog(Map<String, dynamic> data) =>
     spLogScanType(data) == 'entry' &&
     ((data['isActive'] as bool?) ?? false);
 
+/// Who recorded a gate log. Prefers the live name in [staffNames] (staff uid
+/// to name), then the name stamped on the log, then the staff username.
+String? spLogStaffName(
+  Map<String, dynamic> data, [
+  Map<String, String>? staffNames,
+]) {
+  final String staffId = ((data['staffId'] as String?) ?? '').trim();
+  final String live = (staffNames?[staffId] ?? '').trim();
+  if (live.isNotEmpty) return live;
+  final String stamped = ((data['staffName'] as String?) ?? '').trim();
+  if (stamped.isNotEmpty) return stamped;
+  final String email = ((data['staffEmail'] as String?) ?? '').trim();
+  if (email.isEmpty) return null;
+  // Staff sign in as "<username>@<internal domain>"; show the username.
+  return isStaffAuthEmail(email) ? email.split('@').first : email;
+}
+
+/// Cache key part for [day], e.g. "2026-9-26".
+String spDayKey(DateTime day) => '${day.year}-${day.month}-${day.day}';
+
+/// A facility's gate logs for one local day, newest first. Screens query a
+/// single day so they don't download the facility's whole scan history.
+Query<Map<String, dynamic>> spDayLogsQuery(String facilityId, DateTime day) {
+  final DateTime start = DateTime(day.year, day.month, day.day);
+  final DateTime end = DateTime(day.year, day.month, day.day + 1);
+  return FirebaseFirestore.instance
+      .collection('activity_logs')
+      .where('establishmentID', isEqualTo: facilityId)
+      .where('timestamp', isGreaterThanOrEqualTo: Timestamp.fromDate(start))
+      .where('timestamp', isLessThan: Timestamp.fromDate(end))
+      .orderBy('timestamp', descending: true);
+}
+
+/// Entry logs still open (vehicle not yet exited), whatever day they began.
+Query<Map<String, dynamic>> spInsideLogsQuery(String facilityId) {
+  return FirebaseFirestore.instance
+      .collection('activity_logs')
+      .where('establishmentID', isEqualTo: facilityId)
+      .where('isActive', isEqualTo: true);
+}
+
+List<Map<String, dynamic>> spDocsData(
+  AsyncSnapshot<QuerySnapshot<Map<String, dynamic>>> snapshot,
+) => <Map<String, dynamic>>[
+  for (final QueryDocumentSnapshot<Map<String, dynamic>> doc
+      in snapshot.data?.docs ?? <QueryDocumentSnapshot<Map<String, dynamic>>>[])
+    doc.data(),
+];
+
 /// Gate-scan counts for one day, plus vehicles currently inside.
 class SpActivitySummary {
+  /// When [logs] only covers [day], pass the open entry logs as [insideLogs]
+  /// so vehicles that came in on an earlier day still count as inside.
   SpActivitySummary.fromLogs(
     Iterable<Map<String, dynamic>> logs,
-    DateTime day,
-  ) {
+    DateTime day, {
+    Iterable<Map<String, dynamic>>? insideLogs,
+  }) {
+    insideNow = (insideLogs ?? logs).where(spIsInsideLog).length;
     for (final Map<String, dynamic> data in logs) {
-      if (spIsInsideLog(data)) {
-        insideNow++;
-      }
       // Pending server timestamps read as null; treat them as now.
       final DateTime timestamp =
           spParseDateTime(data['timestamp']) ?? DateTime.now();
@@ -1174,14 +1225,26 @@ class SpPlateBadge extends StatelessWidget {
 }
 
 /// One gate scan (`activity_logs` doc): entry/exit/denied icon, plate, status,
-/// time, stay length, overtime and ticket number.
+/// time, who scanned it, stay length, overtime and ticket number.
 class SpActivityCard extends StatelessWidget {
-  const SpActivityCard({super.key, required this.data, this.showDate = false});
+  const SpActivityCard({
+    super.key,
+    required this.data,
+    this.showDate = false,
+    this.staffNames,
+    this.onTap,
+  });
 
   final Map<String, dynamic> data;
 
   /// Prefix the scan time with its date (for lists spanning several days).
   final bool showDate;
+
+  /// Current staff uid-to-name map. When given, a staff member missing from
+  /// it is marked as removed.
+  final Map<String, String>? staffNames;
+
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -1195,8 +1258,18 @@ class SpActivityCard extends StatelessWidget {
     final int overtimeHours = ((data['overtimeHours'] as num?) ?? 0).toInt();
     final double overtimeAmount = ((data['overtimeAmount'] as num?) ?? 0)
         .toDouble();
+    final String overtimeStatus = ((data['overtimeStatus'] as String?) ?? '')
+        .toLowerCase();
+    final bool overtimeCollected = overtimeStatus == 'collected';
+    final bool overtimeWaived = overtimeStatus == 'waived';
     final String transactionId = ((data['transactionId'] as String?) ?? '')
         .trim();
+    final String? staffName = spLogStaffName(data, staffNames);
+    final String staffId = ((data['staffId'] as String?) ?? '').trim();
+    final bool staffRemoved =
+        staffNames != null &&
+        staffId.isNotEmpty &&
+        !staffNames!.containsKey(staffId);
 
     final Color accent = !allowed
         ? spDeniedColor
@@ -1222,109 +1295,160 @@ class SpActivityCard extends StatelessWidget {
         ? ' · ${spFormatDate(time)}, ${spFormatClockTime(time)}'
         : ' · ${spFormatClockTime(time)}';
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: AppTheme.surface,
-        borderRadius: BorderRadius.circular(AppTheme.radiusLarge),
-        border: Border.all(color: spCardBorder),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: accent.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(AppTheme.radius),
-            ),
-            child: Icon(icon, color: accent, size: 20),
+    final Widget content = Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            color: accent.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(AppTheme.radius),
           ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
+          child: Icon(icon, color: accent, size: 20),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Row(
+                children: <Widget>[
+                  Expanded(
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: SpPlateBadge(
+                        plate: (data['vehiclePlate'] as String?) ?? '',
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  SpChip(label: chipLabel, color: chipColor),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Text(
+                '$typeLabel scan$timeText',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: AppTheme.textDark,
+                ),
+              ),
+              if (staffName != null) ...<Widget>[
+                const SizedBox(height: 2),
                 Row(
                   children: <Widget>[
-                    Expanded(
-                      child: Align(
-                        alignment: Alignment.centerLeft,
-                        child: SpPlateBadge(
-                          plate: (data['vehiclePlate'] as String?) ?? '',
+                    Icon(
+                      Icons.badge_outlined,
+                      size: 13,
+                      color: AppTheme.textMuted,
+                    ),
+                    const SizedBox(width: 4),
+                    Flexible(
+                      child: Text(
+                        'By $staffName${staffRemoved ? ' (removed)' : ''}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: AppTheme.textSecondary,
                         ),
                       ),
                     ),
-                    const SizedBox(width: 8),
-                    SpChip(label: chipLabel, color: chipColor),
                   ],
                 ),
-                const SizedBox(height: 6),
+              ],
+              if (isExit && allowed && elapsedSeconds != null) ...<Widget>[
+                const SizedBox(height: 2),
                 Text(
-                  '$typeLabel scan$timeText',
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: AppTheme.textDark,
-                  ),
+                  'Stayed ${spFormatDuration(Duration(seconds: elapsedSeconds))}'
+                  '${billableHours == null ? '' : ' · Billed ${billableHours}h'}',
+                  style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
                 ),
-                if (isExit && allowed && elapsedSeconds != null) ...<Widget>[
-                  const SizedBox(height: 2),
-                  Text(
-                    'Stayed ${spFormatDuration(Duration(seconds: elapsedSeconds))}'
-                    '${billableHours == null ? '' : ' · Billed ${billableHours}h'}',
-                    style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
+              ],
+              if (overtimeHours > 0) ...<Widget>[
+                const SizedBox(height: 6),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
                   ),
-                ],
-                if (overtimeHours > 0) ...<Widget>[
-                  const SizedBox(height: 6),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: AppTheme.warningSoft,
-                      borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
-                    ),
-                    child: Text(
-                      overtimeAmount > 0
-                          ? 'Overtime ${overtimeHours}h · collect PHP ${overtimeAmount.toStringAsFixed(2)} cash'
-                          : 'Overtime ${overtimeHours}h · rate missing',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                        color: spInsideColor,
-                      ),
-                    ),
+                  decoration: BoxDecoration(
+                    color: overtimeCollected
+                        ? AppTheme.successSoft
+                        : overtimeWaived
+                        ? AppTheme.surfaceAlt
+                        : AppTheme.warningSoft,
+                    borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
                   ),
-                ] else if (reason.isNotEmpty) ...<Widget>[
-                  const SizedBox(height: 4),
-                  Text(
-                    reason,
+                  child: Text(
+                    overtimeAmount <= 0
+                        ? 'Overtime ${overtimeHours}h · rate missing'
+                        : overtimeCollected
+                        ? 'Overtime ${overtimeHours}h · PHP ${overtimeAmount.toStringAsFixed(2)} cash collected'
+                        : overtimeWaived
+                        ? 'Overtime ${overtimeHours}h · PHP ${overtimeAmount.toStringAsFixed(2)} waived'
+                        : 'Overtime ${overtimeHours}h · collect PHP ${overtimeAmount.toStringAsFixed(2)} cash',
                     style: TextStyle(
                       fontSize: 12,
-                      color: allowed ? AppTheme.textMuted : spDeniedColor,
+                      fontWeight: FontWeight.w700,
+                      color: overtimeCollected
+                          ? spEntryColor
+                          : overtimeWaived
+                          ? AppTheme.textMuted
+                          : spInsideColor,
                     ),
                   ),
-                ],
-                if (transactionId.isNotEmpty) ...<Widget>[
-                  const SizedBox(height: 4),
-                  Text(
-                    'Ticket #${transactionId.length > 8 ? transactionId.substring(transactionId.length - 8) : transactionId}',
-                    style: TextStyle(fontSize: 11, color: AppTheme.textMuted),
+                ),
+              ] else if (reason.isNotEmpty) ...<Widget>[
+                const SizedBox(height: 4),
+                Text(
+                  reason,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: allowed ? AppTheme.textMuted : spDeniedColor,
                   ),
-                ],
+                ),
               ],
-            ),
+              if (transactionId.isNotEmpty) ...<Widget>[
+                const SizedBox(height: 4),
+                Text(
+                  'Ticket #${spShortTicketId(transactionId)}',
+                  style: TextStyle(fontSize: 11, color: AppTheme.textMuted),
+                ),
+              ],
+            ],
           ),
-        ],
+        ),
+        if (onTap != null)
+          Icon(Icons.chevron_right_rounded, color: AppTheme.textMuted),
+      ],
+    );
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Material(
+        color: AppTheme.surface,
+        clipBehavior: Clip.antiAlias,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppTheme.radiusLarge),
+          side: BorderSide(color: spCardBorder),
+        ),
+        child: InkWell(
+          onTap: onTap,
+          child: Padding(padding: const EdgeInsets.all(12), child: content),
+        ),
       ),
     );
   }
 }
+
+/// Last 8 characters of a ticket id, as shown on gate cards.
+String spShortTicketId(String transactionId) => transactionId.length > 8
+    ? transactionId.substring(transactionId.length - 8)
+    : transactionId;
 
 /// Date picker pill ("Today" / "Sep 23, 2026").
 class SpDateButton extends StatelessWidget {
@@ -1522,6 +1646,68 @@ mixin SpStreamCache<W extends StatefulWidget> on State<W> {
   Stream<T> cachedStream<T>(String key, Stream<T> Function() create) {
     return _spStreams.putIfAbsent(key, create) as Stream<T>;
   }
+
+  /// Builds from one [day] of a facility's gate logs plus its still-open
+  /// entries, so screens never download the whole scan history. The streams
+  /// are keyed by date, so a new [day] (or midnight passing) re-queries.
+  Widget withDayLogs(
+    String facilityId,
+    DateTime day, {
+    required Widget Function(BuildContext context, SpDayLogs logs) builder,
+  }) {
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: cachedStream(
+        'inside_$facilityId',
+        () => spInsideLogsQuery(facilityId).snapshots(),
+      ),
+      builder: (BuildContext context, insideSnapshot) {
+        return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+          stream: cachedStream(
+            'day_${facilityId}_${spDayKey(day)}',
+            () => spDayLogsQuery(facilityId, day).snapshots(),
+          ),
+          builder: (BuildContext context, daySnapshot) => builder(
+            context,
+            SpDayLogs(
+              logs: spDocsData(daySnapshot),
+              insideLogs: spNewestFirst(spDocsData(insideSnapshot)),
+              loaded: daySnapshot.hasData,
+              error: daySnapshot.error ?? insideSnapshot.error,
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// One day of a facility's gate logs (newest first) plus the entry logs
+/// still open from any day, for "inside now".
+class SpDayLogs {
+  const SpDayLogs({
+    required this.logs,
+    required this.insideLogs,
+    required this.loaded,
+    this.error,
+  });
+
+  final List<Map<String, dynamic>> logs;
+  final List<Map<String, dynamic>> insideLogs;
+
+  /// Whether the day's logs have arrived.
+  final bool loaded;
+  final Object? error;
+}
+
+/// Sorts gate logs newest first; pending server timestamps count as now.
+List<Map<String, dynamic>> spNewestFirst(List<Map<String, dynamic>> logs) {
+  final DateTime now = DateTime.now();
+  return logs..sort(
+    (Map<String, dynamic> a, Map<String, dynamic> b) =>
+        (spParseDateTime(b['timestamp']) ?? now).compareTo(
+          spParseDateTime(a['timestamp']) ?? now,
+        ),
+  );
 }
 
 /// Equal-width segmented filter (grey track, white pill on the selected

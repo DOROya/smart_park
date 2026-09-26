@@ -317,6 +317,14 @@ class _CommissionsListContentState extends State<_CommissionsListContent>
 
                     double totalCommission = 0;
                     double totalPayout = 0;
+                    // Overtime is paid in cash at the gate, outside PayMongo,
+                    // so it has no commission and is tracked on the ticket.
+                    final SpOvertimeCash overtimeCash = SpOvertimeCash.from(
+                      txDocs.map(
+                        (QueryDocumentSnapshot<Map<String, dynamic>> d) =>
+                            d.data(),
+                      ),
+                    );
 
                     for (final _CommissionRecord record in records) {
                       totalCommission += record.platformFee;
@@ -342,6 +350,29 @@ class _CommissionsListContentState extends State<_CommissionsListContent>
                             value: 'PHP ${totalCommission.toStringAsFixed(2)}',
                           ),
                         ),
+                        if (!overtimeCash.isEmpty) ...[
+                          const SizedBox(height: 10),
+                          SpStatRow(
+                            left: SpStatTile(
+                              icon: Icons.payments_rounded,
+                              color: spEntryColor,
+                              label: 'Overtime Cash',
+                              caption:
+                                  '${overtimeCash.collectedCount} collected at the gate',
+                              value: spPeso(overtimeCash.collectedAmount),
+                            ),
+                            right: SpStatTile(
+                              icon: Icons.pending_actions_rounded,
+                              color: overtimeCash.dueCount > 0
+                                  ? spInsideColor
+                                  : AppTheme.textMuted,
+                              label: 'Uncollected',
+                              caption:
+                                  '${overtimeCash.dueCount} exit${overtimeCash.dueCount == 1 ? '' : 's'} not confirmed',
+                              value: spPeso(overtimeCash.dueAmount),
+                            ),
+                          ),
+                        ],
                         const SizedBox(height: 12),
                         SpSectionCard(
                           icon: Icons.receipt_long_rounded,

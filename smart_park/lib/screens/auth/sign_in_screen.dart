@@ -105,8 +105,16 @@ class _SignInScreenState extends State<SignInScreen> {
       if (!mounted) {
         return;
       }
+      final bool staffLogin = !_emailController.text.contains('@');
       _showSnackBar(
-        friendlyError(error, fallback: 'Unable to sign in. Please try again.'),
+        // Owners deactivate staff, which disables the staff sign-in.
+        error.code == 'user-disabled' && staffLogin
+            ? 'This staff account has been deactivated. Ask your parking '
+                  'owner to reactivate it.'
+            : friendlyError(
+                error,
+                fallback: 'Unable to sign in. Please try again.',
+              ),
       );
       debugPrint(
         'Sign-in FirebaseAuthException(${error.code}): ${error.message}',

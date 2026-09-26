@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show HapticFeedback;
 import 'package:mobile_scanner/mobile_scanner.dart';
 
 import '../../services/gate_scan_service.dart';
@@ -11,6 +12,7 @@ import '../../theme/app_theme.dart';
 import '../../theme/theme_controller.dart';
 import '../../utils/friendly_error.dart';
 import '../../widgets/smartpark_ui.dart';
+import '../../widgets/sp_activity_details.dart';
 import '../../widgets/sp_loading.dart';
 import '../auth/sign_in_screen.dart';
 import 'walk_in_panel.dart';
@@ -38,10 +40,19 @@ class _StaffHomePageState extends State<StaffHomePage>
   String? _assignedFacilityId;
   String? _ownerId;
 
+  /// Name from the owner-created staff record; falls back to the auth
+  /// display name, which is set to the same name when the account is made.
+  String _staffName = '';
+
+  /// Set when the owner deactivates this account, even mid-shift.
+  bool _deactivated = false;
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _staffRecordSub;
+
   final GateScanService _gateService = GateScanService();
   late final MobileScannerController _scannerController;
   bool _isProcessingScan = false;
   GateScanResult? _lastScanResult;
+  bool _markingOvertime = false;
 
   /// Staff-side gate direction. Entry/exit is chosen here in the app and is
   /// never taken from the scanned QR content.
@@ -77,10 +88,33 @@ class _StaffHomePageState extends State<StaffHomePage>
     });
 
     unawaited(_resolveAssignedFacility());
+    _watchStaffRecord();
+  }
+
+  void _watchStaffRecord() {
+    final String? uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    _staffRecordSub = FirebaseFirestore.instance
+        .collection('staff_accounts')
+        .doc(uid)
+        .snapshots()
+        .listen(
+          (DocumentSnapshot<Map<String, dynamic>> snap) {
+            final Map<String, dynamic>? data = snap.data();
+            final bool deactivated = data != null && !isStaffRecordActive(data);
+            if (deactivated != _deactivated && mounted) {
+              setState(() => _deactivated = deactivated);
+              if (deactivated) unawaited(_scannerController.stop());
+            }
+          },
+          // Missing or unreadable record: resolveAssignment already covers it.
+          onError: (Object _) {},
+        );
   }
 
   @override
   void dispose() {
+    unawaited(_staffRecordSub?.cancel());
     _scannerController.dispose();
     _historyTabController.dispose();
     super.dispose();
@@ -99,8 +133,12 @@ class _StaffHomePageState extends State<StaffHomePage>
       return;
     }
     setState(() {
+      _deactivated = assignment.deactivated;
       _assignedFacilityId = assignment.facilityId;
       _ownerId = assignment.ownerId;
+      _staffName = assignment.staffName.isNotEmpty
+          ? assignment.staffName
+          : (user.displayName ?? '').trim();
     });
   }
 
@@ -136,6 +174,7 @@ class _StaffHomePageState extends State<StaffHomePage>
       email: user.email ?? '',
       facilityId: _assignedFacilityId,
       ownerId: _ownerId,
+      name: _staffName,
     );
   }
 
@@ -144,6 +183,19 @@ class _StaffHomePageState extends State<StaffHomePage>
     _isProcessingScan = false;
     if (result == null || !mounted) {
       return;
+    }
+    // Guards often look at the car, not the screen: one tap for allowed,
+    // a heavy buzz for denied or error.
+    if (result.isAllowed) {
+      unawaited(HapticFeedback.mediumImpact());
+    } else {
+      unawaited(HapticFeedback.heavyImpact());
+      unawaited(
+        Future<void>.delayed(
+          const Duration(milliseconds: 150),
+          HapticFeedback.heavyImpact,
+        ),
+      );
     }
     setState(() {
       _lastScanResult = result;
@@ -192,6 +244,67 @@ class _StaffHomePageState extends State<StaffHomePage>
     );
   }
 
+  /// Confirms the overtime cash on the exit just scanned.
+  Future<void> _markLastOvertimeCollected() async {
+    final GateScanResult? result = _lastScanResult;
+    final String transactionId = result?.transactionId ?? '';
+    if (result == null || transactionId.isEmpty || _markingOvertime) return;
+    setState(() => _markingOvertime = true);
+    final bool ok = await _markOvertimeCollected(
+      transactionId,
+      exitLogId: result.activityLogId,
+    );
+    if (!mounted) return;
+    setState(() {
+      _markingOvertime = false;
+      // Only update the card if no newer scan replaced it meanwhile.
+      if (ok && identical(_lastScanResult, result)) {
+        _lastScanResult = result.markedCollected();
+      }
+    });
+  }
+
+  /// Confirms the overtime cash on an exit log opened from the scan lists.
+  Future<void> _markLogOvertimeCollected(Map<String, dynamic> log) async {
+    final String transactionId = ((log['transactionId'] as String?) ?? '')
+        .trim();
+    if (transactionId.isEmpty) return;
+    if (!await _markOvertimeCollected(transactionId)) {
+      throw StateError('Overtime cash was not saved.');
+    }
+  }
+
+  Future<bool> _markOvertimeCollected(
+    String transactionId, {
+    String? exitLogId,
+  }) async {
+    final GateStaff? staff = _currentStaff();
+    if (staff == null) return false;
+    try {
+      await _gateService.markOvertimeCollected(
+        staff: staff,
+        transactionId: transactionId,
+        exitLogId: exitLogId,
+      );
+      unawaited(HapticFeedback.mediumImpact());
+      return true;
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              friendlyError(
+                error,
+                fallback: 'Could not save. Check your connection and retry.',
+              ),
+            ),
+          ),
+        );
+      }
+      return false;
+    }
+  }
+
   Future<void> _pickHistoryDate() async {
     final DateTime now = DateTime.now();
     final DateTime? picked = await showDatePicker(
@@ -208,10 +321,6 @@ class _StaffHomePageState extends State<StaffHomePage>
     setState(() {
       _selectedHistoryDate = picked;
     });
-  }
-
-  bool _sameDate(DateTime a, DateTime b) {
-    return a.year == b.year && a.month == b.month && a.day == b.day;
   }
 
   bool _matchesHistoryFilter(Map<String, dynamic> data) {
@@ -231,8 +340,54 @@ class _StaffHomePageState extends State<StaffHomePage>
     return isActive;
   }
 
+  Widget _buildDeactivated() {
+    return Scaffold(
+      body: SafeArea(
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.person_off_rounded,
+                  size: 56,
+                  color: AppTheme.textMuted,
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'Account deactivated',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w800,
+                    color: AppTheme.textDark,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Your parking owner has deactivated this staff account, so '
+                  'it can no longer scan at the gate. Ask them to reactivate '
+                  'it if this is a mistake.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: AppTheme.textMuted),
+                ),
+                const SizedBox(height: 20),
+                FilledButton.icon(
+                  onPressed: _signOut,
+                  icon: const Icon(Icons.logout_rounded),
+                  label: const Text('Sign out'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (_deactivated) return _buildDeactivated();
     return FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
       future: _userFuture,
       builder:
@@ -241,8 +396,7 @@ class _StaffHomePageState extends State<StaffHomePage>
             AsyncSnapshot<DocumentSnapshot<Map<String, dynamic>>> snapshot,
           ) {
             final Map<String, dynamic> userData =
-                snapshot.data?.data() ??
-                <String, dynamic>{'firstName': 'Staff', 'role': 'Guard'};
+                snapshot.data?.data() ?? <String, dynamic>{'role': 'Guard'};
 
             return Scaffold(
               appBar: AppBar(

@@ -57,10 +57,13 @@ service cloud.firestore {
       return /databases/$(database)/documents/staff_accounts/$(id);
     }
 
+    // Owners deactivate staff (active: false) instead of deleting the
+    // record, so past scans keep a name. Records without the field are active.
     function isStaffOf(establishmentId) {
       return signedIn() &&
         exists(staffPath(uid())) &&
-        get(staffPath(uid())).data.facilityId == establishmentId;
+        get(staffPath(uid())).data.facilityId == establishmentId &&
+        get(staffPath(uid())).data.get('active', true) != false;
     }
 
     function establishmentPath(id) {
@@ -202,14 +205,36 @@ service cloud.firestore {
       return isAdmin() || isOwnerOf(establishmentId) || isStaffOf(establishmentId);
     }
 
+    // Staff may only record overtime cash as collected by themselves.
+    function overtimeCollectorOk() {
+      return unchanged('overtimeCollectedBy') ||
+        request.resource.data.overtimeCollectedBy == uid();
+    }
+
+    // Owners may switch an overtime exit between owed, collected and waived
+    // (on the ticket and its exit log), and change nothing else.
+    function ownerOvertimeUpdateOk() {
+      let statuses = ['cash_due', 'collected', 'waived'];
+      return resource.data.get('overtimeStatus', '') in statuses &&
+        request.resource.data.get('overtimeStatus', '') in statuses &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'overtimeStatus', 'overtimeStatusBy', 'overtimeStatusAt',
+          'overtimeCollectedBy', 'overtimeCollectedAt', 'updatedAt'
+        ]) &&
+        request.resource.data.get('overtimeStatusBy', null) == uid();
+    }
+
     match /activity_logs/{logId} {
       allow read: if canSeeEstablishment(resource.data.establishmentID);
       allow create: if isStaffOf(request.resource.data.establishmentID) &&
         request.resource.data.staffId == uid();
-      // Exit scans close the open entry log (isActive=false).
-      allow update: if isStaffOf(resource.data.establishmentID) &&
-        unchanged('establishmentID') &&
-        unchanged('transactionId');
+      // Exit scans close the open entry log (isActive=false), and staff
+      // mark overtime cash collected on the exit log.
+      allow update: if (isStaffOf(resource.data.establishmentID) &&
+          unchanged('establishmentID') &&
+          unchanged('transactionId') &&
+          overtimeCollectorOk()) ||
+        (isOwnerOf(resource.data.establishmentID) && ownerOvertimeUpdateOk());
       allow delete: if false;
     }
 
@@ -224,14 +249,15 @@ service cloud.firestore {
 
     // ---------- tickets and money (written by Cloud Functions only) ----------
 
-    // Gate staff record check-in/out and overtime; nothing about payment.
+    // Gate staff record check-in/out, overtime and overtime cash collected;
+    // nothing about payment.
     function staffTicketUpdateOk() {
       return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
         'entryStatus', 'entryAt', 'entryStaffId', 'entryLogId',
         'exitAt', 'exitStaffId', 'exitLogId', 'staySeconds',
         'overtimeHours', 'overtimeRate', 'overtimeAmount', 'overtimeStatus',
-        'updatedAt'
-      ]);
+        'overtimeCollectedBy', 'overtimeCollectedAt', 'updatedAt'
+      ]) && overtimeCollectorOk();
     }
 
     // Staff log drive-up customers as walk-ins: already checked in, no
@@ -256,8 +282,9 @@ service cloud.firestore {
         canSeeEstablishment(resource.data.establishmentId);
       allow create: if walkInCreateOk();
       allow delete: if false;
-      allow update: if isStaffOf(resource.data.establishmentId) &&
-        staffTicketUpdateOk();
+      allow update: if (isStaffOf(resource.data.establishmentId) &&
+          staffTicketUpdateOk()) ||
+        (isOwnerOf(resource.data.establishmentId) && ownerOvertimeUpdateOk());
     }
 
     match /payments/{paymentId} {

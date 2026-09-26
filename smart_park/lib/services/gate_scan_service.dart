@@ -18,6 +18,8 @@ class GateScanResult {
     this.billableHours,
     this.overtimeHours,
     this.overtimeAmount,
+    this.activityLogId,
+    this.overtimeCollected = false,
   });
 
   final String decision;
@@ -31,9 +33,99 @@ class GateScanResult {
   final double? overtimeHours;
   final double? overtimeAmount;
 
+  /// The gate log this scan wrote (the exit log for an exit scan).
+  final String? activityLogId;
+
+  /// Staff confirmed the overtime cash was handed over.
+  final bool overtimeCollected;
+
   bool get isAllowed => decision == 'ALLOWED';
   bool get isDenied => decision == 'DENIED';
   bool get hasOvertime => (overtimeHours ?? 0) > 0 && (overtimeAmount ?? 0) > 0;
+
+  /// This result after the overtime cash was marked collected.
+  GateScanResult markedCollected() => GateScanResult(
+    decision: decision,
+    vehiclePlate: vehiclePlate,
+    scanType: scanType,
+    timestamp: timestamp,
+    reason: 'Overtime cash collected. Release.',
+    transactionId: transactionId,
+    elapsed: elapsed,
+    billableHours: billableHours,
+    overtimeHours: overtimeHours,
+    overtimeAmount: overtimeAmount,
+    activityLogId: activityLogId,
+    overtimeCollected: true,
+  );
+}
+
+/// `overtimeStatus` values on exit logs and tickets.
+const String kOvertimeNone = 'none';
+const String kOvertimeCashDue = 'cash_due';
+const String kOvertimeCollected = 'collected';
+const String kOvertimeRateUnresolved = 'rate_unresolved';
+
+/// The owner let the driver off the overtime charge.
+const String kOvertimeWaived = 'waived';
+
+/// Statuses an owner may switch an overtime exit between.
+const List<String> kOwnerOvertimeStatuses = <String>[
+  kOvertimeCashDue,
+  kOvertimeCollected,
+  kOvertimeWaived,
+];
+
+/// Owner override of an exit's overtime status (e.g. cash handed over without
+/// staff confirming it, a wrong confirmation, or a waived charge). Updates the
+/// ticket and its exit log. Only exits that billed overtime cash can change.
+Future<void> setOvertimeStatusAsOwner({
+  required String ownerId,
+  required String transactionId,
+  required String status,
+  FirebaseFirestore? firestore,
+}) async {
+  if (!kOwnerOvertimeStatuses.contains(status)) {
+    throw ArgumentError.value(status, 'status');
+  }
+  final FirebaseFirestore db = firestore ?? FirebaseFirestore.instance;
+  final DocumentReference<Map<String, dynamic>> ticketRef = db
+      .collection('transactions')
+      .doc(transactionId);
+  final Map<String, dynamic> ticket =
+      (await ticketRef.get()).data() ?? <String, dynamic>{};
+  final String current = ((ticket['overtimeStatus'] as String?) ?? '')
+      .toLowerCase();
+  if (!kOwnerOvertimeStatuses.contains(current)) {
+    throw StateError('This exit has no overtime cash to update.');
+  }
+  if (current == status) return;
+  final Map<String, dynamic> fields = <String, dynamic>{
+    'overtimeStatus': status,
+    'overtimeStatusBy': ownerId,
+    'overtimeStatusAt': FieldValue.serverTimestamp(),
+    // Only a collected exit names who took the cash.
+    'overtimeCollectedBy': status == kOvertimeCollected
+        ? ownerId
+        : FieldValue.delete(),
+    'overtimeCollectedAt': status == kOvertimeCollected
+        ? FieldValue.serverTimestamp()
+        : FieldValue.delete(),
+  };
+  final String logId = ((ticket['exitLogId'] as String?) ?? '').trim();
+  final WriteBatch batch = db.batch();
+  batch.set(ticketRef, <String, dynamic>{
+    ...fields,
+    'updatedAt': FieldValue.serverTimestamp(),
+  }, SetOptions(merge: true));
+  if (logId.isNotEmpty) {
+    batch.set(
+      db.collection('activity_logs').doc(logId),
+      fields,
+      SetOptions(merge: true),
+    );
+  }
+  await batch.commit();
 }
 
 /// The signed-in staff member operating the gate.
@@ -43,21 +135,39 @@ class GateStaff {
     required this.email,
     required this.facilityId,
     required this.ownerId,
+    this.name = '',
   });
 
   final String staffId;
   final String email;
   final String? facilityId;
   final String? ownerId;
+
+  /// Name from the staff record, stamped on each log so the owner can still
+  /// see who scanned after the staff member is removed.
+  final String name;
 }
 
 /// Which facility a staff account is assigned to.
 class StaffAssignment {
-  const StaffAssignment({required this.facilityId, required this.ownerId});
+  const StaffAssignment({
+    required this.facilityId,
+    required this.ownerId,
+    this.staffName = '',
+    this.deactivated = false,
+  });
 
   final String? facilityId;
   final String? ownerId;
+  final String staffName;
+
+  /// The owner deactivated this staff account; it may not work the gate.
+  final bool deactivated;
 }
+
+/// Whether a `staff_accounts` record is active. Records from before
+/// deactivation existed have no `active` field and count as active.
+bool isStaffRecordActive(Map<String, dynamic> data) => data['active'] != false;
 
 /// Verifies parking tickets at the gate and records entry/exit scans.
 ///
@@ -112,11 +222,20 @@ class GateScanService {
   }
 
   StaffAssignment _assignmentFrom(Map<String, dynamic> data) {
+    if (!isStaffRecordActive(data)) {
+      return StaffAssignment(
+        facilityId: null,
+        ownerId: data['ownerId'] as String?,
+        staffName: ((data['name'] as String?) ?? '').trim(),
+        deactivated: true,
+      );
+    }
     return StaffAssignment(
       facilityId:
           (data['establishmentID'] as String?) ??
           (data['facilityId'] as String?),
       ownerId: data['ownerId'] as String?,
+      staffName: ((data['name'] as String?) ?? '').trim(),
     );
   }
 
@@ -525,8 +644,8 @@ class GateScanService {
     final double amount = rate == null ? 0 : extraHours * rate;
     final bool cashDue = extraHours > 0 && amount > 0;
     final String oStatus = extraHours <= 0
-        ? 'none'
-        : (cashDue ? 'cash_due' : 'rate_unresolved');
+        ? kOvertimeNone
+        : (cashDue ? kOvertimeCashDue : kOvertimeRateUnresolved);
     final DocumentReference<Map<String, dynamic>> ticketRef = _db
         .collection('transactions')
         .doc(transactionId);
@@ -590,9 +709,58 @@ class GateScanService {
       billableHours: includedHours + extraHours,
       overtimeHours: extraHours.toDouble(),
       overtimeAmount: amount,
+      activityLogId: exitRef.id,
       reason: extraHours <= 0
-          ? 'Within 2-hour base. Release.'
+          ? 'Within paid time. Release.'
           : (cashDue ? 'Overtime: collect cash first.' : 'Overtime: confirm.'),
+    );
+  }
+
+  /// Records that [staff] took the overtime cash for [transactionId], on the
+  /// ticket and its exit log, so the owner can tell collected cash from cash
+  /// still owed. [exitLogId] defaults to the one stored on the ticket.
+  Future<void> markOvertimeCollected({
+    required GateStaff staff,
+    required String transactionId,
+    String? exitLogId,
+  }) async {
+    final DocumentReference<Map<String, dynamic>> ticketRef = _db
+        .collection('transactions')
+        .doc(transactionId);
+    final Map<String, dynamic> ticket =
+        (await ticketRef.get()).data() ?? <String, dynamic>{};
+    final String status = ((ticket['overtimeStatus'] as String?) ?? '')
+        .toLowerCase();
+    if (status == kOvertimeCollected) return;
+    if (status != kOvertimeCashDue) {
+      throw StateError('No overtime cash is due on this ticket.');
+    }
+    final String logId = (exitLogId ?? (ticket['exitLogId'] as String?) ?? '')
+        .trim();
+    final Map<String, dynamic> collected = <String, dynamic>{
+      'overtimeStatus': kOvertimeCollected,
+      'overtimeCollectedBy': staff.staffId,
+      'overtimeCollectedAt': FieldValue.serverTimestamp(),
+    };
+    final WriteBatch batch = _db.batch();
+    batch.set(ticketRef, <String, dynamic>{
+      ...collected,
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+    if (logId.isNotEmpty) {
+      batch.set(
+        _db.collection('activity_logs').doc(logId),
+        collected,
+        SetOptions(merge: true),
+      );
+    }
+    await batch.commit();
+    await _logStaffAction(
+      staff: staff,
+      action: 'overtime_collected',
+      transactionId: transactionId,
+      activityLogId: logId,
+      vehiclePlate: ticket['vehiclePlate'] as String?,
     );
   }
 
@@ -677,6 +845,7 @@ class GateScanService {
       'ownerId': staff.ownerId,
       'staffId': staff.staffId,
       'staffEmail': staff.email.trim(),
+      if (staff.name.trim().isNotEmpty) 'staffName': staff.name.trim(),
       'vehiclePlate': plate,
       'scanType': scanType,
       'gateMode': scanType,

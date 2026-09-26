@@ -510,7 +510,12 @@ class _PastTicketRow extends StatelessWidget {
                       borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
                     ),
                     child: Text(
-                      'Overtime ${overtimeHours}h · PHP ${overtimeAmount.toStringAsFixed(2)} cash',
+                      'Overtime ${overtimeHours}h · PHP ${overtimeAmount.toStringAsFixed(2)} cash'
+                      '${switch (data['overtimeStatus']) {
+                        'collected' => ' · paid',
+                        'waived' => ' · waived',
+                        _ => '',
+                      }}',
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w700,
