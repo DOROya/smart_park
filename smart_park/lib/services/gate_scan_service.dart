@@ -43,21 +43,39 @@ class GateStaff {
     required this.email,
     required this.facilityId,
     required this.ownerId,
+    this.name = '',
   });
 
   final String staffId;
   final String email;
   final String? facilityId;
   final String? ownerId;
+
+  /// Name from the staff record, stamped on each log so the owner can still
+  /// see who scanned after the staff member is removed.
+  final String name;
 }
 
 /// Which facility a staff account is assigned to.
 class StaffAssignment {
-  const StaffAssignment({required this.facilityId, required this.ownerId});
+  const StaffAssignment({
+    required this.facilityId,
+    required this.ownerId,
+    this.staffName = '',
+    this.deactivated = false,
+  });
 
   final String? facilityId;
   final String? ownerId;
+  final String staffName;
+
+  /// The owner deactivated this staff account; it may not work the gate.
+  final bool deactivated;
 }
+
+/// Whether a `staff_accounts` record is active. Records from before
+/// deactivation existed have no `active` field and count as active.
+bool isStaffRecordActive(Map<String, dynamic> data) => data['active'] != false;
 
 /// Verifies parking tickets at the gate and records entry/exit scans.
 ///
@@ -112,11 +130,20 @@ class GateScanService {
   }
 
   StaffAssignment _assignmentFrom(Map<String, dynamic> data) {
+    if (!isStaffRecordActive(data)) {
+      return StaffAssignment(
+        facilityId: null,
+        ownerId: data['ownerId'] as String?,
+        staffName: ((data['name'] as String?) ?? '').trim(),
+        deactivated: true,
+      );
+    }
     return StaffAssignment(
       facilityId:
           (data['establishmentID'] as String?) ??
           (data['facilityId'] as String?),
       ownerId: data['ownerId'] as String?,
+      staffName: ((data['name'] as String?) ?? '').trim(),
     );
   }
 
@@ -591,7 +618,7 @@ class GateScanService {
       overtimeHours: extraHours.toDouble(),
       overtimeAmount: amount,
       reason: extraHours <= 0
-          ? 'Within 2-hour base. Release.'
+          ? 'Within paid time. Release.'
           : (cashDue ? 'Overtime: collect cash first.' : 'Overtime: confirm.'),
     );
   }
@@ -677,6 +704,7 @@ class GateScanService {
       'ownerId': staff.ownerId,
       'staffId': staff.staffId,
       'staffEmail': staff.email.trim(),
+      if (staff.name.trim().isNotEmpty) 'staffName': staff.name.trim(),
       'vehiclePlate': plate,
       'scanType': scanType,
       'gateMode': scanType,

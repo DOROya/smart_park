@@ -57,10 +57,13 @@ service cloud.firestore {
       return /databases/$(database)/documents/staff_accounts/$(id);
     }
 
+    // Owners deactivate staff (active: false) instead of deleting the
+    // record, so past scans keep a name. Records without the field are active.
     function isStaffOf(establishmentId) {
       return signedIn() &&
         exists(staffPath(uid())) &&
-        get(staffPath(uid())).data.facilityId == establishmentId;
+        get(staffPath(uid())).data.facilityId == establishmentId &&
+        get(staffPath(uid())).data.get('active', true) != false;
     }
 
     function establishmentPath(id) {

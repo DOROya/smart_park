@@ -225,6 +225,19 @@ test("staff log gate scans for their facility only", async () => {
   await assertFails(getDocs(query(collection(otherOwner(), "activity_logs"), where("establishmentID", "==", "est1"))));
 });
 
+test("deactivated staff lose gate access until reactivated", async () => {
+  await assertFails(updateDoc(doc(otherOwner(), "staff_accounts/staff1"), { active: false }));
+  await assertSucceeds(updateDoc(doc(owner(), "staff_accounts/staff1"), { active: false }));
+  await assertFails(setDoc(doc(staff(), "activity_logs/new"), { establishmentID: "est1", staffId: "staff1", scanType: "entry" }));
+  await assertFails(getDocs(query(collection(staff(), "activity_logs"), where("establishmentID", "==", "est1"))));
+  await assertFails(setDoc(doc(staff(), "transactions/tx1"), { entryStatus: "checked_in" }, { merge: true }));
+  // They can still read their own record, to see that they were deactivated.
+  await assertSucceeds(getDoc(doc(staff(), "staff_accounts/staff1")));
+
+  await assertSucceeds(updateDoc(doc(owner(), "staff_accounts/staff1"), { active: true }));
+  await assertSucceeds(setDoc(doc(staff(), "activity_logs/new"), { establishmentID: "est1", staffId: "staff1", scanType: "entry" }));
+});
+
 // ---------- staff accounts ----------
 
 test("owners manage staff for their own facility only", async () => {

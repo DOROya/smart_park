@@ -12,12 +12,14 @@ import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 
 import '../../models/facility_registration_data.dart';
 import '../../services/error_reporter.dart';
+import '../../services/gate_scan_service.dart' show isStaffRecordActive;
 import '../../services/establishment_repository.dart';
 import '../../services/platform_fees.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/friendly_error.dart';
 import '../../utils/staff_credentials.dart';
 import '../../widgets/smartpark_ui.dart';
+import '../../widgets/sp_activity_details.dart';
 import '../../widgets/sp_loading.dart';
 import '../../widgets/sp_profile_view.dart';
 import '../auth/sign_in_screen.dart';
@@ -46,6 +48,9 @@ class _ParkingOwnerHomePageState extends State<ParkingOwnerHomePage>
   int _selectedIndex = 0;
   bool _addingStaff = false;
   bool _railExtended = false;
+
+  /// Staff uid the Activity tab is filtered to; set from the Staff tab.
+  String? _activityStaffId;
 
   final GlobalKey<FormState> _staffFormKey = GlobalKey<FormState>();
   final TextEditingController _staffNameController = TextEditingController();
@@ -446,44 +451,62 @@ class _ParkingOwnerHomePageState extends State<ParkingOwnerHomePage>
     );
   }
 
-  Future<void> _removeStaff(String staffDocId, String staffName) async {
-    final bool? confirmed = await showDialog<bool>(
-      context: context,
-      builder: (BuildContext dialogContext) {
-        return AlertDialog(
-          title: const Text('Remove staff?'),
-          content: Text(
-            '$staffName will be removed from your staff list. '
-            'This cannot be undone.',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(false),
-              child: const Text('Cancel'),
+  /// Deactivating keeps the staff record (so their past scans keep a name)
+  /// but blocks them at the gate; the setStaffSignInState function also
+  /// disables their sign-in. Reactivating undoes both.
+  Future<void> _setStaffActive(
+    String staffDocId,
+    String staffName, {
+    required bool active,
+  }) async {
+    if (!active) {
+      final bool? confirmed = await showDialog<bool>(
+        context: context,
+        builder: (BuildContext dialogContext) {
+          return AlertDialog(
+            title: const Text('Deactivate staff?'),
+            content: Text(
+              '$staffName will be signed out and can no longer scan at your '
+              'gate. Scans they already recorded stay in Activity. You can '
+              'reactivate them later from the Deactivated list.',
             ),
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(true),
-              style: TextButton.styleFrom(foregroundColor: AppTheme.danger),
-              child: const Text('Remove'),
-            ),
-          ],
-        );
-      },
-    );
-    if (confirmed != true) {
-      return;
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(false),
+                child: const Text('Cancel'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(true),
+                style: TextButton.styleFrom(foregroundColor: AppTheme.danger),
+                child: const Text('Deactivate'),
+              ),
+            ],
+          );
+        },
+      );
+      if (confirmed != true) {
+        return;
+      }
     }
 
     try {
       await FirebaseFirestore.instance
           .collection('staff_accounts')
           .doc(staffDocId)
-          .delete();
-      _showSnackBar('Staff account removed.');
-    } catch (error, stack) {
-      reportError(error, stack, reason: 'Removing staff account failed');
+          .update(<String, dynamic>{
+            'active': active,
+            'deactivatedAt': active
+                ? FieldValue.delete()
+                : FieldValue.serverTimestamp(),
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
       _showSnackBar(
-        friendlyError(error, fallback: 'Unable to remove this staff member.'),
+        active ? '$staffName reactivated.' : '$staffName deactivated.',
+      );
+    } catch (error, stack) {
+      reportError(error, stack, reason: 'Changing staff active state failed');
+      _showSnackBar(
+        friendlyError(error, fallback: 'Unable to update this staff member.'),
       );
     }
   }

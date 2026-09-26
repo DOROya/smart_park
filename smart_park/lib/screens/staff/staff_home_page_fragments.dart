@@ -2,15 +2,6 @@
 
 part of 'staff_home_page.dart';
 
-DateTime? _parseDateTime(dynamic value) {
-  if (value == null) return null;
-  if (value is Timestamp) return value.toDate();
-  if (value is DateTime) return value;
-  if (value is String) return DateTime.tryParse(value);
-  if (value is num) return DateTime.fromMillisecondsSinceEpoch(value.toInt());
-  return null;
-}
-
 extension _StaffHomePageFragments on _StaffHomePageState {
   Widget _buildDashboardTab(Map<String, dynamic> userData) {
     if (_assignedFacilityId == null || _assignedFacilityId!.isEmpty) {
@@ -27,170 +18,143 @@ extension _StaffHomePageFragments on _StaffHomePageState {
                 (userData['role'] as String?) ??
                 'Staff')
             .trim();
-    final String firstName = ((userData['firstName'] as String?) ?? '').trim();
+    // Staff usually have no users/ profile, so use their staff record name.
+    final String profileFirstName = ((userData['firstName'] as String?) ?? '')
+        .trim();
+    final String firstName = profileFirstName.isNotEmpty
+        ? profileFirstName
+        : _staffName.split(' ').first;
 
-    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: cachedStream(
-        'activity_$_assignedFacilityId',
-        () => FirebaseFirestore.instance
-            .collection('activity_logs')
-            .where('establishmentID', isEqualTo: _assignedFacilityId)
-            .snapshots(),
-      ),
-      builder:
-          (
-            BuildContext context,
-            AsyncSnapshot<QuerySnapshot<Map<String, dynamic>>> activitySnapshot,
-          ) {
-            return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-              stream: cachedStream(
-                'establishment_$_assignedFacilityId',
-                () => FirebaseFirestore.instance
-                    .collection('establishments')
-                    .doc(_assignedFacilityId)
-                    .snapshots(),
-              ),
-              builder:
-                  (
-                    BuildContext context,
-                    AsyncSnapshot<DocumentSnapshot<Map<String, dynamic>>>
-                    facilitySnapshot,
-                  ) {
-                    return StreamBuilder<
-                      DocumentSnapshot<Map<String, dynamic>>
-                    >(
-                      stream: cachedStream(
-                        'details_$_assignedFacilityId',
-                        () => FirebaseFirestore.instance
-                            .collection('establishment_details')
-                            .doc(_assignedFacilityId)
-                            .snapshots(),
-                      ),
-                      builder:
-                          (
-                            BuildContext context,
-                            AsyncSnapshot<
-                              DocumentSnapshot<Map<String, dynamic>>
-                            >
-                            detailsSnapshot,
-                          ) {
-                            final DateTime now = DateTime.now();
-                            final SpActivitySummary summary =
-                                SpActivitySummary.fromLogs(
-                                  (activitySnapshot.data?.docs ??
-                                          <
-                                            QueryDocumentSnapshot<
-                                              Map<String, dynamic>
-                                            >
-                                          >[])
-                                      .map(
-                                        (
-                                          QueryDocumentSnapshot<
-                                            Map<String, dynamic>
-                                          >
-                                          doc,
-                                        ) => doc.data(),
-                                      ),
-                                  now,
-                                );
-
-                            final Map<String, dynamic> facility =
-                                facilitySnapshot.data?.data() ??
-                                <String, dynamic>{};
-                            final Map<String, dynamic> details =
-                                detailsSnapshot.data?.data() ??
-                                <String, dynamic>{};
-                            final String facilityName =
-                                ((facility['name'] as String?) ?? '').trim();
-                            final Map<dynamic, dynamic> slotCounts =
-                                (details['slotCounts']
-                                    as Map<dynamic, dynamic>?) ??
-                                <dynamic, dynamic>{};
-                            final int carSlots =
-                                ((slotCounts['car'] as num?) ?? 0).toInt();
-                            final int motorcycleSlots =
-                                ((slotCounts['motorcycle'] as num?) ?? 0)
-                                    .toInt();
-                            final int slotSum = carSlots + motorcycleSlots;
-                            final int totalSlots = slotSum > 0
-                                ? slotSum
-                                : ((facility['availability'] as num?) ?? 0)
-                                      .toInt();
-
-                            return ListView(
-                              padding: const EdgeInsets.all(16),
-                              children: [
-                                SpHeroBanner(
-                                  title: firstName.isEmpty
-                                      ? spGreeting(now)
-                                      : '${spGreeting(now)}, $firstName',
-                                  badge: roleLabel,
-                                  details: <(IconData, String)>[
-                                    (
-                                      Icons.storefront_rounded,
-                                      facilityName.isEmpty
-                                          ? 'Assigned facility'
-                                          : facilityName,
-                                    ),
-                                    (
-                                      Icons.calendar_today_rounded,
-                                      spFormatDate(now),
-                                    ),
-                                  ],
-                                  action: SpHeroButton(
-                                    icon: Icons.qr_code_scanner_rounded,
-                                    label: 'Open Gate Scanner',
-                                    onPressed: () {
-                                      setState(() {
-                                        _selectedNavIndex = 1;
-                                      });
-                                    },
-                                  ),
-                                ),
-                                const SizedBox(height: 16),
-                                const SpSectionLabel("Today's Activity"),
-                                const SizedBox(height: 10),
-                                SpDailyActivityTiles(summary: summary),
-                                const SizedBox(height: 16),
-                                SpLiveSlotsCard(
-                                  establishmentId: _assignedFacilityId ?? '',
-                                  totalSlots: totalSlots,
-                                  fallbackOccupied: summary.insideNow,
-                                  carSlots: carSlots,
-                                  motorcycleSlots: motorcycleSlots,
-                                ),
-                                const SizedBox(height: 16),
-                                SpSectionLabel(
-                                  'Recent Scans',
-                                  trailing: summary.dayLogs.isEmpty
-                                      ? null
-                                      : TextButton(
-                                          onPressed: () {
-                                            setState(() {
-                                              _selectedHistoryDate =
-                                                  DateTime.now();
-                                              _selectedNavIndex = 2;
-                                            });
-                                          },
-                                          child: const Text('View all'),
-                                        ),
-                                ),
-                                const SizedBox(height: 6),
-                                if (summary.dayLogs.isEmpty)
-                                  const SpEmptyState(
-                                    message: 'No scans yet today.',
-                                  )
-                                else
-                                  for (final Map<String, dynamic> data
-                                      in summary.dayLogs.take(3))
-                                    SpActivityCard(data: data),
-                              ],
+    return withDayLogs(
+      _assignedFacilityId!,
+      DateTime.now(),
+      builder: (BuildContext context, SpDayLogs today) {
+        return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+          stream: cachedStream(
+            'establishment_$_assignedFacilityId',
+            () => FirebaseFirestore.instance
+                .collection('establishments')
+                .doc(_assignedFacilityId)
+                .snapshots(),
+          ),
+          builder:
+              (
+                BuildContext context,
+                AsyncSnapshot<DocumentSnapshot<Map<String, dynamic>>>
+                facilitySnapshot,
+              ) {
+                return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+                  stream: cachedStream(
+                    'details_$_assignedFacilityId',
+                    () => FirebaseFirestore.instance
+                        .collection('establishment_details')
+                        .doc(_assignedFacilityId)
+                        .snapshots(),
+                  ),
+                  builder:
+                      (
+                        BuildContext context,
+                        AsyncSnapshot<DocumentSnapshot<Map<String, dynamic>>>
+                        detailsSnapshot,
+                      ) {
+                        final DateTime now = DateTime.now();
+                        final SpActivitySummary summary =
+                            SpActivitySummary.fromLogs(
+                              today.logs,
+                              now,
+                              insideLogs: today.insideLogs,
                             );
-                          },
-                    );
-                  },
-            );
-          },
+
+                        final Map<String, dynamic> facility =
+                            facilitySnapshot.data?.data() ??
+                            <String, dynamic>{};
+                        final Map<String, dynamic> details =
+                            detailsSnapshot.data?.data() ?? <String, dynamic>{};
+                        final String facilityName =
+                            ((facility['name'] as String?) ?? '').trim();
+                        final Map<dynamic, dynamic> slotCounts =
+                            (details['slotCounts'] as Map<dynamic, dynamic>?) ??
+                            <dynamic, dynamic>{};
+                        final int carSlots = ((slotCounts['car'] as num?) ?? 0)
+                            .toInt();
+                        final int motorcycleSlots =
+                            ((slotCounts['motorcycle'] as num?) ?? 0).toInt();
+                        final int slotSum = carSlots + motorcycleSlots;
+                        final int totalSlots = slotSum > 0
+                            ? slotSum
+                            : ((facility['availability'] as num?) ?? 0).toInt();
+
+                        return ListView(
+                          padding: const EdgeInsets.all(16),
+                          children: [
+                            SpHeroBanner(
+                              title: firstName.isEmpty
+                                  ? spGreeting(now)
+                                  : '${spGreeting(now)}, $firstName',
+                              badge: roleLabel,
+                              details: <(IconData, String)>[
+                                (
+                                  Icons.storefront_rounded,
+                                  facilityName.isEmpty
+                                      ? 'Assigned facility'
+                                      : facilityName,
+                                ),
+                                (
+                                  Icons.calendar_today_rounded,
+                                  spFormatDate(now),
+                                ),
+                              ],
+                              action: SpHeroButton(
+                                icon: Icons.qr_code_scanner_rounded,
+                                label: 'Open Gate Scanner',
+                                onPressed: () {
+                                  setState(() {
+                                    _selectedNavIndex = 1;
+                                  });
+                                },
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                            const SpSectionLabel("Today's Activity"),
+                            const SizedBox(height: 10),
+                            SpDailyActivityTiles(summary: summary),
+                            const SizedBox(height: 16),
+                            SpLiveSlotsCard(
+                              establishmentId: _assignedFacilityId ?? '',
+                              totalSlots: totalSlots,
+                              fallbackOccupied: summary.insideNow,
+                              carSlots: carSlots,
+                              motorcycleSlots: motorcycleSlots,
+                            ),
+                            const SizedBox(height: 16),
+                            SpSectionLabel(
+                              'Recent Scans',
+                              trailing: summary.dayLogs.isEmpty
+                                  ? null
+                                  : TextButton(
+                                      onPressed: () {
+                                        setState(() {
+                                          _selectedHistoryDate = DateTime.now();
+                                          _selectedNavIndex = 2;
+                                        });
+                                      },
+                                      child: const Text('View all'),
+                                    ),
+                            ),
+                            const SizedBox(height: 6),
+                            if (summary.dayLogs.isEmpty)
+                              const SpEmptyState(message: 'No scans yet today.')
+                            else
+                              for (final Map<String, dynamic> data
+                                  in summary.dayLogs.take(3))
+                                SpActivityCard(data: data),
+                          ],
+                        );
+                      },
+                );
+              },
+        );
+      },
     );
   }
 
@@ -329,6 +293,45 @@ extension _StaffHomePageFragments on _StaffHomePageState {
                           controller: _scannerController,
                           onDetect: _onBarcodeDetect,
                         ),
+                        Positioned(
+                          top: 8,
+                          right: 8,
+                          child: ValueListenableBuilder<MobileScannerState>(
+                            valueListenable: _scannerController,
+                            builder:
+                                (
+                                  BuildContext context,
+                                  MobileScannerState state,
+                                  Widget? child,
+                                ) {
+                                  if (state.torchState ==
+                                      TorchState.unavailable) {
+                                    return const SizedBox.shrink();
+                                  }
+                                  final bool on =
+                                      state.torchState == TorchState.on;
+                                  return IconButton.filled(
+                                    tooltip: on
+                                        ? 'Turn off flashlight'
+                                        : 'Turn on flashlight',
+                                    style: IconButton.styleFrom(
+                                      backgroundColor: on
+                                          ? AppTheme.accent
+                                          : Colors.black54,
+                                      foregroundColor: on
+                                          ? AppTheme.onAccent
+                                          : Colors.white,
+                                    ),
+                                    onPressed: _scannerController.toggleTorch,
+                                    icon: Icon(
+                                      on
+                                          ? Icons.flash_on_rounded
+                                          : Icons.flash_off_rounded,
+                                    ),
+                                  );
+                                },
+                          ),
+                        ),
                         Center(
                           child: Container(
                             width: 220,
@@ -358,7 +361,11 @@ extension _StaffHomePageFragments on _StaffHomePageState {
         _ManualPlateLookup(onLookup: _lookupByPlate),
         if (facilityId != null && facilityId.isNotEmpty) ...[
           const SizedBox(height: 12),
-          WalkInPanel(facilityId: facilityId, ownerId: _ownerId),
+          WalkInPanel(
+            facilityId: facilityId,
+            ownerId: _ownerId,
+            staffName: _staffName,
+          ),
         ],
         const SizedBox(height: 12),
         Row(
@@ -453,107 +460,94 @@ extension _StaffHomePageFragments on _StaffHomePageState {
           ],
         ),
         Expanded(
-          child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-            stream: cachedStream(
-              'history_$facilityId',
-              () => FirebaseFirestore.instance
-                  .collection('activity_logs')
-                  .where('establishmentID', isEqualTo: facilityId)
-                  .orderBy('timestamp', descending: true)
-                  .snapshots(),
-            ),
-            builder:
-                (
-                  BuildContext context,
-                  AsyncSnapshot<QuerySnapshot<Map<String, dynamic>>> snapshot,
-                ) {
-                  if (snapshot.hasError) {
-                    return Center(
-                      child: Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Text(
-                          'Could not load history.\n'
-                          '${friendlyError(snapshot.error!, fallback: 'Please try again.')}',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(color: AppTheme.textMuted),
-                        ),
-                      ),
-                    );
-                  }
+          // Only the picked day is loaded, not the facility's whole history.
+          child: withDayLogs(
+            facilityId,
+            _selectedHistoryDate,
+            builder: (BuildContext context, SpDayLogs day) {
+              if (day.error != null) {
+                return Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Text(
+                      'Could not load history.\n'
+                      '${friendlyError(day.error!, fallback: 'Please try again.')}',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: AppTheme.textMuted),
+                    ),
+                  ),
+                );
+              }
 
-                  if (!snapshot.hasData) {
-                    return const SpSkeletonList();
-                  }
+              if (!day.loaded) {
+                return const SpSkeletonList();
+              }
 
-                  final List<Map<String, dynamic>> dayLogs = snapshot.data!.docs
-                      .map(
-                        (QueryDocumentSnapshot<Map<String, dynamic>> doc) =>
-                            doc.data(),
-                      )
-                      .where((Map<String, dynamic> data) {
-                        // Pending server timestamps read as null; treat them as now.
-                        final DateTime date =
-                            _parseDateTime(data['timestamp']) ?? DateTime.now();
-                        return _sameDate(date, _selectedHistoryDate);
-                      })
-                      .toList();
-                  final List<Map<String, dynamic>> filtered = dayLogs
-                      .where(_matchesHistoryFilter)
-                      .toList();
+              final List<Map<String, dynamic>> dayLogs = day.logs;
+              // Inside lists every vehicle still parked, whatever day it
+              // came in, like the owner's Activity tab.
+              final bool insideTab = _historyFilter == 'active';
+              final List<Map<String, dynamic>> filtered = insideTab
+                  ? day.insideLogs.where(spIsInsideLog).toList()
+                  : dayLogs.where(_matchesHistoryFilter).toList();
 
-                  final int entries = dayLogs
-                      .where(
-                        (Map<String, dynamic> d) =>
-                            spIsAllowedLog(d) && spLogScanType(d) == 'entry',
-                      )
-                      .length;
-                  final int exits = dayLogs
-                      .where(
-                        (Map<String, dynamic> d) =>
-                            spIsAllowedLog(d) && spLogScanType(d) == 'exit',
-                      )
-                      .length;
-                  final int denied = dayLogs
-                      .where((Map<String, dynamic> d) => !spIsAllowedLog(d))
-                      .length;
+              final int entries = dayLogs
+                  .where(
+                    (Map<String, dynamic> d) =>
+                        spIsAllowedLog(d) && spLogScanType(d) == 'entry',
+                  )
+                  .length;
+              final int exits = dayLogs
+                  .where(
+                    (Map<String, dynamic> d) =>
+                        spIsAllowedLog(d) && spLogScanType(d) == 'exit',
+                  )
+                  .length;
+              final int denied = dayLogs
+                  .where((Map<String, dynamic> d) => !spIsAllowedLog(d))
+                  .length;
 
-                  return ListView(
-                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+              return ListView(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+                children: [
+                  Row(
                     children: [
-                      Row(
+                      _historyStat('Entries', entries, AppTheme.success),
+                      const SizedBox(width: 8),
+                      _historyStat('Exits', exits, AppTheme.info),
+                      const SizedBox(width: 8),
+                      _historyStat('Denied', denied, AppTheme.danger),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  if (filtered.isEmpty)
+                    Padding(
+                      padding: EdgeInsets.symmetric(vertical: 40),
+                      child: Column(
                         children: [
-                          _historyStat('Entries', entries, AppTheme.success),
-                          const SizedBox(width: 8),
-                          _historyStat('Exits', exits, AppTheme.info),
-                          const SizedBox(width: 8),
-                          _historyStat('Denied', denied, AppTheme.danger),
+                          Icon(
+                            Icons.receipt_long_rounded,
+                            size: 44,
+                            color: AppTheme.borderStrong,
+                          ),
+                          SizedBox(height: 8),
+                          Text(
+                            'No scans for this filter and date.',
+                            style: TextStyle(color: AppTheme.textMuted),
+                          ),
                         ],
                       ),
-                      const SizedBox(height: 12),
-                      if (filtered.isEmpty)
-                        Padding(
-                          padding: EdgeInsets.symmetric(vertical: 40),
-                          child: Column(
-                            children: [
-                              Icon(
-                                Icons.receipt_long_rounded,
-                                size: 44,
-                                color: AppTheme.borderStrong,
-                              ),
-                              SizedBox(height: 8),
-                              Text(
-                                'No scans for this filter and date.',
-                                style: TextStyle(color: AppTheme.textMuted),
-                              ),
-                            ],
-                          ),
-                        )
-                      else
-                        for (final Map<String, dynamic> data in filtered)
-                          SpActivityCard(data: data),
-                    ],
-                  );
-                },
+                    )
+                  else
+                    for (final Map<String, dynamic> data in filtered)
+                      SpActivityCard(
+                        data: data,
+                        showDate: insideTab,
+                        onTap: () => showSpActivityDetails(context, log: data),
+                      ),
+                ],
+              );
+            },
           ),
         ),
       ],
@@ -699,8 +693,8 @@ class _GateResultCard extends StatelessWidget {
           if (result.scanType == 'exit' && result.elapsed != null) ...<Widget>[
             const SizedBox(height: 6),
             Text(
-              'Stay ${_formatStay(result.elapsed!)} - billed '
-              '${result.billableHours ?? 2}h (2h base).',
+              'Stay ${_formatStay(result.elapsed!)}'
+              '${result.billableHours == null ? '' : ' - billed ${result.billableHours}h'}.',
               style: const TextStyle(fontWeight: FontWeight.w600),
             ),
           ],

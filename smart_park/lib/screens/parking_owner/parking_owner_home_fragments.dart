@@ -173,29 +173,23 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
                     .snapshots(),
               ),
               builder: (context, detailsSnapshot) {
-                return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                  stream: cachedStream(
-                    'activity_$establishmentId',
-                    () => FirebaseFirestore.instance
-                        .collection('activity_logs')
-                        .where('establishmentID', isEqualTo: establishmentId)
-                        .snapshots(),
-                  ),
-                  builder: (context, activitySnapshot) {
+                return withDayLogs(
+                  establishmentId,
+                  now,
+                  builder: (BuildContext context, SpDayLogs today) {
+                    final List<Map<String, dynamic>> logs = today.logs;
+                    final List<Map<String, dynamic>> insideLogs =
+                        today.insideLogs;
                     final Map<String, dynamic> facility =
                         facilitySnapshot.data?.data() ?? <String, dynamic>{};
                     final Map<String, dynamic>? details = detailsSnapshot.data
                         ?.data();
-                    final SpActivitySummary
-                    summary = SpActivitySummary.fromLogs(
-                      (activitySnapshot.data?.docs ??
-                              <QueryDocumentSnapshot<Map<String, dynamic>>>[])
-                          .map(
-                            (QueryDocumentSnapshot<Map<String, dynamic>> doc) =>
-                                doc.data(),
-                          ),
-                      now,
-                    );
+                    final SpActivitySummary summary =
+                        SpActivitySummary.fromLogs(
+                          logs,
+                          now,
+                          insideLogs: insideLogs,
+                        );
                     final String facilityName =
                         ((facility['name'] as String?) ?? '').trim();
                     final Map<dynamic, dynamic> slotCounts =
@@ -293,7 +287,7 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
                         else
                           for (final Map<String, dynamic> data
                               in summary.dayLogs.take(3))
-                            SpActivityCard(data: data),
+                            _recentScanCard(data),
                       ],
                     );
                   },
@@ -363,7 +357,7 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
               const SpEmptyState(message: 'No scans yet today.')
             else
               for (final Map<String, dynamic> data in summary.dayLogs.take(6))
-                SpActivityCard(data: data),
+                _recentScanCard(data),
           ],
           right: [slotsCard, const SizedBox(height: 16), detailsCard],
         ),
@@ -372,6 +366,13 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
   }
 
   bool get _isTablet => spIsTablet(context);
+
+  Widget _recentScanCard(Map<String, dynamic> data) {
+    return SpActivityCard(
+      data: data,
+      onTap: () => showSpActivityDetails(context, log: data),
+    );
+  }
 
   /// Two top-aligned columns for tablet layouts.
   Widget _ownerTabletColumns({
@@ -569,7 +570,13 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
             ],
           );
         }
-        return _GateActivityContent(facilityId: facilityId);
+        return _GateActivityContent(
+          facilityId: facilityId,
+          ownerId: ownerId,
+          staffFilter: _activityStaffId,
+          onStaffFilterChanged: (String? staffId) =>
+              setState(() => _activityStaffId = staffId),
+        );
       },
     );
   }
@@ -650,9 +657,17 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
                 AsyncSnapshot<QuerySnapshot<Map<String, dynamic>>> snapshot,
               ) {
                 final List<QueryDocumentSnapshot<Map<String, dynamic>>>
-                staffDocs =
+                allStaffDocs =
                     snapshot.data?.docs ??
                     <QueryDocumentSnapshot<Map<String, dynamic>>>[];
+                final List<QueryDocumentSnapshot<Map<String, dynamic>>>
+                staffDocs = allStaffDocs
+                    .where((doc) => isStaffRecordActive(doc.data()))
+                    .toList();
+                final List<QueryDocumentSnapshot<Map<String, dynamic>>>
+                deactivatedDocs = allStaffDocs
+                    .where((doc) => !isStaffRecordActive(doc.data()))
+                    .toList();
 
                 Widget content;
                 if (snapshot.hasError) {
@@ -665,19 +680,51 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
                     ConnectionState.waiting) {
                   content = const SpSkeletonList();
                 } else if (staffDocs.isEmpty) {
-                  content = const SpEmptyState(
+                  content = SpEmptyState(
                     boxed: false,
                     icon: Icons.groups_outlined,
-                    message:
-                        'No staff accounts yet. Add your first staff '
-                        'member above.',
+                    message: deactivatedDocs.isEmpty
+                        ? 'No staff accounts yet. Add your first staff '
+                              'member above.'
+                        : 'No active staff. Add someone above or '
+                              'reactivate a staff member below.',
                   );
-                } else {
+                } else if (!hasFacilityId) {
                   content = Column(
                     children: [
                       for (final QueryDocumentSnapshot<Map<String, dynamic>> doc
                           in staffDocs)
-                        _buildStaffRow(doc),
+                        _buildStaffRow(doc, null, statsLoaded: false),
+                    ],
+                  );
+                } else {
+                  content = withDayLogs(
+                    facilityId,
+                    DateTime.now(),
+                    builder: (BuildContext context, SpDayLogs today) {
+                      final Map<String, _StaffDayStats> stats =
+                          _StaffDayStats.today(today.logs);
+                      return Column(
+                        children: [
+                          for (final QueryDocumentSnapshot<Map<String, dynamic>>
+                              doc
+                              in staffDocs)
+                            _buildStaffRow(
+                              doc,
+                              stats[_staffUid(doc)],
+                              statsLoaded: today.loaded,
+                            ),
+                        ],
+                      );
+                    },
+                  );
+                }
+                if (deactivatedDocs.isNotEmpty) {
+                  content = Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      content,
+                      _buildDeactivatedStaff(deactivatedDocs),
                     ],
                   );
                 }
@@ -685,6 +732,9 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
                 return SpSectionCard(
                   icon: Icons.groups_rounded,
                   title: 'Active Staff',
+                  subtitle: staffDocs.isEmpty
+                      ? null
+                      : 'Tap a staff member to see the scans they recorded.',
                   trailing: staffDocs.isEmpty
                       ? null
                       : SpChip(
@@ -731,79 +781,189 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
     );
   }
 
-  Widget _buildStaffRow(QueryDocumentSnapshot<Map<String, dynamic>> doc) {
+  String _staffUid(QueryDocumentSnapshot<Map<String, dynamic>> doc) {
+    final String uid = ((doc.data()['userId'] as String?) ?? '').trim();
+    return uid.isEmpty ? doc.id : uid;
+  }
+
+  /// Deactivated staff, collapsed below the active list. Their records are
+  /// kept so past scans still show their names.
+  Widget _buildDeactivatedStaff(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
+  ) {
+    return Theme(
+      // ExpansionTile draws divider lines by default.
+      data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+      child: ExpansionTile(
+        tilePadding: const EdgeInsets.symmetric(horizontal: 4),
+        childrenPadding: EdgeInsets.zero,
+        title: Text(
+          'Deactivated (${docs.length})',
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w700,
+            color: AppTheme.textMuted,
+          ),
+        ),
+        children: [
+          for (final QueryDocumentSnapshot<Map<String, dynamic>> doc in docs)
+            _buildStaffRow(doc, null, statsLoaded: false, deactivated: true),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStaffRow(
+    QueryDocumentSnapshot<Map<String, dynamic>> doc,
+    _StaffDayStats? stats, {
+    required bool statsLoaded,
+    bool deactivated = false,
+  }) {
     final Map<String, dynamic> data = doc.data();
     final String rawName = (data['name'] as String?)?.trim() ?? '';
     final String name = rawName.isEmpty ? 'Unnamed Staff' : rawName;
     final String username = (data['username'] as String?)?.trim() ?? '';
+    final DateTime? deactivatedAt = spParseDateTime(data['deactivatedAt']);
+    final String activityLine = deactivated
+        ? (deactivatedAt == null
+              ? 'Deactivated'
+              : 'Deactivated ${spFormatDate(deactivatedAt)}')
+        : !statsLoaded
+        ? ''
+        : stats == null
+        ? 'No scans today'
+        : '${stats.scans} scan${stats.scans == 1 ? '' : 's'} today'
+              '${stats.denied > 0 ? ' · ${stats.denied} denied' : ''}'
+              '${stats.last == null ? '' : ' · last ${spFormatClockTime(stats.last!)}'}';
 
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.fromLTRB(12, 10, 4, 10),
       decoration: BoxDecoration(
         color: AppTheme.surfaceAlt,
         borderRadius: BorderRadius.circular(AppTheme.radiusLarge),
         border: Border.all(color: AppTheme.border),
       ),
-      child: Row(
-        children: [
-          CircleAvatar(
-            radius: 20,
-            backgroundColor: AppTheme.accent.withValues(alpha: 0.3),
-            child: Text(
-              _initials(name),
-              style: TextStyle(
-                fontWeight: FontWeight.w800,
-                color: AppTheme.textDark,
-              ),
+      child: Material(
+        type: MaterialType.transparency,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(AppTheme.radiusLarge),
+          // Jump to this staff member's scans in the Activity tab.
+          onTap: () => setState(() {
+            _activityStaffId = _staffUid(doc);
+            _selectedIndex = 2;
+          }),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 10, 4, 10),
+            child: _staffRowContent(
+              doc: doc,
+              name: name,
+              username: username,
+              activityLine: activityLine,
+              deactivated: deactivated,
             ),
           ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: AppTheme.textDark,
-                    fontWeight: FontWeight.w700,
-                  ),
+        ),
+      ),
+    );
+  }
+
+  Widget _staffRowContent({
+    required QueryDocumentSnapshot<Map<String, dynamic>> doc,
+    required String name,
+    required String username,
+    required String activityLine,
+    required bool deactivated,
+  }) {
+    return Row(
+      children: [
+        CircleAvatar(
+          radius: 20,
+          backgroundColor: deactivated
+              ? AppTheme.border
+              : AppTheme.accent.withValues(alpha: 0.3),
+          child: Text(
+            _initials(name),
+            style: TextStyle(
+              fontWeight: FontWeight.w800,
+              color: AppTheme.textDark,
+            ),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: AppTheme.textDark,
+                  fontWeight: FontWeight.w700,
                 ),
+              ),
+              const SizedBox(height: 2),
+              Row(
+                children: [
+                  Icon(
+                    Icons.alternate_email_rounded,
+                    size: 13,
+                    color: AppTheme.textMuted,
+                  ),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Text(
+                      username.isEmpty ? 'No username' : username,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(color: AppTheme.textMuted, fontSize: 12),
+                    ),
+                  ),
+                ],
+              ),
+              if (activityLine.isNotEmpty) ...[
                 const SizedBox(height: 2),
                 Row(
                   children: [
                     Icon(
-                      Icons.alternate_email_rounded,
+                      deactivated
+                          ? Icons.person_off_outlined
+                          : Icons.qr_code_scanner_rounded,
                       size: 13,
                       color: AppTheme.textMuted,
                     ),
                     const SizedBox(width: 4),
                     Expanded(
                       child: Text(
-                        username.isEmpty ? 'No username' : username,
+                        activityLine,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          color: AppTheme.textMuted,
+                          color: AppTheme.textSecondary,
                           fontSize: 12,
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
                     ),
                   ],
                 ),
               ],
-            ),
+            ],
           ),
+        ),
+        if (deactivated)
+          TextButton(
+            onPressed: () => _setStaffActive(doc.id, name, active: true),
+            child: const Text('Reactivate'),
+          )
+        else
           IconButton(
-            onPressed: () => _removeStaff(doc.id, name),
-            icon: Icon(Icons.delete_outline_rounded, color: spDeniedColor),
-            tooltip: 'Remove staff',
+            onPressed: () => _setStaffActive(doc.id, name, active: false),
+            icon: Icon(Icons.person_off_outlined, color: spDeniedColor),
+            tooltip: 'Deactivate staff',
           ),
-        ],
-      ),
+      ],
     );
   }
 
@@ -856,5 +1016,34 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
       padding: const EdgeInsets.only(top: 8),
       wide: _isTablet,
     );
+  }
+}
+
+/// One staff member's gate scans today, for the Staff tab.
+class _StaffDayStats {
+  int scans = 0;
+  int denied = 0;
+  DateTime? last;
+
+  static Map<String, _StaffDayStats> today(
+    Iterable<Map<String, dynamic>> logs,
+  ) {
+    final DateTime now = DateTime.now();
+    final Map<String, _StaffDayStats> byStaff = <String, _StaffDayStats>{};
+    for (final Map<String, dynamic> data in logs) {
+      final String staffId = ((data['staffId'] as String?) ?? '').trim();
+      if (staffId.isEmpty) continue;
+      // Pending server timestamps read as null; treat them as now.
+      final DateTime time = spParseDateTime(data['timestamp']) ?? now;
+      if (!spSameDate(time, now)) continue;
+      final _StaffDayStats stats = byStaff.putIfAbsent(
+        staffId,
+        _StaffDayStats.new,
+      );
+      stats.scans++;
+      if (!spIsAllowedLog(data)) stats.denied++;
+      if (stats.last == null || time.isAfter(stats.last!)) stats.last = time;
+    }
+    return byStaff;
   }
 }

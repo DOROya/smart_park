@@ -11,6 +11,7 @@ const GateStaff staff = GateStaff(
   email: 'gate@example.com',
   facilityId: facilityId,
   ownerId: 'owner-1',
+  name: 'Juan Dela Cruz',
 );
 
 String qr(String transactionId, [String plate = 'ABC 123']) => jsonEncode(
@@ -68,6 +69,44 @@ void main() {
       );
       expect(a.facilityId, 'fac-a');
       expect(a.ownerId, 'o1');
+    });
+
+    test('carries the staff name from the staff record', () async {
+      await db.collection('staff_accounts').add(<String, dynamic>{
+        'userId': 'u1',
+        'facilityId': 'fac-a',
+        'name': ' Maria Santos ',
+      });
+      final StaffAssignment a = await service.resolveAssignment(
+        uid: 'u1',
+        email: '',
+      );
+      expect(a.staffName, 'Maria Santos');
+    });
+
+    test('a deactivated record gives no facility and no fallback', () async {
+      await db.collection('staff_accounts').add(<String, dynamic>{
+        'userId': 'u1',
+        'facilityId': 'fac-a',
+        'ownerId': 'o1',
+        'active': false,
+      });
+      // A profile that still names the facility must not re-grant it.
+      await db.collection('users').doc('u1').set(<String, dynamic>{
+        'establishmentID': 'fac-a',
+      });
+      final StaffAssignment a = await service.resolveAssignment(
+        uid: 'u1',
+        email: '',
+      );
+      expect(a.deactivated, isTrue);
+      expect(a.facilityId, isNull);
+    });
+
+    test('records without the active field are active', () {
+      expect(isStaffRecordActive(<String, dynamic>{}), isTrue);
+      expect(isStaffRecordActive(<String, dynamic>{'active': true}), isTrue);
+      expect(isStaffRecordActive(<String, dynamic>{'active': false}), isFalse);
     });
 
     test('falls back to the staff email, then the user profile', () async {
@@ -167,7 +206,32 @@ void main() {
       expect(log['isActive'], isTrue);
       expect(log['decision'], 'ALLOWED');
       expect(log['ownerId'], 'owner-1');
+      expect(log['staffId'], 'staff-1');
+      expect(log['staffName'], 'Juan Dela Cruz');
       expect(t['entryLogId'], isNotNull);
+    });
+
+    test('stamps who scanned on denied logs too', () async {
+      await seedTicket('t1', <String, dynamic>{'status': 'pending'});
+      await scan(qr('t1'));
+      final Map<String, dynamic> log = (await activityLogs()).single;
+      expect(log['decision'], 'DENIED');
+      expect(log['staffName'], 'Juan Dela Cruz');
+    });
+
+    test('leaves staffName off when the name is unknown', () async {
+      await seedTicket('t1', <String, dynamic>{});
+      await service.handleScanPayload(
+        staff: const GateStaff(
+          staffId: 'staff-1',
+          email: 'gate@example.com',
+          facilityId: facilityId,
+          ownerId: 'owner-1',
+        ),
+        gateMode: 'entry',
+        rawPayload: qr('t1'),
+      );
+      expect((await activityLogs()).single.containsKey('staffName'), isFalse);
     });
 
     test('ignores the same ticket again within the cooldown', () async {
