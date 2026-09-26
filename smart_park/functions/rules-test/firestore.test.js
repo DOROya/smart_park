@@ -210,6 +210,31 @@ test("staff read and check in their facility's tickets only", async () => {
   await assertFails(updateDoc(doc(staff(), "transactions/tx2"), { entryStatus: "checked_in" }));
 });
 
+test("staff record overtime cash as collected in their own name only", async () => {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const d = ctx.firestore();
+    await setDoc(doc(d, "transactions/tx1"), { overtimeStatus: "cash_due", overtimeAmount: 40 }, { merge: true });
+    await setDoc(doc(d, "activity_logs/exit1"), {
+      establishmentID: "est1", transactionId: "tx1", scanType: "exit", staffId: "staff1", overtimeStatus: "cash_due",
+    });
+  });
+  const collectedBy = (uid) => ({
+    overtimeStatus: "collected", overtimeCollectedBy: uid, overtimeCollectedAt: serverTimestamp(),
+  });
+  await assertFails(setDoc(doc(staff(), "transactions/tx1"), collectedBy("staff2"), { merge: true }));
+  await assertFails(setDoc(doc(staff(), "activity_logs/exit1"), collectedBy("staff2"), { merge: true }));
+  await assertFails(setDoc(doc(owner(), "transactions/tx1"), collectedBy("owner1"), { merge: true }));
+  await assertSucceeds(
+    setDoc(doc(staff(), "transactions/tx1"), { ...collectedBy("staff1"), updatedAt: serverTimestamp() }, { merge: true }),
+  );
+  await assertSucceeds(setDoc(doc(staff(), "activity_logs/exit1"), collectedBy("staff1"), { merge: true }));
+  // The owner's live overtime card lists vehicles still checked in.
+  await assertSucceeds(
+    getDocs(query(collection(owner(), "transactions"),
+      where("establishmentId", "==", "est1"), where("entryStatus", "==", "checked_in"))),
+  );
+});
+
 test("staff log gate scans for their facility only", async () => {
   await assertSucceeds(setDoc(doc(staff(), "activity_logs/new"), { establishmentID: "est1", staffId: "staff1", scanType: "entry" }));
   await assertFails(setDoc(doc(staff(), "activity_logs/new2"), { establishmentID: "est2", staffId: "staff1" }));

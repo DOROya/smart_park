@@ -191,15 +191,13 @@ class _GateActivityContentState extends State<_GateActivityContent>
 
         final bool isTablet = spIsTablet(context);
 
-        int cashDueCount = 0;
-        double cashDueTotal = 0;
-        for (final Map<String, dynamic> data in logs) {
-          if (((data['overtimeStatus'] as String?) ?? '').toLowerCase() ==
-              'cash_due') {
-            cashDueCount++;
-            cashDueTotal += ((data['overtimeAmount'] as num?) ?? 0).toDouble();
-          }
-        }
+        final String? staffId = widget.staffFilter;
+        final SpOvertimeCash overtimeCash = SpOvertimeCash.from(
+          summary.dayLogs.where(
+            (Map<String, dynamic> d) =>
+                staffId == null || d['staffId'] == staffId,
+          ),
+        );
 
         Widget card(Map<String, dynamic> data) => SpActivityCard(
           data: data,
@@ -218,42 +216,12 @@ class _GateActivityContentState extends State<_GateActivityContent>
               trailing: SpDateButton(date: _date, onTap: _pickDate),
             ),
             const SizedBox(height: 16),
-            if (cashDueCount > 0) ...[
-              Container(
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: AppTheme.warningSoft,
-                  borderRadius: BorderRadius.circular(AppTheme.radiusLarge),
-                  border: Border.all(color: AppTheme.accent),
-                ),
-                child: Row(
-                  children: [
-                    Icon(Icons.payments_rounded, color: spInsideColor),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'PHP ${cashDueTotal.toStringAsFixed(2)} overtime cash',
-                            style: TextStyle(
-                              fontWeight: FontWeight.w800,
-                              color: AppTheme.textDark,
-                            ),
-                          ),
-                          Text(
-                            '$cashDueCount exit(s) on this day flagged '
-                            'for cash collection at the gate.',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: AppTheme.accentText,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
+            if (!overtimeCash.isEmpty) ...[
+              SpOvertimeCashBanner(
+                cash: overtimeCash,
+                period: spSameDate(_date, DateTime.now())
+                    ? 'today'
+                    : 'on this day',
               ),
               const SizedBox(height: 12),
             ],

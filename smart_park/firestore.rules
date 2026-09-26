@@ -205,14 +205,22 @@ service cloud.firestore {
       return isAdmin() || isOwnerOf(establishmentId) || isStaffOf(establishmentId);
     }
 
+    // Staff may only record overtime cash as collected by themselves.
+    function overtimeCollectorOk() {
+      return unchanged('overtimeCollectedBy') ||
+        request.resource.data.overtimeCollectedBy == uid();
+    }
+
     match /activity_logs/{logId} {
       allow read: if canSeeEstablishment(resource.data.establishmentID);
       allow create: if isStaffOf(request.resource.data.establishmentID) &&
         request.resource.data.staffId == uid();
-      // Exit scans close the open entry log (isActive=false).
+      // Exit scans close the open entry log (isActive=false), and staff
+      // mark overtime cash collected on the exit log.
       allow update: if isStaffOf(resource.data.establishmentID) &&
         unchanged('establishmentID') &&
-        unchanged('transactionId');
+        unchanged('transactionId') &&
+        overtimeCollectorOk();
       allow delete: if false;
     }
 
@@ -227,14 +235,15 @@ service cloud.firestore {
 
     // ---------- tickets and money (written by Cloud Functions only) ----------
 
-    // Gate staff record check-in/out and overtime; nothing about payment.
+    // Gate staff record check-in/out, overtime and overtime cash collected;
+    // nothing about payment.
     function staffTicketUpdateOk() {
       return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
         'entryStatus', 'entryAt', 'entryStaffId', 'entryLogId',
         'exitAt', 'exitStaffId', 'exitLogId', 'staySeconds',
         'overtimeHours', 'overtimeRate', 'overtimeAmount', 'overtimeStatus',
-        'updatedAt'
-      ]);
+        'overtimeCollectedBy', 'overtimeCollectedAt', 'updatedAt'
+      ]) && overtimeCollectorOk();
     }
 
     // Staff log drive-up customers as walk-ins: already checked in, no

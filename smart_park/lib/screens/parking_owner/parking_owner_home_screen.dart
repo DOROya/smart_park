@@ -12,7 +12,8 @@ import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 
 import '../../models/facility_registration_data.dart';
 import '../../services/error_reporter.dart';
-import '../../services/gate_scan_service.dart' show isStaffRecordActive;
+import '../../services/gate_scan_service.dart'
+    show isStaffRecordActive, kOvertimeCashDue, kOvertimeCollected;
 import '../../services/establishment_repository.dart';
 import '../../services/platform_fees.dart';
 import '../../theme/app_theme.dart';
@@ -21,6 +22,7 @@ import '../../utils/staff_credentials.dart';
 import '../../widgets/smartpark_ui.dart';
 import '../../widgets/sp_activity_details.dart';
 import '../../widgets/sp_loading.dart';
+import '../../widgets/sp_overtime.dart';
 import '../../widgets/sp_profile_view.dart';
 import '../auth/sign_in_screen.dart';
 import 'widgets/facility_registration_dialog.dart';

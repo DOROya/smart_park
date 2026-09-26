@@ -11,18 +11,25 @@ import 'smartpark_ui.dart';
 ///
 /// The timeline is loaded here because the entry may be from an earlier day
 /// than the list the log was tapped in.
+///
+/// Pass [onMarkOvertimeCollected] (staff only) to offer confirming the
+/// overtime cash on an exit still flagged "collect cash".
 Future<void> showSpActivityDetails(
   BuildContext context, {
   required Map<String, dynamic> log,
   Map<String, String>? staffNames,
+  Future<void> Function(Map<String, dynamic> log)? onMarkOvertimeCollected,
 }) {
   return showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
     showDragHandle: true,
     backgroundColor: AppTheme.surface,
-    builder: (BuildContext sheetContext) =>
-        _ActivityDetailsSheet(log: log, staffNames: staffNames),
+    builder: (BuildContext sheetContext) => _ActivityDetailsSheet(
+      log: log,
+      staffNames: staffNames,
+      onMarkOvertimeCollected: onMarkOvertimeCollected,
+    ),
   );
 }
 
@@ -34,10 +41,16 @@ bool _sameLog(Map<String, dynamic> a, Map<String, dynamic> b) =>
     a['decision'] == b['decision'];
 
 class _ActivityDetailsSheet extends StatefulWidget {
-  const _ActivityDetailsSheet({required this.log, required this.staffNames});
+  const _ActivityDetailsSheet({
+    required this.log,
+    required this.staffNames,
+    this.onMarkOvertimeCollected,
+  });
 
   final Map<String, dynamic> log;
   final Map<String, String>? staffNames;
+  final Future<void> Function(Map<String, dynamic> log)?
+  onMarkOvertimeCollected;
 
   @override
   State<_ActivityDetailsSheet> createState() => _ActivityDetailsSheetState();
@@ -45,6 +58,11 @@ class _ActivityDetailsSheet extends StatefulWidget {
 
 class _ActivityDetailsSheetState extends State<_ActivityDetailsSheet> {
   late final Future<List<Map<String, dynamic>>> _timeline = _loadTimeline();
+  bool _marking = false;
+
+  /// Set once this sheet marked the cash collected (the log map is a
+  /// snapshot and does not update).
+  bool _markedCollected = false;
 
   Map<String, dynamic> get log => widget.log;
   Map<String, String>? get staffNames => widget.staffNames;
@@ -140,6 +158,7 @@ class _ActivityDetailsSheetState extends State<_ActivityDetailsSheet> {
             ),
             if (reason.isNotEmpty)
               _row(Icons.info_outline_rounded, 'Result', reason),
+            if (((log['overtimeHours'] as num?) ?? 0) > 0) _overtimeRow(),
             if (transactionId.isNotEmpty) _ticketRow(context, transactionId),
             FutureBuilder<List<Map<String, dynamic>>>(
               future: _timeline,
@@ -222,6 +241,61 @@ class _ActivityDetailsSheetState extends State<_ActivityDetailsSheet> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _overtimeRow() {
+    final int hours = ((log['overtimeHours'] as num?) ?? 0).toInt();
+    final double amount = ((log['overtimeAmount'] as num?) ?? 0).toDouble();
+    final String status = ((log['overtimeStatus'] as String?) ?? '')
+        .toLowerCase();
+    final bool collected = _markedCollected || status == 'collected';
+    final bool due = !collected && status == 'cash_due';
+    final String collectorId = ((log['overtimeCollectedBy'] as String?) ?? '')
+        .trim();
+    final DateTime? collectedAt = spParseDateTime(log['overtimeCollectedAt']);
+    String? collector = staffNames?[collectorId];
+    if ((collector ?? '').isEmpty && collectorId == log['staffId']) {
+      collector = _staffLabel(log);
+    }
+    final String value = amount <= 0
+        ? '${hours}h · no rate set, nothing billed'
+        : collected
+        ? 'PHP ${amount.toStringAsFixed(2)} for ${hours}h · collected'
+              '${(collector ?? '').isEmpty ? '' : ' by $collector'}'
+              '${collectedAt == null ? '' : ', ${spFormatClockTime(collectedAt)}'}'
+        : 'PHP ${amount.toStringAsFixed(2)} for ${hours}h · not yet confirmed '
+              'collected';
+    final Future<void> Function(Map<String, dynamic> log)? onMark =
+        widget.onMarkOvertimeCollected;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        _row(Icons.payments_outlined, 'Overtime cash', value),
+        if (due && onMark != null)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: FilledButton.icon(
+              onPressed: _marking
+                  ? null
+                  : () async {
+                      setState(() => _marking = true);
+                      try {
+                        await onMark(log);
+                        if (mounted) setState(() => _markedCollected = true);
+                      } finally {
+                        if (mounted) setState(() => _marking = false);
+                      }
+                    },
+              icon: const Icon(Icons.check_rounded),
+              label: Text(
+                _marking
+                    ? 'Saving...'
+                    : 'Cash collected (PHP ${amount.toStringAsFixed(2)})',
+              ),
+            ),
+          ),
+      ],
     );
   }
 

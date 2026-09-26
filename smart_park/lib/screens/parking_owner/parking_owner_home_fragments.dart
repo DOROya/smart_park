@@ -203,6 +203,13 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
                     final int totalSlots = slotSum > 0
                         ? slotSum
                         : ((facility['availability'] as num?) ?? 0).toInt();
+                    final Widget overstayCard = SpOverstayCard(
+                      facilityId: establishmentId,
+                      rates: _ratesOf(details),
+                    );
+                    final SpOvertimeCash overtimeCash = SpOvertimeCash.from(
+                      summary.dayLogs,
+                    );
 
                     if (_isTablet) {
                       return _buildTabletFacilityDashboard(
@@ -212,6 +219,8 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
                         now: now,
                         details: details,
                         summary: summary,
+                        overstayCard: overstayCard,
+                        overtimeCash: overtimeCash,
                         slotsCard: SpLiveSlotsCard(
                           establishmentId: establishmentId,
                           totalSlots: totalSlots,
@@ -256,6 +265,12 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
                         const SpSectionLabel("Today's Activity"),
                         const SizedBox(height: 10),
                         SpDailyActivityTiles(summary: summary),
+                        const SizedBox(height: 16),
+                        overstayCard,
+                        if (!overtimeCash.isEmpty) ...[
+                          const SizedBox(height: 12),
+                          SpOvertimeCashBanner(cash: overtimeCash),
+                        ],
                         const SizedBox(height: 16),
                         SpLiveSlotsCard(
                           establishmentId: establishmentId,
@@ -309,6 +324,8 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
     required DateTime now,
     required Map<String, dynamic>? details,
     required SpActivitySummary summary,
+    required Widget overstayCard,
+    required SpOvertimeCash overtimeCash,
     required Widget slotsCard,
     required Widget detailsCard,
   }) {
@@ -343,6 +360,12 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
           leftFlex: 3,
           rightFlex: 2,
           left: [
+            overstayCard,
+            if (!overtimeCash.isEmpty) ...[
+              const SizedBox(height: 12),
+              SpOvertimeCashBanner(cash: overtimeCash),
+            ],
+            const SizedBox(height: 20),
             SpSectionLabel(
               'Recent Scans',
               trailing: summary.dayLogs.isEmpty
@@ -366,6 +389,15 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
   }
 
   bool get _isTablet => spIsTablet(context);
+
+  /// The facility's rates, as the gate reads them for overtime.
+  Map<String, dynamic>? _ratesOf(Map<String, dynamic>? details) {
+    final dynamic raw = details?['rates'] ?? details?['ratesByType'];
+    if (raw is! Map) return null;
+    return raw.map<String, dynamic>(
+      (dynamic k, dynamic v) => MapEntry<String, dynamic>(k.toString(), v),
+    );
+  }
 
   Widget _recentScanCard(Map<String, dynamic> data) {
     return SpActivityCard(
@@ -835,6 +867,18 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
         : '${stats.scans} scan${stats.scans == 1 ? '' : 's'} today'
               '${stats.denied > 0 ? ' · ${stats.denied} denied' : ''}'
               '${stats.last == null ? '' : ' · last ${spFormatClockTime(stats.last!)}'}';
+    final String cashLine =
+        deactivated ||
+            stats == null ||
+            (stats.overtimeCollected <= 0 && stats.overtimeOwed <= 0)
+        ? ''
+        : <String>[
+            if (stats.overtimeCollected > 0)
+              '${spPeso(stats.overtimeCollected)} overtime cash to hand over',
+            if (stats.overtimeOwed > 0)
+              '${spPeso(stats.overtimeOwed)} not confirmed',
+          ].join(' · ');
+    final bool cashOwed = (stats?.overtimeOwed ?? 0) > 0;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
@@ -859,6 +903,8 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
               name: name,
               username: username,
               activityLine: activityLine,
+              cashLine: cashLine,
+              cashOwed: cashOwed,
               deactivated: deactivated,
             ),
           ),
@@ -872,6 +918,8 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
     required String name,
     required String username,
     required String activityLine,
+    String cashLine = '',
+    bool cashOwed = false,
     required bool deactivated,
   }) {
     return Row(
@@ -949,6 +997,31 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
                   ],
                 ),
               ],
+              if (cashLine.isNotEmpty) ...[
+                const SizedBox(height: 2),
+                Row(
+                  children: [
+                    Icon(
+                      Icons.payments_outlined,
+                      size: 13,
+                      color: cashOwed ? spInsideColor : spEntryColor,
+                    ),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: Text(
+                        cashLine,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: cashOwed ? spInsideColor : spEntryColor,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
             ],
           ),
         ),
@@ -1019,11 +1092,16 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
   }
 }
 
-/// One staff member's gate scans today, for the Staff tab.
+/// One staff member's gate scans and overtime cash today, for the Staff tab.
 class _StaffDayStats {
   int scans = 0;
   int denied = 0;
   DateTime? last;
+
+  /// Overtime cash from this staff member's exits today: flagged but not
+  /// confirmed, and confirmed collected (what they should hand over).
+  double overtimeOwed = 0;
+  double overtimeCollected = 0;
 
   static Map<String, _StaffDayStats> today(
     Iterable<Map<String, dynamic>> logs,
@@ -1042,6 +1120,14 @@ class _StaffDayStats {
       );
       stats.scans++;
       if (!spIsAllowedLog(data)) stats.denied++;
+      final double overtime = ((data['overtimeAmount'] as num?) ?? 0)
+          .toDouble();
+      switch (spOvertimeStatus(data)) {
+        case kOvertimeCashDue:
+          stats.overtimeOwed += overtime;
+        case kOvertimeCollected:
+          stats.overtimeCollected += overtime;
+      }
       if (stats.last == null || time.isAfter(stats.last!)) stats.last = time;
     }
     return byStaff;

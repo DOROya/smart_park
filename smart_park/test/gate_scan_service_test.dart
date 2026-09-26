@@ -321,6 +321,59 @@ void main() {
       expect((await ticket('t1'))['overtimeStatus'], 'rate_unresolved');
     });
 
+    test('marks overtime cash collected on the ticket and exit log', () async {
+      await db.collection('establishment_details').doc(facilityId).set(
+        <String, dynamic>{
+          'rates': <String, dynamic>{
+            'car': <String, dynamic>{'initial': 50, 'succeedingHour': 20},
+          },
+        },
+      );
+      await seedInside(const Duration(hours: 4), <String, dynamic>{});
+      final GateScanResult? r = await scan(qr('t1'), mode: 'exit');
+      expect(r!.activityLogId, isNotNull);
+
+      await service.markOvertimeCollected(
+        staff: staff,
+        transactionId: 't1',
+        exitLogId: r.activityLogId,
+      );
+
+      final Map<String, dynamic> t = await ticket('t1');
+      expect(t['overtimeStatus'], 'collected');
+      expect(t['overtimeCollectedBy'], 'staff-1');
+      final Map<String, dynamic> exitLog =
+          (await db.collection('activity_logs').doc(r.activityLogId).get())
+              .data()!;
+      expect(exitLog['overtimeStatus'], 'collected');
+      expect(exitLog['overtimeCollectedBy'], 'staff-1');
+      expect(r.markedCollected().overtimeCollected, isTrue);
+    });
+
+    test('finds the exit log from the ticket when marking collected', () async {
+      await db.collection('activity_logs').doc('exit-1').set(<String, dynamic>{
+        'establishmentID': facilityId,
+        'overtimeStatus': 'cash_due',
+      });
+      await seedTicket('t1', <String, dynamic>{
+        'overtimeStatus': 'cash_due',
+        'exitLogId': 'exit-1',
+      });
+      await service.markOvertimeCollected(staff: staff, transactionId: 't1');
+      final Map<String, dynamic> exitLog =
+          (await db.collection('activity_logs').doc('exit-1').get()).data()!;
+      expect(exitLog['overtimeStatus'], 'collected');
+    });
+
+    test('will not mark collected when no overtime cash is due', () async {
+      await seedTicket('t1', <String, dynamic>{'overtimeStatus': 'none'});
+      await expectLater(
+        service.markOvertimeCollected(staff: staff, transactionId: 't1'),
+        throwsStateError,
+      );
+      expect((await ticket('t1'))['overtimeStatus'], 'none');
+    });
+
     test('counts extended plans\' paid hours before overtime', () async {
       // Extended with duration 3 -> 2 + 3 = 5 included hours.
       await seedInside(const Duration(hours: 4), <String, dynamic>{

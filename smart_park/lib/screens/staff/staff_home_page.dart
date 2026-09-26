@@ -52,6 +52,7 @@ class _StaffHomePageState extends State<StaffHomePage>
   late final MobileScannerController _scannerController;
   bool _isProcessingScan = false;
   GateScanResult? _lastScanResult;
+  bool _markingOvertime = false;
 
   /// Staff-side gate direction. Entry/exit is chosen here in the app and is
   /// never taken from the scanned QR content.
@@ -241,6 +242,67 @@ class _StaffHomePageState extends State<StaffHomePage>
         rawPlate: rawPlate,
       ),
     );
+  }
+
+  /// Confirms the overtime cash on the exit just scanned.
+  Future<void> _markLastOvertimeCollected() async {
+    final GateScanResult? result = _lastScanResult;
+    final String transactionId = result?.transactionId ?? '';
+    if (result == null || transactionId.isEmpty || _markingOvertime) return;
+    setState(() => _markingOvertime = true);
+    final bool ok = await _markOvertimeCollected(
+      transactionId,
+      exitLogId: result.activityLogId,
+    );
+    if (!mounted) return;
+    setState(() {
+      _markingOvertime = false;
+      // Only update the card if no newer scan replaced it meanwhile.
+      if (ok && identical(_lastScanResult, result)) {
+        _lastScanResult = result.markedCollected();
+      }
+    });
+  }
+
+  /// Confirms the overtime cash on an exit log opened from the scan lists.
+  Future<void> _markLogOvertimeCollected(Map<String, dynamic> log) async {
+    final String transactionId = ((log['transactionId'] as String?) ?? '')
+        .trim();
+    if (transactionId.isEmpty) return;
+    if (!await _markOvertimeCollected(transactionId)) {
+      throw StateError('Overtime cash was not saved.');
+    }
+  }
+
+  Future<bool> _markOvertimeCollected(
+    String transactionId, {
+    String? exitLogId,
+  }) async {
+    final GateStaff? staff = _currentStaff();
+    if (staff == null) return false;
+    try {
+      await _gateService.markOvertimeCollected(
+        staff: staff,
+        transactionId: transactionId,
+        exitLogId: exitLogId,
+      );
+      unawaited(HapticFeedback.mediumImpact());
+      return true;
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              friendlyError(
+                error,
+                fallback: 'Could not save. Check your connection and retry.',
+              ),
+            ),
+          ),
+        );
+      }
+      return false;
+    }
   }
 
   Future<void> _pickHistoryDate() async {

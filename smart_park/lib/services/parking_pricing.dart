@@ -101,6 +101,11 @@ int overtimeHours(Duration elapsed, int includedHours) {
   return (billable.inSeconds / 3600).ceil();
 }
 
+/// When overtime starts for a stay that began at [entryAt]: the paid hours
+/// plus the grace period.
+DateTime overtimeStartsAt(DateTime entryAt, int includedHours) =>
+    entryAt.add(Duration(hours: includedHours) + kOvertimeGrace);
+
 /// A ticket's package duration. Newer tickets store it on the document;
 /// older ones only carried it inside the QR payload.
 int ticketDuration(Map<String, dynamic> ticket) {

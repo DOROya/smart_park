@@ -1258,6 +1258,9 @@ class SpActivityCard extends StatelessWidget {
     final int overtimeHours = ((data['overtimeHours'] as num?) ?? 0).toInt();
     final double overtimeAmount = ((data['overtimeAmount'] as num?) ?? 0)
         .toDouble();
+    final bool overtimeCollected =
+        ((data['overtimeStatus'] as String?) ?? '').toLowerCase() ==
+        'collected';
     final String transactionId = ((data['transactionId'] as String?) ?? '')
         .trim();
     final String? staffName = spLogStaffName(data, staffNames);
@@ -1372,17 +1375,21 @@ class SpActivityCard extends StatelessWidget {
                     vertical: 4,
                   ),
                   decoration: BoxDecoration(
-                    color: AppTheme.warningSoft,
+                    color: overtimeCollected
+                        ? AppTheme.successSoft
+                        : AppTheme.warningSoft,
                     borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
                   ),
                   child: Text(
-                    overtimeAmount > 0
-                        ? 'Overtime ${overtimeHours}h · collect PHP ${overtimeAmount.toStringAsFixed(2)} cash'
-                        : 'Overtime ${overtimeHours}h · rate missing',
+                    overtimeAmount <= 0
+                        ? 'Overtime ${overtimeHours}h · rate missing'
+                        : overtimeCollected
+                        ? 'Overtime ${overtimeHours}h · PHP ${overtimeAmount.toStringAsFixed(2)} cash collected'
+                        : 'Overtime ${overtimeHours}h · collect PHP ${overtimeAmount.toStringAsFixed(2)} cash',
                     style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w700,
-                      color: spInsideColor,
+                      color: overtimeCollected ? spEntryColor : spInsideColor,
                     ),
                   ),
                 ),

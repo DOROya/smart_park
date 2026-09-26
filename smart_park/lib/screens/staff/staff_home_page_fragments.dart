@@ -355,7 +355,11 @@ extension _StaffHomePageFragments on _StaffHomePageState {
         ),
         if (_lastScanResult != null) ...[
           const SizedBox(height: 12),
-          _GateResultCard(result: _lastScanResult!),
+          _GateResultCard(
+            result: _lastScanResult!,
+            marking: _markingOvertime,
+            onMarkCollected: _markLastOvertimeCollected,
+          ),
         ],
         const SizedBox(height: 12),
         _ManualPlateLookup(onLookup: _lookupByPlate),
@@ -417,7 +421,14 @@ extension _StaffHomePageFragments on _StaffHomePageState {
                       QueryDocumentSnapshot<Map<String, dynamic>> doc,
                     ) {
                       final Map<String, dynamic> data = doc.data();
-                      return SpActivityCard(data: data);
+                      return SpActivityCard(
+                        data: data,
+                        onTap: () => showSpActivityDetails(
+                          context,
+                          log: data,
+                          onMarkOvertimeCollected: _markLogOvertimeCollected,
+                        ),
+                      );
                     }).toList(),
                   );
                 },
@@ -543,7 +554,11 @@ extension _StaffHomePageFragments on _StaffHomePageState {
                       SpActivityCard(
                         data: data,
                         showDate: insideTab,
-                        onTap: () => showSpActivityDetails(context, log: data),
+                        onTap: () => showSpActivityDetails(
+                          context,
+                          log: data,
+                          onMarkOvertimeCollected: _markLogOvertimeCollected,
+                        ),
                       ),
                 ],
               );
@@ -622,9 +637,15 @@ extension _StaffHomePageFragments on _StaffHomePageState {
 }
 
 class _GateResultCard extends StatelessWidget {
-  const _GateResultCard({required this.result});
+  const _GateResultCard({
+    required this.result,
+    required this.onMarkCollected,
+    this.marking = false,
+  });
 
   final GateScanResult result;
+  final VoidCallback onMarkCollected;
+  final bool marking;
 
   @override
   Widget build(BuildContext context) {
@@ -703,22 +724,51 @@ class _GateResultCard extends StatelessWidget {
             Container(
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: AppTheme.warningSoft,
+                color: result.overtimeCollected
+                    ? AppTheme.successSoft
+                    : AppTheme.warningSoft,
                 borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
-                border: Border.all(color: AppTheme.accent),
+                border: Border.all(
+                  color: result.overtimeCollected
+                      ? AppTheme.success
+                      : AppTheme.accent,
+                ),
               ),
-              child: Row(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: <Widget>[
-                  Icon(Icons.payments_rounded, color: AppTheme.accentText),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'Collect PHP ${result.overtimeAmount!.toStringAsFixed(2)} '
-                      'cash for ${result.overtimeHours!.toStringAsFixed(0)}h '
-                      'overtime before releasing.',
-                      style: const TextStyle(fontWeight: FontWeight.w700),
-                    ),
+                  Row(
+                    children: <Widget>[
+                      Icon(
+                        result.overtimeCollected
+                            ? Icons.check_circle_rounded
+                            : Icons.payments_rounded,
+                        color: result.overtimeCollected
+                            ? AppTheme.success
+                            : AppTheme.accentText,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          result.overtimeCollected
+                              ? 'PHP ${result.overtimeAmount!.toStringAsFixed(2)} '
+                                    'overtime cash recorded as collected.'
+                              : 'Collect PHP ${result.overtimeAmount!.toStringAsFixed(2)} '
+                                    'cash for ${result.overtimeHours!.toStringAsFixed(0)}h '
+                                    'overtime before releasing.',
+                          style: const TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                      ),
+                    ],
                   ),
+                  if (!result.overtimeCollected) ...<Widget>[
+                    const SizedBox(height: 8),
+                    FilledButton.icon(
+                      onPressed: marking ? null : onMarkCollected,
+                      icon: const Icon(Icons.check_rounded),
+                      label: Text(marking ? 'Saving...' : 'Cash collected'),
+                    ),
+                  ],
                 ],
               ),
             ),
