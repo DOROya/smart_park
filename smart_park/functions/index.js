@@ -6,6 +6,7 @@ const { onDocumentWritten } = require("firebase-functions/v2/firestore");
 const { setGlobalOptions } = require("firebase-functions/v2");
 const { defineSecret } = require("firebase-functions/params");
 
+const authEmails = require("./src/auth_emails");
 const checkout = require("./src/checkout");
 const occupancy = require("./src/occupancy");
 const { platformFeeCentavosFor } = require("./src/pricing");
@@ -18,6 +19,20 @@ initializeApp();
 setGlobalOptions({ region: "asia-southeast1", maxInstances: 10 });
 
 const PAYMONGO_SECRET_KEY = defineSecret("PAYMONGO_SECRET_KEY");
+// App password for smartpark.noreply@gmail.com (see src/auth_emails.js).
+const GMAIL_APP_PASSWORD = defineSecret("GMAIL_APP_PASSWORD");
+
+exports.sendVerificationEmail = onCall(
+  { secrets: [GMAIL_APP_PASSWORD] },
+  (request) =>
+    authEmails.sendVerificationEmail(request, GMAIL_APP_PASSWORD.value()),
+);
+
+exports.sendPasswordResetEmail = onCall(
+  { secrets: [GMAIL_APP_PASSWORD] },
+  (request) =>
+    authEmails.sendPasswordResetEmail(request, GMAIL_APP_PASSWORD.value()),
+);
 
 exports.createParkingCheckout = onCall(
   { secrets: [PAYMONGO_SECRET_KEY] },
