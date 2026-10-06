@@ -806,7 +806,7 @@ class SpStatRow extends StatelessWidget {
   }
 }
 
-/// The four daily gate metrics shown on both dashboards.
+/// The daily gate metrics shown on both dashboards.
 class SpDailyActivityTiles extends StatelessWidget {
   const SpDailyActivityTiles({
     super.key,
@@ -820,7 +820,7 @@ class SpDailyActivityTiles extends StatelessWidget {
   /// Whether [summary] is for today; otherwise captions say "that day".
   final bool today;
 
-  /// Show all four tiles in one row (wide layouts) instead of a 2x2 grid.
+  /// Show all tiles in one row (wide layouts) instead of two rows.
   final bool singleRow;
 
   @override
@@ -858,7 +858,8 @@ class SpDailyActivityTiles extends StatelessWidget {
       children: [
         SpStatRow(left: entries, right: exits),
         const SizedBox(height: 10),
-        inside,
+        // Alone on its row, so stretch it to the row above's width.
+        SizedBox(width: double.infinity, child: inside),
       ],
     );
   }
