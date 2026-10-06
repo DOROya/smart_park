@@ -494,7 +494,10 @@ extension _StaffHomePageFragments on _StaffHomePageState {
                 return const SpSkeletonList();
               }
 
-              final List<Map<String, dynamic>> dayLogs = day.logs;
+              // Denied scans stay logged but are hidden from the history.
+              final List<Map<String, dynamic>> dayLogs = day.logs
+                  .where(spIsAllowedLog)
+                  .toList();
               // Inside lists every vehicle still parked, whatever day it
               // came in, like the owner's Activity tab.
               final bool insideTab = _historyFilter == 'active';
@@ -504,18 +507,11 @@ extension _StaffHomePageFragments on _StaffHomePageState {
 
               final int entries = dayLogs
                   .where(
-                    (Map<String, dynamic> d) =>
-                        spIsAllowedLog(d) && spLogScanType(d) == 'entry',
+                    (Map<String, dynamic> d) => spLogScanType(d) == 'entry',
                   )
                   .length;
               final int exits = dayLogs
-                  .where(
-                    (Map<String, dynamic> d) =>
-                        spIsAllowedLog(d) && spLogScanType(d) == 'exit',
-                  )
-                  .length;
-              final int denied = dayLogs
-                  .where((Map<String, dynamic> d) => !spIsAllowedLog(d))
+                  .where((Map<String, dynamic> d) => spLogScanType(d) == 'exit')
                   .length;
 
               return ListView(
@@ -526,8 +522,6 @@ extension _StaffHomePageFragments on _StaffHomePageState {
                       _historyStat('Entries', entries, AppTheme.success),
                       const SizedBox(width: 8),
                       _historyStat('Exits', exits, AppTheme.info),
-                      const SizedBox(width: 8),
-                      _historyStat('Denied', denied, AppTheme.danger),
                     ],
                   ),
                   const SizedBox(height: 12),

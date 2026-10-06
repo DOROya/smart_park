@@ -98,6 +98,8 @@ class _ActivityDetailsSheetState extends State<_ActivityDetailsSheet> {
     final DateTime now = DateTime.now();
     return snap.docs
         .map((QueryDocumentSnapshot<Map<String, dynamic>> d) => d.data())
+        // Denied scans are hidden from the activity UI.
+        .where(spIsAllowedLog)
         .toList()
       ..sort(
         (Map<String, dynamic> a, Map<String, dynamic> b) =>
