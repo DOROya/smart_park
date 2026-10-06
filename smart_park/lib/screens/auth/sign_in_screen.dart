@@ -196,9 +196,12 @@ class _SignInScreenState extends State<SignInScreen> {
         icon: const Icon(Icons.mark_email_read_outlined, size: 40),
         title: const Text('Check your email'),
         content: Text(
-          'We sent a password reset link to $email.\n\n'
+          // The server answers the same for unknown emails, so don't claim
+          // the account exists.
+          'If $email has a SmartPark account, a password reset link is on '
+          'its way.\n\n'
           "If you don't see it in a few minutes, check your Spam or Junk "
-          'folder.',
+          'folder, and make sure the email above is spelled correctly.',
         ),
         actions: <Widget>[
           FilledButton(
