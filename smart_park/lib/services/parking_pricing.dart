@@ -4,11 +4,9 @@ import 'dart:convert';
 /// and the staff gate. The checkout Cloud Function (functions/src/pricing.js)
 /// prices packages the same way; keep the two in step.
 
-/// Hours included in every base stay.
+/// Hours included in every base stay, and the fewest hours a visit takes
+/// off a ticket.
 const int kBaseStayHours = 2;
-
-/// Minutes past the included time before overtime starts.
-const Duration kOvertimeGrace = Duration(minutes: 5);
 
 /// Reads a money value: numbers as-is, else the first number in a string
 /// ("PHP 12.50/hr" -> 12.5). Anything else is 0.
@@ -92,19 +90,44 @@ int includedStayHours({required String plan, required int duration}) {
   };
 }
 
-/// Whole overtime hours (rounded up) past [includedHours] plus the grace
-/// period.
-int overtimeHours(Duration elapsed, int includedHours) {
-  final Duration billable =
-      elapsed - Duration(hours: includedHours) - kOvertimeGrace;
-  if (billable.inSeconds <= 0) return 0;
-  return (billable.inSeconds / 3600).ceil();
+/// Hours a stay counts as: every started hour, by whole minutes, with no
+/// grace (2h05m and 2h15m are both 3 hours).
+int stayHours(Duration elapsed) =>
+    elapsed.inMinutes <= 0 ? 0 : (elapsed.inMinutes / 60).ceil();
+
+/// Hours of a stay past the [paidHours] left on the ticket, billed as
+/// overtime.
+int overtimeHours(Duration elapsed, int paidHours) {
+  final int over = stayHours(elapsed) - paidHours;
+  return over > 0 ? over : 0;
 }
 
-/// When overtime starts for a stay that began at [entryAt]: the paid hours
-/// plus the grace period.
-DateTime overtimeStartsAt(DateTime entryAt, int includedHours) =>
-    entryAt.add(Duration(hours: includedHours) + kOvertimeGrace);
+/// Hours an exit takes off a ticket with [paidHours] left: the hours
+/// stayed, at least the base stay, never more than what is left.
+int hoursDeducted(Duration elapsed, int paidHours) {
+  final int stayed = stayHours(elapsed);
+  final int used = stayed < kBaseStayHours ? kBaseStayHours : stayed;
+  return used < paidHours ? used : paidHours;
+}
+
+/// When overtime starts for a stay that began at [entryAt]: the first
+/// minute past the [paidHours] left.
+DateTime overtimeStartsAt(DateTime entryAt, int paidHours) =>
+    entryAt.add(Duration(hours: paidHours, minutes: 1));
+
+/// Hours a ticket can still be parked on. Tickets are reusable until their
+/// hours run out; each exit stores what is left in `remainingHours`. Tickets
+/// checked out before that field existed count as used up.
+int ticketHoursLeft(Map<String, dynamic> ticket) {
+  final dynamic stored = ticket['remainingHours'];
+  if (stored is num) return stored.toInt() < 0 ? 0 : stored.toInt();
+  final String entry = ((ticket['entryStatus'] as String?) ?? '').toLowerCase();
+  if (entry == 'checked_out' || entry == 'exited') return 0;
+  return includedStayHours(
+    plan: ((ticket['plan'] as String?) ?? 'base').trim().toLowerCase(),
+    duration: ticketDuration(ticket),
+  );
+}
 
 /// A ticket's package duration. Newer tickets store it on the document;
 /// older ones only carried it inside the QR payload.

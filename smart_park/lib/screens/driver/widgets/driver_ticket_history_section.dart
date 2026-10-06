@@ -5,6 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
+import '../../../services/parking_pricing.dart';
 import '../../../theme/app_theme.dart';
 import '../../../widgets/smartpark_ui.dart';
 import '../../../widgets/sp_loading.dart';
@@ -50,13 +51,13 @@ _TicketState _ticketState(Map<String, dynamic> data) {
   if (status != 'paid') {
     return _TicketState.awaitingPayment;
   }
-  if (entry == 'checked_out' || entry == 'exited') {
-    return _TicketState.completed;
-  }
   if (entry == 'checked_in' || entry == 'inside') {
     return _TicketState.parked;
   }
-  return _TicketState.ready;
+  // Tickets are reusable until their hours run out.
+  return ticketHoursLeft(data) > 0
+      ? _TicketState.ready
+      : _TicketState.completed;
 }
 
 (String, Color, IconData) _stateStyle(_TicketState state) {
@@ -295,7 +296,9 @@ class _ActiveTicketCard extends StatelessWidget {
                       Text(
                         state == _TicketState.parked && enteredAt != null
                             ? 'Entered ${spFormatClockTime(enteredAt)}'
-                            : 'Show this at the entrance',
+                                  ' · ${ticketHoursLeft(data)}h on ticket'
+                            : '${ticketHoursLeft(data)}h left · '
+                                  'Show this at the entrance',
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w600,

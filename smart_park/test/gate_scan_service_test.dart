@@ -249,10 +249,32 @@ void main() {
       expect(r!.reason, 'Already inside. Do not admit twice.');
     });
 
-    test('refuses a ticket that already completed a stay', () async {
+    test('refuses a used-up ticket', () async {
+      await seedTicket('t1', <String, dynamic>{
+        'entryStatus': 'checked_out',
+        'remainingHours': 0,
+      });
+      final GateScanResult? r = await scan(qr('t1'));
+      expect(r!.reason, 'Ticket has no hours left.');
+    });
+
+    test('treats tickets checked out before reuse as used up', () async {
       await seedTicket('t1', <String, dynamic>{'entryStatus': 'checked_out'});
       final GateScanResult? r = await scan(qr('t1'));
-      expect(r!.reason, 'Ticket already completed a stay.');
+      expect(r!.isAllowed, isFalse);
+    });
+
+    test('readmits a checked-out ticket with hours left', () async {
+      await seedTicket('t1', <String, dynamic>{
+        'plan': 'daily',
+        'duration': 1,
+        'entryStatus': 'checked_out',
+        'remainingHours': 22,
+      });
+      final GateScanResult? r = await scan(qr('t1'));
+      expect(r!.isAllowed, isTrue);
+      expect(r.reason, 'Paid ticket verified. 22 hours left. Admit.');
+      expect((await ticket('t1'))['entryStatus'], 'checked_in');
     });
   });
 
@@ -434,7 +456,66 @@ void main() {
       });
       final GateScanResult? r = await scan(qr('t1'), mode: 'exit');
       expect(r!.hasOvertime, isFalse);
-      expect(r.billableHours, 5);
+      expect(r.billableHours, 4);
+      expect((await ticket('t1'))['remainingHours'], 1);
+    });
+
+    test('a day ticket keeps its unused hours after a short stay', () async {
+      // 1 hour still takes the 2-hour minimum: 24 - 2 = 22 left.
+      await seedInside(const Duration(hours: 1), <String, dynamic>{
+        'plan': 'daily',
+        'duration': 1,
+      });
+      final GateScanResult? r = await scan(qr('t1'), mode: 'exit');
+      expect(r!.isAllowed, isTrue);
+      expect(r.billableHours, 2);
+      expect(r.reason, 'Within paid time. 22 hours left on ticket. Release.');
+      final Map<String, dynamic> t = await ticket('t1');
+      expect(t['entryStatus'], 'checked_out');
+      expect(t['remainingHours'], 22);
+    });
+
+    test('rounds every started hour up, with no grace', () async {
+      // 2h15m counts as 3 hours: 22 - 3 = 19 left.
+      await seedInside(const Duration(hours: 2, minutes: 15), <String, dynamic>{
+        'plan': 'daily',
+        'duration': 1,
+        'remainingHours': 22,
+      });
+      final GateScanResult? r = await scan(qr('t1'), mode: 'exit');
+      expect(r!.billableHours, 3);
+      expect((await ticket('t1'))['remainingHours'], 19);
+    });
+
+    test('bills overtime past the hours left on a reused ticket', () async {
+      await db.collection('establishment_details').doc(facilityId).set(
+        <String, dynamic>{
+          'rates': <String, dynamic>{
+            'car': <String, dynamic>{'initial': 50, 'succeedingHour': 20},
+          },
+        },
+      );
+      // 3 hours left, stayed 4h05m -> 5 hours -> 2 hours overtime.
+      await seedInside(const Duration(hours: 4, minutes: 5), <String, dynamic>{
+        'plan': 'daily',
+        'duration': 1,
+        'remainingHours': 3,
+      });
+      final GateScanResult? r = await scan(qr('t1'), mode: 'exit');
+      expect(r!.overtimeHours, 2);
+      expect(r.overtimeAmount, 40);
+      expect((await ticket('t1'))['remainingHours'], 0);
+    });
+
+    test('the minimum never bills overtime by itself', () async {
+      // 1 hour left, stayed 30 min: uses up the hour, no overtime.
+      await seedInside(const Duration(minutes: 30), <String, dynamic>{
+        'remainingHours': 1,
+      });
+      final GateScanResult? r = await scan(qr('t1'), mode: 'exit');
+      expect(r!.hasOvertime, isFalse);
+      expect(r.reason, 'Within paid time. Ticket used up. Release.');
+      expect((await ticket('t1'))['remainingHours'], 0);
     });
 
     test('refuses a ticket that already exited', () async {
