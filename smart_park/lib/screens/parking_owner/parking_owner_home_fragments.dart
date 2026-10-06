@@ -870,7 +870,6 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
         : stats == null
         ? 'No scans today'
         : '${stats.scans} scan${stats.scans == 1 ? '' : 's'} today'
-              '${stats.denied > 0 ? ' · ${stats.denied} denied' : ''}'
               '${stats.last == null ? '' : ' · last ${spFormatClockTime(stats.last!)}'}';
     final String cashLine =
         deactivated ||
@@ -1100,7 +1099,6 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
 /// One staff member's gate scans and overtime cash today, for the Staff tab.
 class _StaffDayStats {
   int scans = 0;
-  int denied = 0;
   DateTime? last;
 
   /// Overtime cash from this staff member's exits today: flagged but not
@@ -1115,7 +1113,8 @@ class _StaffDayStats {
     final Map<String, _StaffDayStats> byStaff = <String, _StaffDayStats>{};
     for (final Map<String, dynamic> data in logs) {
       final String staffId = ((data['staffId'] as String?) ?? '').trim();
-      if (staffId.isEmpty) continue;
+      // Denied scans stay logged but are hidden from the activity UI.
+      if (staffId.isEmpty || !spIsAllowedLog(data)) continue;
       // Pending server timestamps read as null; treat them as now.
       final DateTime time = spParseDateTime(data['timestamp']) ?? now;
       if (!spSameDate(time, now)) continue;
@@ -1124,7 +1123,6 @@ class _StaffDayStats {
         _StaffDayStats.new,
       );
       stats.scans++;
-      if (!spIsAllowedLog(data)) stats.denied++;
       final double overtime = ((data['overtimeAmount'] as num?) ?? 0)
           .toDouble();
       switch (spOvertimeStatus(data)) {

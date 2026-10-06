@@ -170,7 +170,7 @@ class _SignInScreenState extends State<SignInScreen> {
       await AuthEmailService().sendPasswordResetEmail(input);
       EmailRateLimiter.recordSend(rateLimitAction, input);
       if (mounted) {
-        _showSnackBar('Password reset link sent to $input.');
+        await _showResetSentDialog(input);
       }
     } on FirebaseFunctionsException catch (error) {
       final bool throttled = AuthEmailService.isThrottled(error);
@@ -187,6 +187,27 @@ class _SignInScreenState extends State<SignInScreen> {
     } finally {
       _sendingReset = false;
     }
+  }
+
+  Future<void> _showResetSentDialog(String email) {
+    return showDialog<void>(
+      context: context,
+      builder: (BuildContext context) => AlertDialog(
+        icon: const Icon(Icons.mark_email_read_outlined, size: 40),
+        title: const Text('Check your email'),
+        content: Text(
+          'We sent a password reset link to $email.\n\n'
+          "If you don't see it in a few minutes, check your Spam or Junk "
+          'folder.',
+        ),
+        actions: <Widget>[
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override

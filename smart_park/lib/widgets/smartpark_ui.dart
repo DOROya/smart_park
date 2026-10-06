@@ -150,10 +150,13 @@ class SpActivitySummary {
       if (!spSameDate(timestamp, day)) {
         continue;
       }
-      dayLogs.add(data);
+      // Denied scans stay logged but are hidden from the activity UI.
       if (!spIsAllowedLog(data)) {
         denied++;
-      } else if (spLogScanType(data) == 'entry') {
+        continue;
+      }
+      dayLogs.add(data);
+      if (spLogScanType(data) == 'entry') {
         entries++;
       } else {
         exits++;
@@ -843,26 +846,19 @@ class SpDailyActivityTiles extends StatelessWidget {
       caption: 'Vehicles parked',
       value: '${summary.insideNow}',
     );
-    final Widget denied = SpStatTile(
-      icon: Icons.block_rounded,
-      color: spDeniedColor,
-      label: 'Denied Scans',
-      caption: today ? 'Rejected today' : 'Rejected that day',
-      value: '${summary.denied}',
-    );
 
     if (singleRow) {
       return SpGrid(
-        columns: 4,
+        columns: 3,
         spacing: 10,
-        children: <Widget>[entries, exits, inside, denied],
+        children: <Widget>[entries, exits, inside],
       );
     }
     return Column(
       children: [
         SpStatRow(left: entries, right: exits),
         const SizedBox(height: 10),
-        SpStatRow(left: inside, right: denied),
+        inside,
       ],
     );
   }
@@ -990,8 +986,8 @@ class SpLiveSlotsCard extends StatelessWidget {
   }
 }
 
-/// Occupancy ring with occupied/available/capacity legend and a car vs
-/// motorcycle split (free of capacity when per-type counts are known).
+/// Occupancy ring with occupied/capacity legend and a car vs motorcycle
+/// split (occupied of capacity when per-type counts are known).
 class SpSlotsCard extends StatelessWidget {
   const SpSlotsCard({
     super.key,
@@ -1012,7 +1008,6 @@ class SpSlotsCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final int available = (totalSlots - occupied).clamp(0, totalSlots);
     final double occupancy = totalSlots == 0
         ? 0
         : (occupied / totalSlots).clamp(0, 1).toDouble();
@@ -1082,8 +1077,6 @@ class SpSlotsCard extends StatelessWidget {
                       child: Column(
                         children: [
                           _legend(barColor, 'Occupied', occupied),
-                          const SizedBox(height: 10),
-                          _legend(AppTheme.border, 'Available', available),
                           Padding(
                             padding: EdgeInsets.symmetric(vertical: 10),
                             child: Divider(height: 1, color: AppTheme.border),
@@ -1104,7 +1097,7 @@ class SpSlotsCard extends StatelessWidget {
                     children: [
                       _typeChip(
                         Icons.directions_car_rounded,
-                        carOccupied == null ? 'Car slots' : 'Car free',
+                        carOccupied == null ? 'Car slots' : 'Car occupied',
                         carSlots,
                         occupiedOfType: carOccupied,
                       ),
@@ -1113,7 +1106,7 @@ class SpSlotsCard extends StatelessWidget {
                         Icons.two_wheeler_rounded,
                         motorcycleOccupied == null
                             ? 'Motorcycle'
-                            : 'Motorcycle free',
+                            : 'Motorcycle occupied',
                         motorcycleSlots,
                         occupiedOfType: motorcycleOccupied,
                       ),
@@ -1160,7 +1153,7 @@ class SpSlotsCard extends StatelessWidget {
   }) {
     final String value = occupiedOfType == null
         ? '$count'
-        : '${(count - occupiedOfType).clamp(0, count)}/$count';
+        : '${occupiedOfType.clamp(0, count)}/$count';
     return Expanded(
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
