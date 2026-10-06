@@ -448,6 +448,17 @@ void main() {
       final GateScanResult? r = await scan(qr('t1'), mode: 'exit');
       expect(r!.reason, 'No entry on record. Verify first.');
     });
+
+    test('refuses a paid ticket that was never scanned in', () async {
+      // Real tickets always carry createdAt; it must not count as an entry.
+      await seedTicket('t1', <String, dynamic>{
+        'createdAt': Timestamp.fromDate(now.subtract(const Duration(hours: 1))),
+      });
+      final GateScanResult? r = await scan(qr('t1'), mode: 'exit');
+      expect(r!.isAllowed, isFalse);
+      expect(r.reason, 'No entry on record. Verify first.');
+      expect((await ticket('t1'))['entryStatus'], isNull);
+    });
   });
 
   group('lookupByPlate', () {
@@ -490,6 +501,40 @@ void main() {
       final GateScanResult? r = await lookup('XYZ');
       expect(r!.reason, 'Ticket for plate is unpaid.');
       expect(r.transactionId, 't1');
+    });
+
+    test('admits on the unused ticket, not an earlier finished one', () async {
+      await seedTicket('old', <String, dynamic>{
+        'vehiclePlate': 'XYZ',
+        'entryStatus': 'checked_out',
+      });
+      await seedTicket('new', <String, dynamic>{
+        'vehiclePlate': 'XYZ',
+        'entryStatus': 'not_checked_in',
+      });
+      final GateScanResult? r = await lookup('XYZ');
+      expect(r!.isAllowed, isTrue);
+      expect(r.transactionId, 'new');
+    });
+
+    test('releases the parked ticket, not a newer unused one', () async {
+      await seedTicket('a-unused', <String, dynamic>{
+        'vehiclePlate': 'XYZ',
+        'entryStatus': 'not_checked_in',
+      });
+      await seedTicket('b-parked', <String, dynamic>{
+        'vehiclePlate': 'XYZ',
+        'entryStatus': 'checked_in',
+        'entryAt': Timestamp.fromDate(now.subtract(const Duration(hours: 1))),
+      });
+      final GateScanResult? r = await service.lookupByPlate(
+        staff: staff,
+        gateMode: 'exit',
+        rawPlate: 'XYZ',
+      );
+      expect(r!.isAllowed, isTrue);
+      expect(r.transactionId, 'b-parked');
+      expect((await ticket('a-unused'))['entryStatus'], 'not_checked_in');
     });
   });
 }

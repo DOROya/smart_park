@@ -349,7 +349,8 @@ class GateScanService {
             'vehiclePlate',
             whereIn: <String>{plate, plate.toUpperCase()}.toList(),
           )
-          .limit(10)
+          // Room for a regular's past tickets as well as the current one.
+          .limit(50)
           .get();
       final List<QueryDocumentSnapshot<Map<String, dynamic>>> mine = matches
           .docs
@@ -374,15 +375,29 @@ class GateScanService {
           reason: 'No ticket for this plate here.',
         );
       }
-      // Prefer a paid ticket. (Not firstWhere/orElse: the snapshot list's
-      // runtime element type is a private subclass, which orElse rejects.)
+      // Prefer a paid ticket this gate can act on (unused for entry, parked
+      // for exit), so a plate's older, finished tickets don't shadow the
+      // current one; else any paid ticket, so the denial explains why. (Not
+      // firstWhere/orElse: the snapshot list's runtime element type is a
+      // private subclass, which orElse rejects.)
+      bool usableHere(Map<String, dynamic> m) {
+        final String entry = _entryStatus(m);
+        final bool parked = entry == 'checked_in' || entry == 'inside';
+        final bool done = entry == 'checked_out' || entry == 'exited';
+        return gateMode == 'entry' ? !parked && !done : parked;
+      }
+
       QueryDocumentSnapshot<Map<String, dynamic>> chosen = mine.first;
+      QueryDocumentSnapshot<Map<String, dynamic>>? firstPaid;
       for (final QueryDocumentSnapshot<Map<String, dynamic>> d in mine) {
-        if (_status(d.data()) == 'paid') {
-          chosen = d;
+        if (_status(d.data()) != 'paid') continue;
+        firstPaid ??= d;
+        if (usableHere(d.data())) {
+          firstPaid = d;
           break;
         }
       }
+      if (firstPaid != null) chosen = firstPaid;
       if (_status(chosen.data()) != 'paid') {
         await _logDeniedScan(
           staff: staff,
@@ -607,11 +622,9 @@ class GateScanService {
         reason: 'Already exited.',
       );
     }
-    final DateTime? entryAt =
-        _parseTimestamp(ticket['entryAt']) ??
-        _parseTimestamp(ticket['createdAt']);
-    if ((entryStatus != 'checked_in' && entryStatus != 'inside') &&
-        entryAt == null) {
+    // Only a ticket that was scanned in can be scanned out. Every ticket has
+    // a createdAt, so it must not stand in for a missing entry scan.
+    if (entryStatus != 'checked_in' && entryStatus != 'inside') {
       return _deny(
         staff: staff,
         scanType: 'exit',
@@ -623,7 +636,10 @@ class GateScanService {
       );
     }
 
-    final DateTime entryTime = entryAt ?? scannedAt;
+    final DateTime entryTime =
+        _parseTimestamp(ticket['entryAt']) ??
+        _parseTimestamp(ticket['createdAt']) ??
+        scannedAt;
     Duration elapsed = scannedAt.difference(entryTime);
     if (elapsed.isNegative) {
       elapsed = Duration.zero;
