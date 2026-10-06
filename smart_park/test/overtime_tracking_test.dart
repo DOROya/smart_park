@@ -19,19 +19,29 @@ void main() {
       }, r ?? rates)!;
 
   group('SpParkedStay', () {
-    test('overtime starts after the paid hours plus grace', () {
+    test('overtime starts the first minute past the paid hours', () {
       expect(
         overtimeStartsAt(entry, 2),
-        entry.add(const Duration(hours: 2, minutes: 5)),
+        entry.add(const Duration(hours: 2, minutes: 1)),
       );
       final SpParkedStay s = stay(<String, dynamic>{});
       expect(s.paidUntil, entry.add(const Duration(hours: 2)));
+      expect(s.isOverAt(entry.add(const Duration(hours: 2))), isFalse);
       expect(
-        s.isOverAt(entry.add(const Duration(hours: 2, minutes: 5))),
-        isFalse,
+        s.isOverAt(entry.add(const Duration(hours: 2, minutes: 1))),
+        isTrue,
       );
+    });
+
+    test('a reused ticket counts only the hours it has left', () {
+      final SpParkedStay s = stay(<String, dynamic>{
+        'plan': 'daily',
+        'remainingHours': 3,
+      });
+      expect(s.includedHours, 3);
+      expect(s.isOverAt(entry.add(const Duration(hours: 3))), isFalse);
       expect(
-        s.isOverAt(entry.add(const Duration(hours: 2, minutes: 6))),
+        s.isOverAt(entry.add(const Duration(hours: 3, minutes: 1))),
         isTrue,
       );
     });
@@ -59,10 +69,7 @@ void main() {
         s.endsSoonAt(entry.add(const Duration(hours: 1, minutes: 50))),
         isTrue,
       );
-      expect(
-        s.endsSoonAt(entry.add(const Duration(hours: 2, minutes: 3))),
-        isTrue,
-      );
+      expect(s.endsSoonAt(entry.add(const Duration(hours: 2))), isTrue);
       expect(s.endsSoonAt(entry.add(const Duration(hours: 3))), isFalse);
     });
 

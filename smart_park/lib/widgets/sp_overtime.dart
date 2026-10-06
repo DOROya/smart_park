@@ -142,10 +142,8 @@ class SpParkedStay {
       plate: ((ticket['vehiclePlate'] as String?) ?? '').trim(),
       vehicleType: vehicleType,
       entryAt: entryAt,
-      includedHours: includedStayHours(
-        plan: ((ticket['plan'] as String?) ?? 'base').trim().toLowerCase(),
-        duration: ticketDuration(ticket),
-      ),
+      // What was left on the ticket when this visit began.
+      includedHours: ticketHoursLeft(ticket),
       rate: resolveOvertimeRate(rates, vehicleType),
     );
   }
@@ -168,7 +166,7 @@ class SpParkedStay {
 
   bool isOverAt(DateTime now) => overtimeHoursAt(now) > 0;
 
-  /// Paid time ends within [window] (or already ended, still in grace).
+  /// Paid time ends within [window] (or is ending this minute).
   bool endsSoonAt(DateTime now, {Duration window = spEndsSoonWindow}) =>
       !isOverAt(now) && now.isAfter(paidUntil.subtract(window));
 
@@ -393,7 +391,7 @@ class SpParkedStayRow extends StatelessWidget {
     final String timing = over
         ? '+${spFormatDuration(delta)} over'
         : delta.isNegative
-        ? 'in grace period'
+        ? 'ends now'
         : 'ends in ${spFormatDuration(delta)}';
     final Color color = over ? spInsideColor : AppTheme.textMuted;
     return Container(

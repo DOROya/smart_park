@@ -205,6 +205,12 @@ test("staff read and check in their facility's tickets only", async () => {
       { entryStatus: "checked_in", entryAt: serverTimestamp(), entryStaffId: "staff1", entryLogId: "l", updatedAt: serverTimestamp() },
       { merge: true }),
   );
+  // Exits store the hours left on a reusable ticket.
+  await assertSucceeds(
+    setDoc(doc(staff(), "transactions/tx1"),
+      { entryStatus: "checked_out", remainingHours: 22, updatedAt: serverTimestamp() },
+      { merge: true }),
+  );
   await assertFails(updateDoc(doc(staff(), "transactions/tx1"), { status: "refunded" }));
   await assertFails(updateDoc(doc(staff(), "transactions/tx1"), { amount: 0 }));
   await assertFails(updateDoc(doc(staff(), "transactions/tx2"), { entryStatus: "checked_in" }));

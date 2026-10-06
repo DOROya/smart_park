@@ -87,15 +87,48 @@ void main() {
       expect(includedStayHours(plan: 'daily', duration: 0), 24);
     });
 
-    test('no overtime within included time plus grace', () {
-      expect(overtimeHours(const Duration(hours: 2, minutes: 5), 2), 0);
+    test('every started hour counts, by whole minutes', () {
+      expect(stayHours(Duration.zero), 0);
+      expect(stayHours(const Duration(seconds: 59)), 0);
+      expect(stayHours(const Duration(minutes: 1)), 1);
+      expect(stayHours(const Duration(hours: 2)), 2);
+      expect(stayHours(const Duration(hours: 2, seconds: 59)), 2);
+      expect(stayHours(const Duration(hours: 2, minutes: 5)), 3);
+      expect(stayHours(const Duration(hours: 2, minutes: 15)), 3);
+      expect(stayHours(const Duration(hours: 2, minutes: 30)), 3);
+    });
+
+    test('no overtime within the paid hours', () {
+      expect(overtimeHours(const Duration(hours: 2), 2), 0);
       expect(overtimeHours(Duration.zero, 2), 0);
     });
 
-    test('partial hours round up', () {
-      expect(overtimeHours(const Duration(hours: 2, minutes: 6), 2), 1);
-      expect(overtimeHours(const Duration(hours: 4, minutes: 5), 2), 2);
-      expect(overtimeHours(const Duration(hours: 4, minutes: 6), 2), 3);
+    test('overtime has no grace and rounds up', () {
+      expect(overtimeHours(const Duration(hours: 2, minutes: 1), 2), 1);
+      expect(overtimeHours(const Duration(hours: 2, minutes: 5), 2), 1);
+      expect(overtimeHours(const Duration(hours: 4, minutes: 5), 2), 3);
+    });
+
+    test('an exit deducts at least the base stay, at most what is left', () {
+      expect(hoursDeducted(const Duration(hours: 1), 24), 2);
+      expect(hoursDeducted(const Duration(hours: 2, minutes: 15), 22), 3);
+      expect(hoursDeducted(const Duration(minutes: 30), 1), 1);
+      expect(hoursDeducted(const Duration(hours: 9), 3), 3);
+    });
+
+    test('hours left come from the ticket, else its plan', () {
+      expect(ticketHoursLeft(<String, dynamic>{'remainingHours': 22}), 22);
+      expect(
+        ticketHoursLeft(<String, dynamic>{'plan': 'daily', 'duration': 2}),
+        48,
+      );
+      expect(
+        ticketHoursLeft(<String, dynamic>{
+          'plan': 'daily',
+          'entryStatus': 'checked_out',
+        }),
+        0,
+      );
     });
 
     test('a daily ticket is not charged after two hours', () {

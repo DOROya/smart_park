@@ -249,12 +249,12 @@ service cloud.firestore {
 
     // ---------- tickets and money (written by Cloud Functions only) ----------
 
-    // Gate staff record check-in/out, overtime and overtime cash collected;
-    // nothing about payment.
+    // Gate staff record check-in/out, the hours left on a reusable ticket,
+    // overtime and overtime cash collected; nothing about payment.
     function staffTicketUpdateOk() {
       return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
         'entryStatus', 'entryAt', 'entryStaffId', 'entryLogId',
-        'exitAt', 'exitStaffId', 'exitLogId', 'staySeconds',
+        'exitAt', 'exitStaffId', 'exitLogId', 'staySeconds', 'remainingHours',
         'overtimeHours', 'overtimeRate', 'overtimeAmount', 'overtimeStatus',
         'overtimeCollectedBy', 'overtimeCollectedAt', 'updatedAt'
       ]) && overtimeCollectorOk();

@@ -375,16 +375,15 @@ class GateScanService {
           reason: 'No ticket for this plate here.',
         );
       }
-      // Prefer a paid ticket this gate can act on (unused for entry, parked
-      // for exit), so a plate's older, finished tickets don't shadow the
+      // Prefer a paid ticket this gate can act on (hours left for entry,
+      // parked for exit), so a plate's older, used-up tickets don't shadow the
       // current one; else any paid ticket, so the denial explains why. (Not
       // firstWhere/orElse: the snapshot list's runtime element type is a
       // private subclass, which orElse rejects.)
       bool usableHere(Map<String, dynamic> m) {
         final String entry = _entryStatus(m);
         final bool parked = entry == 'checked_in' || entry == 'inside';
-        final bool done = entry == 'checked_out' || entry == 'exited';
-        return gateMode == 'entry' ? !parked && !done : parked;
+        return gateMode == 'entry' ? !parked && ticketHoursLeft(m) > 0 : parked;
       }
 
       QueryDocumentSnapshot<Map<String, dynamic>> chosen = mine.first;
@@ -551,15 +550,18 @@ class GateScanService {
         reason: 'Already inside. Do not admit twice.',
       );
     }
-    if (entryStatus == 'checked_out' || entryStatus == 'exited') {
+    // Tickets are reusable: a checked-out ticket may come back in while it
+    // has hours left.
+    final int hoursLeft = ticketHoursLeft(ticket);
+    if (hoursLeft <= 0) {
       return _deny(
         staff: staff,
         scanType: 'entry',
         plate: plate,
         transactionId: transactionId,
         timestamp: scannedAt,
-        logReason: 'Ticket already used.',
-        reason: 'Ticket already completed a stay.',
+        logReason: 'Ticket has no hours left.',
+        reason: 'Ticket has no hours left.',
       );
     }
     final DocumentReference<Map<String, dynamic>> ticketRef = _db
@@ -583,6 +585,7 @@ class GateScanService {
       'decisionReason': 'Paid ticket verified for this facility.',
       'isActive': true,
       'transactionId': transactionId,
+      'remainingHours': hoursLeft,
     });
     await batch.commit();
     await _logStaffAction(
@@ -598,7 +601,7 @@ class GateScanService {
       scanType: 'entry',
       timestamp: scannedAt,
       transactionId: transactionId,
-      reason: 'Paid ticket verified. Admit vehicle.',
+      reason: 'Paid ticket verified. ${_hoursText(hoursLeft)} left. Admit.',
     );
   }
 
@@ -650,13 +653,12 @@ class GateScanService {
         .trim()
         .toLowerCase();
     final double? rate = resolveOvertimeRate(rates, vType);
-    // Overtime starts after the time the driver paid for, not always
-    // after the base stay.
-    final int includedHours = includedStayHours(
-      plan: ((ticket['plan'] as String?) ?? 'base').trim().toLowerCase(),
-      duration: ticketDuration(ticket),
-    );
-    final int extraHours = overtimeHours(elapsed, includedHours);
+    // Overtime starts after the hours left on the ticket. The rest stays on
+    // the ticket for the next visit.
+    final int paidHours = ticketHoursLeft(ticket);
+    final int extraHours = overtimeHours(elapsed, paidHours);
+    final int deducted = hoursDeducted(elapsed, paidHours);
+    final int hoursLeft = paidHours - deducted;
     final double amount = rate == null ? 0 : extraHours * rate;
     final bool cashDue = extraHours > 0 && amount > 0;
     final String oStatus = extraHours <= 0
@@ -677,6 +679,7 @@ class GateScanService {
       'exitStaffId': staff.staffId,
       'exitLogId': exitRef.id,
       'staySeconds': elapsed.inSeconds,
+      'remainingHours': hoursLeft,
       'overtimeHours': extraHours,
       'overtimeRate': rate,
       'overtimeAmount': amount,
@@ -693,7 +696,9 @@ class GateScanService {
       'isActive': false,
       'transactionId': transactionId,
       'elapsedSeconds': elapsed.inSeconds,
-      'billableHours': includedHours + extraHours,
+      'billableHours': deducted + extraHours,
+      'hoursDeducted': deducted,
+      'remainingHours': hoursLeft,
       'overtimeHours': extraHours,
       'overtimeRate': rate,
       'overtimeAmount': amount,
@@ -722,13 +727,16 @@ class GateScanService {
       timestamp: scannedAt,
       transactionId: transactionId,
       elapsed: elapsed,
-      billableHours: includedHours + extraHours,
+      billableHours: deducted + extraHours,
       overtimeHours: extraHours.toDouble(),
       overtimeAmount: amount,
       activityLogId: exitRef.id,
-      reason: extraHours <= 0
-          ? 'Within paid time. Release.'
-          : (cashDue ? 'Overtime: collect cash first.' : 'Overtime: confirm.'),
+      reason: extraHours > 0
+          ? (cashDue ? 'Overtime: collect cash first.' : 'Overtime: confirm.')
+          : hoursLeft > 0
+          ? 'Within paid time. ${_hoursText(hoursLeft)} left on ticket. '
+                'Release.'
+          : 'Within paid time. Ticket used up. Release.',
     );
   }
 
@@ -923,6 +931,8 @@ class GateScanService {
         'vehiclePlate': vehiclePlate,
     });
   }
+
+  static String _hoursText(int hours) => '$hours hour${hours == 1 ? '' : 's'}';
 
   static String _status(Map<String, dynamic> ticket) =>
       ((ticket['status'] as String?) ?? '').toLowerCase();
