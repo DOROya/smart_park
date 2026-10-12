@@ -28,11 +28,13 @@ void main() {
 
   /// Opens the picker from a button so the page's pop result is captured.
   Future<DriverPackageSelection? Function()> openPicker(
-    WidgetTester tester,
-  ) async {
+    WidgetTester tester, {
+    Size physicalSize = const Size(1080, 2400),
+    double devicePixelRatio = 2.5,
+  }) async {
     DriverPackageSelection? result;
-    tester.view.physicalSize = const Size(1080, 2400);
-    tester.view.devicePixelRatio = 2.5;
+    tester.view.physicalSize = physicalSize;
+    tester.view.devicePixelRatio = devicePixelRatio;
     addTearDown(tester.view.reset);
     await tester.pumpWidget(
       MaterialApp(
@@ -106,5 +108,25 @@ void main() {
     expect(result()!.plan, 'monthly');
     expect(result()!.duration, 3);
     expect(result()!.totalAmount, 12000);
+  });
+
+  testWidgets('works on a landscape tablet (1280x800)', (
+    WidgetTester tester,
+  ) async {
+    final DriverPackageSelection? Function() result = await openPicker(
+      tester,
+      physicalSize: const Size(2560, 1600),
+      devicePixelRatio: 2,
+    );
+    await tester.tap(find.text('Weekly Package'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('More'));
+    await tester.pumpAndSettle();
+    expect(find.text('2 weeks × ₱1200'), findsOneWidget);
+    // The content column stays readable instead of stretching edge to edge.
+    expect(tester.getSize(find.text('Weekly Package')).width, lessThan(640));
+    await tester.tap(find.text('Continue'));
+    await tester.pumpAndSettle();
+    expect(result()!.totalAmount, 2400);
   });
 }

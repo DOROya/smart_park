@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
@@ -988,7 +990,8 @@ class SpLiveSlotsCard extends StatelessWidget {
 }
 
 /// Occupancy ring with occupied/capacity legend and a car vs motorcycle
-/// split (occupied of capacity when per-type counts are known).
+/// split (occupied of capacity when per-type counts are known). In a narrow
+/// spot (a tablet's side column) it stacks instead of squeezing its labels.
 class SpSlotsCard extends StatelessWidget {
   const SpSlotsCard({
     super.key,
@@ -1007,8 +1010,18 @@ class SpSlotsCard extends StatelessWidget {
   final int? carOccupied;
   final int? motorcycleOccupied;
 
+  /// Below this card width the layout stacks.
+  static const double _compactWidth = 320;
+
   @override
   Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) =>
+          _buildCard(compact: constraints.maxWidth < _compactWidth),
+    );
+  }
+
+  Widget _buildCard({required bool compact}) {
     final double occupancy = totalSlots == 0
         ? 0
         : (occupied / totalSlots).clamp(0, 1).toDouble();
@@ -1021,7 +1034,7 @@ class SpSlotsCard extends StatelessWidget {
     return SpSectionCard(
       icon: Icons.local_parking_rounded,
       title: 'Parking Slots',
-      trailing: totalSlots > 0
+      trailing: totalSlots > 0 && !compact
           ? SpChip(label: levelLabel, color: barColor)
           : null,
       child: totalSlots == 0
@@ -1030,8 +1043,17 @@ class SpSlotsCard extends StatelessWidget {
               style: TextStyle(color: AppTheme.textMuted),
             )
           : Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Row(
+                if (compact) ...[
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: SpChip(label: levelLabel, color: barColor),
+                  ),
+                  const SizedBox(height: 14),
+                ],
+                Flex(
+                  direction: compact ? Axis.vertical : Axis.horizontal,
                   children: [
                     SizedBox(
                       width: 104,
@@ -1073,8 +1095,12 @@ class SpSlotsCard extends StatelessWidget {
                         ],
                       ),
                     ),
-                    const SizedBox(width: 20),
-                    Expanded(
+                    if (compact)
+                      const SizedBox(height: 16)
+                    else
+                      const SizedBox(width: 20),
+                    _flexible(
+                      compact: compact,
                       child: Column(
                         children: [
                           _legend(barColor, 'Occupied', occupied),
@@ -1094,22 +1120,38 @@ class SpSlotsCard extends StatelessWidget {
                 ),
                 if (carSlots > 0 || motorcycleSlots > 0) ...[
                   const SizedBox(height: 14),
-                  Row(
+                  Flex(
+                    direction: compact ? Axis.vertical : Axis.horizontal,
                     children: [
-                      _typeChip(
-                        Icons.directions_car_rounded,
-                        carOccupied == null ? 'Car slots' : 'Car occupied',
-                        carSlots,
-                        occupiedOfType: carOccupied,
+                      _flexible(
+                        compact: compact,
+                        child: _typeChip(
+                          Icons.directions_car_rounded,
+                          compact
+                              ? 'Car'
+                              : (carOccupied == null
+                                    ? 'Car slots'
+                                    : 'Car occupied'),
+                          carSlots,
+                          occupiedOfType: carOccupied,
+                        ),
                       ),
-                      const SizedBox(width: 8),
-                      _typeChip(
-                        Icons.two_wheeler_rounded,
-                        motorcycleOccupied == null
-                            ? 'Motorcycle'
-                            : 'Motorcycle occupied',
-                        motorcycleSlots,
-                        occupiedOfType: motorcycleOccupied,
+                      if (compact)
+                        const SizedBox(height: 8)
+                      else
+                        const SizedBox(width: 8),
+                      _flexible(
+                        compact: compact,
+                        child: _typeChip(
+                          Icons.two_wheeler_rounded,
+                          compact
+                              ? 'Motorcycle'
+                              : (motorcycleOccupied == null
+                                    ? 'Motorcycle'
+                                    : 'Motorcycle occupied'),
+                          motorcycleSlots,
+                          occupiedOfType: motorcycleOccupied,
+                        ),
                       ),
                     ],
                   ),
@@ -1155,37 +1197,39 @@ class SpSlotsCard extends StatelessWidget {
     final String value = occupiedOfType == null
         ? '$count'
         : '${occupiedOfType.clamp(0, count)}/$count';
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-        decoration: BoxDecoration(
-          color: AppTheme.surfaceAlt,
-          borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
-        ),
-        child: Row(
-          children: [
-            Icon(icon, size: 18, color: AppTheme.textDark),
-            const SizedBox(width: 6),
-            Expanded(
-              child: Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
-              ),
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: AppTheme.surfaceAlt,
+        borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, size: 18, color: AppTheme.textDark),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
             ),
-            Text(
-              value,
-              style: TextStyle(
-                fontWeight: FontWeight.w800,
-                color: AppTheme.textDark,
-              ),
+          ),
+          Text(
+            value,
+            style: TextStyle(
+              fontWeight: FontWeight.w800,
+              color: AppTheme.textDark,
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
+
+  /// Shares a row's width side by side; takes the full width when stacked.
+  Widget _flexible({required bool compact, required Widget child}) =>
+      compact ? child : Expanded(child: child);
 }
 
 /// License-plate style badge.
@@ -1534,7 +1578,9 @@ class SpBarChart extends StatelessWidget {
                       padding: EdgeInsets.symmetric(horizontal: gap / 2),
                       child: LayoutBuilder(
                         builder: (BuildContext context, BoxConstraints box) {
-                          final double labelSpace = i == peakIndex ? 18 : 0;
+                          // Every bar leaves room for the peak's label, so
+                          // equal values draw at equal heights.
+                          const double labelSpace = 18;
                           final double usable = (box.maxHeight - labelSpace)
                               .clamp(0, double.infinity);
                           final double barHeight = maxValue <= 0
@@ -1634,11 +1680,30 @@ String spCompactPeso(double value) {
 /// it resubscribes and flashes its loading state (the whole tab "refreshes"
 /// when a filter or chip changes). Call [cachedStream] with a key that
 /// includes any ids the query depends on.
+///
+/// Each cached stream replays its latest value (or error) to new listeners.
+/// Without that, a StreamBuilder that subscribes later (e.g. after the phone
+/// layout turns into the tablet one) waits for the next change and shows
+/// empty cards meanwhile.
 mixin SpStreamCache<W extends StatefulWidget> on State<W> {
-  final Map<String, Stream<dynamic>> _spStreams = <String, Stream<dynamic>>{};
+  final Map<String, _SpReplayStream<dynamic>> _spStreams =
+      <String, _SpReplayStream<dynamic>>{};
 
   Stream<T> cachedStream<T>(String key, Stream<T> Function() create) {
-    return _spStreams.putIfAbsent(key, create) as Stream<T>;
+    final _SpReplayStream<dynamic> cached = _spStreams.putIfAbsent(
+      key,
+      () => _SpReplayStream<T>(create()),
+    );
+    return cached.stream as Stream<T>;
+  }
+
+  @override
+  void dispose() {
+    for (final _SpReplayStream<dynamic> stream in _spStreams.values) {
+      stream.dispose();
+    }
+    _spStreams.clear();
+    super.dispose();
   }
 
   /// Builds from one [day] of a facility's gate logs plus its still-open
@@ -1672,6 +1737,55 @@ mixin SpStreamCache<W extends StatefulWidget> on State<W> {
         );
       },
     );
+  }
+}
+
+/// One shared subscription to [source] that hands every listener the latest
+/// event first, then everything after it.
+class _SpReplayStream<T> {
+  _SpReplayStream(this._source);
+
+  final Stream<T> _source;
+  // Synchronous: the source's events are already async, so forwarding
+  // them straight on avoids landing a frame late.
+  final StreamController<T> _events = StreamController<T>.broadcast(sync: true);
+  StreamSubscription<T>? _subscription;
+  bool _hasValue = false;
+  late T _value;
+  Object? _error;
+  StackTrace? _errorStack;
+
+  /// The same instance on every call, so StreamBuilder doesn't resubscribe.
+  late final Stream<T> stream = Stream<T>.multi((MultiStreamController<T> out) {
+    _subscription ??= _source.listen(
+      (T value) {
+        _hasValue = true;
+        _value = value;
+        _error = null;
+        _events.add(value);
+      },
+      onError: (Object error, StackTrace stack) {
+        _error = error;
+        _errorStack = stack;
+        _events.addError(error, stack);
+      },
+    );
+    if (_error != null) {
+      out.addErrorSync(_error!, _errorStack);
+    } else if (_hasValue) {
+      out.addSync(_value);
+    }
+    final StreamSubscription<T> forward = _events.stream.listen(
+      out.addSync,
+      onError: out.addErrorSync,
+      onDone: out.closeSync,
+    );
+    out.onCancel = forward.cancel;
+  });
+
+  void dispose() {
+    _subscription?.cancel();
+    _events.close();
   }
 }
 

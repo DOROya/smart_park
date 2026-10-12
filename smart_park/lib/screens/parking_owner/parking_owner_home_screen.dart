@@ -32,6 +32,7 @@ import '../../widgets/sp_profile_view.dart';
 import '../auth/sign_in_screen.dart';
 import 'widgets/facility_registration_dialog.dart';
 import 'widgets/facility_review_status_banner.dart';
+import 'widgets/parking_trends_card.dart';
 
 part 'parking_owner_home_fragments.dart';
 part 'parking_owner_commissions.dart';
