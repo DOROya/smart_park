@@ -78,6 +78,9 @@ exports.setStaffSignInState = onDocumentWritten("staff_accounts/{staffId}", (eve
   ),
 );
 
+// Owner-only emergency password reset for one of their staff members.
+exports.resetStaffPassword = onCall((request) => staff.resetStaffPassword(request));
+
 /**
  * Admin-only: rebuilds `stats_daily` and `stats/platform` from every paid
  * payment, and recounts every establishment's slot occupancy. Run once after deploying (Settings > Rebuild statistics), and
