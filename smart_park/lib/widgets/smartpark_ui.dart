@@ -1534,7 +1534,9 @@ class SpBarChart extends StatelessWidget {
                       padding: EdgeInsets.symmetric(horizontal: gap / 2),
                       child: LayoutBuilder(
                         builder: (BuildContext context, BoxConstraints box) {
-                          final double labelSpace = i == peakIndex ? 18 : 0;
+                          // Every bar leaves room for the peak's label, so
+                          // equal values draw at equal heights.
+                          const double labelSpace = 18;
                           final double usable = (box.maxHeight - labelSpace)
                               .clamp(0, double.infinity);
                           final double barHeight = maxValue <= 0

@@ -221,6 +221,9 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
                         summary: summary,
                         overstayCard: overstayCard,
                         overtimeCash: overtimeCash,
+                        trendsCard: ParkingTrendsCard(
+                          facilityId: establishmentId,
+                        ),
                         slotsCard: SpLiveSlotsCard(
                           establishmentId: establishmentId,
                           totalSlots: totalSlots,
@@ -280,6 +283,8 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
                           motorcycleSlots: motorcycleSlots,
                         ),
                         const SizedBox(height: 16),
+                        ParkingTrendsCard(facilityId: establishmentId),
+                        const SizedBox(height: 16),
                         _buildFacilityDetailsCard(
                           establishmentId: establishmentId,
                           facility: facility,
@@ -326,6 +331,7 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
     required SpActivitySummary summary,
     required Widget overstayCard,
     required SpOvertimeCash overtimeCash,
+    required Widget trendsCard,
     required Widget slotsCard,
     required Widget detailsCard,
   }) {
@@ -381,6 +387,8 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
             else
               for (final Map<String, dynamic> data in summary.dayLogs.take(6))
                 _recentScanCard(data),
+            const SizedBox(height: 20),
+            trendsCard,
           ],
           right: [slotsCard, const SizedBox(height: 16), detailsCard],
         ),
