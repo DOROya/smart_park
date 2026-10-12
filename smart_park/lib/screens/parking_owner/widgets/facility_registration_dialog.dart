@@ -347,6 +347,27 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
     return null;
   }
 
+  /// Long-term rates are optional: blank means the package isn't offered,
+  /// but anything typed must be a real amount.
+  String? _optionalAmountValidator(String? value) {
+    final String text = value?.trim() ?? '';
+    if (text.isEmpty) {
+      return null;
+    }
+    final double? amount = double.tryParse(text);
+    if (amount == null || amount <= 0) {
+      return 'Enter an amount, or leave blank';
+    }
+    return null;
+  }
+
+  bool get _hasAnyLongTermRate => <TextEditingController>[
+    _rateCarWeeklyController,
+    _rateCarMonthlyController,
+    _rateMotorWeeklyController,
+    _rateMotorMonthlyController,
+  ].any((TextEditingController c) => c.text.trim().isNotEmpty);
+
   String? _slotValidator(String? value, String label) {
     final String text = value?.trim() ?? '';
     if (text.isEmpty) {
@@ -495,6 +516,14 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
 
     if (_selectedLocation == null) {
       _showSnackBar('Tap on the map to pin your facility location.');
+      return;
+    }
+
+    if (_allowLongTermRates && !_hasAnyLongTermRate) {
+      _showSnackBar(
+        'Enter at least one weekly or monthly rate, or turn off long-term '
+        'parking.',
+      );
       return;
     }
 
@@ -1274,7 +1303,8 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
                 ),
               ),
               subtitle: Text(
-                'By default, only hourly & daily rates are enabled.',
+                'Off by default. Turn on to sell weekly (7-day) and monthly '
+                '(30-day) packages.',
                 style: TextStyle(color: AppTheme.textMuted, fontSize: 11),
               ),
               value: _allowLongTermRates,
@@ -1290,13 +1320,15 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
             _doubleFields(
               first: _buildInputField(
                 label: 'Car Weekly Rate (₱)',
-                hint: 'e.g. 1200',
+                hint: 'e.g. 1200 · blank = not offered',
+                validator: _optionalAmountValidator,
                 controller: _rateCarWeeklyController,
                 keyboardType: TextInputType.number,
               ),
               second: _buildInputField(
                 label: 'Car Monthly Rate (₱)',
-                hint: 'e.g. 4000',
+                hint: 'e.g. 4000 · blank = not offered',
+                validator: _optionalAmountValidator,
                 controller: _rateCarMonthlyController,
                 keyboardType: TextInputType.number,
               ),
@@ -1305,13 +1337,15 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
             _doubleFields(
               first: _buildInputField(
                 label: 'Motorcycle Weekly Rate (₱)',
-                hint: 'e.g. 500',
+                hint: 'e.g. 500 · blank = not offered',
+                validator: _optionalAmountValidator,
                 controller: _rateMotorWeeklyController,
                 keyboardType: TextInputType.number,
               ),
               second: _buildInputField(
                 label: 'Motorcycle Monthly Rate (₱)',
-                hint: 'e.g. 1800',
+                hint: 'e.g. 1800 · blank = not offered',
+                validator: _optionalAmountValidator,
                 controller: _rateMotorMonthlyController,
                 keyboardType: TextInputType.number,
               ),

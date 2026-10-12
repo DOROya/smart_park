@@ -12,6 +12,8 @@ class DriverPackageOption {
     required this.initialAmount,
     this.succeedingHourAmount = 0.0,
     this.dailyAmount = 0.0,
+    this.weeklyAmount = 0.0,
+    this.monthlyAmount = 0.0,
   });
 
   final String key;
@@ -20,6 +22,17 @@ class DriverPackageOption {
   final double initialAmount;
   final double succeedingHourAmount;
   final double dailyAmount;
+  final double weeklyAmount;
+  final double monthlyAmount;
+
+  /// The price of one unit of this package: the base stay, or one day, week
+  /// or month.
+  double get unitAmount => switch (key) {
+    'daily' => dailyAmount,
+    'weekly' => weeklyAmount,
+    'monthly' => monthlyAmount,
+    _ => initialAmount,
+  };
 }
 
 class DriverPackageSelection {
@@ -80,29 +93,30 @@ class _DriverPackageSelectionPageState
       initialAmount: option.initialAmount,
       succeedingHourAmount: option.succeedingHourAmount,
       dailyAmount: option.dailyAmount,
+      weeklyAmount: option.weeklyAmount,
+      monthlyAmount: option.monthlyAmount,
       duration: duration,
     );
   }
 
   /// Largest duration each plan allows (matches the checkout function).
-  int _maxDuration(String planKey) => switch (planKey) {
-    'extended' => 12,
-    'daily' => 7,
-    _ => 1,
-  };
+  int _maxDuration(String planKey) => kMaxPackageDuration[planKey] ?? 1;
 
-  bool _hasDuration(String planKey) =>
-      planKey == 'extended' || planKey == 'daily';
+  bool _hasDuration(String planKey) => kMaxPackageDuration.containsKey(planKey);
 
   String _durationTitle(String planKey) => switch (planKey) {
     'extended' => 'Additional hours',
     'daily' => 'Number of days',
+    'weekly' => 'Number of weeks',
+    'monthly' => 'Number of months',
     _ => 'Duration',
   };
 
   String _durationUnit(String planKey, int count) => switch (planKey) {
     'extended' => count == 1 ? 'hour' : 'hours',
     'daily' => count == 1 ? 'day' : 'days',
+    'weekly' => count == 1 ? 'week' : 'weeks',
+    'monthly' => count == 1 ? 'month' : 'months',
     _ => '',
   };
 
@@ -112,6 +126,9 @@ class _DriverPackageSelectionPageState
       'First $spBaseStayHours hours, then add hours at '
           '${_amountText(option.succeedingHourAmount)}/hr.',
     'daily' => 'Full-day parking, charged per day.',
+    'weekly' => 'Long-term: 7 days ($kHoursPerWeek hours) of parking per week.',
+    'monthly' =>
+      'Long-term: 30 days ($kHoursPerMonth hours) of parking per month.',
     _ => '',
   };
 
@@ -120,14 +137,9 @@ class _DriverPackageSelectionPageState
         'base' => (_amountText(option.initialAmount), '/ $spBaseStayLabel'),
         'extended' => (_amountText(option.initialAmount), '+ hours'),
         'daily' => (_amountText(option.dailyAmount), '/ day'),
-        _ => (
-          _amountText(
-            option.initialAmount > 0
-                ? option.initialAmount
-                : option.dailyAmount,
-          ),
-          '',
-        ),
+        'weekly' => (_amountText(option.weeklyAmount), '/ week'),
+        'monthly' => (_amountText(option.monthlyAmount), '/ month'),
+        _ => (_amountText(option.unitAmount), ''),
       };
 
   /// When the paid time ends if the driver parks now.
@@ -169,7 +181,8 @@ class _DriverPackageSelectionPageState
       'base' => 'Base Stay · $spBaseStayHours hours',
       'extended' =>
         '+$effectiveDuration hr${effectiveDuration == 1 ? "" : "s"} additional',
-      'daily' => '$effectiveDuration day${effectiveDuration == 1 ? "" : "s"}',
+      'daily' || 'weekly' || 'monthly' =>
+        '$effectiveDuration ${_durationUnit(_selectedPlan, effectiveDuration)}',
       _ => '$effectiveDuration',
     };
 
@@ -177,9 +190,7 @@ class _DriverPackageSelectionPageState
       DriverPackageSelection(
         plan: _selectedPlan,
         duration: effectiveDuration,
-        unitAmount: selectedOption.initialAmount > 0
-            ? selectedOption.initialAmount
-            : selectedOption.dailyAmount,
+        unitAmount: selectedOption.unitAmount,
         totalAmount: totalAmount,
         displayPlanLabel: displayPlanLabel,
         displayDurationLabel: displayDurationLabel,
@@ -425,10 +436,10 @@ class _DriverPackageSelectionPageState
           _amountText(option.succeedingHourAmount * duration),
         ),
       ],
-      'daily' => <Widget>[
+      'daily' || 'weekly' || 'monthly' => <Widget>[
         _summaryLine(
-          '$duration $unit × ${_amountText(option.dailyAmount)}',
-          _amountText(option.dailyAmount * duration),
+          '$duration $unit × ${_amountText(option.unitAmount)}',
+          _amountText(option.unitAmount * duration),
         ),
       ],
       _ => <Widget>[

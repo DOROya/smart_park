@@ -7,7 +7,8 @@ const PLATFORM_FEE_RATE = 0.05;
 
 const SUPPORTED_PAYMENT_METHODS = ["card", "gcash", "paymaya", "qrph"];
 
-const MAX_DURATION = { extended: 12, daily: 7 };
+// Must match `kMaxPackageDuration` in lib/services/parking_pricing.dart.
+const MAX_DURATION = { extended: 12, daily: 7, weekly: 4, monthly: 3 };
 
 function isPlainObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -36,6 +37,12 @@ function vehicleRates(ratesByType, vehicleType) {
     ),
     succeedingDaily: parseAmount(
       rateMap.succeedingDaily ?? rateMap.succeeding_daily ?? rateMap.daily,
+    ),
+    weekly: parseAmount(
+      rateMap.weekly ?? rateMap.succeedingWeekly ?? rateMap.succeeding_weekly,
+    ),
+    monthly: parseAmount(
+      rateMap.monthly ?? rateMap.succeedingMonthly ?? rateMap.succeeding_monthly,
     ),
   };
 }
@@ -71,6 +78,22 @@ function computeAmount({ ratesByType, vehicleType, plan, duration }) {
         throw new PricingError("Invalid number of days.");
       }
       return { amount: rates.succeedingDaily * days, duration: days };
+    case "weekly":
+      if (rates.weekly <= 0) {
+        throw new PricingError("Weekly package is not offered.");
+      }
+      if (!(days >= 1 && days <= MAX_DURATION.weekly)) {
+        throw new PricingError("Invalid number of weeks.");
+      }
+      return { amount: rates.weekly * days, duration: days };
+    case "monthly":
+      if (rates.monthly <= 0) {
+        throw new PricingError("Monthly package is not offered.");
+      }
+      if (!(days >= 1 && days <= MAX_DURATION.monthly)) {
+        throw new PricingError("Invalid number of months.");
+      }
+      return { amount: rates.monthly * days, duration: days };
     default:
       throw new PricingError("Unknown package.");
   }
@@ -98,6 +121,7 @@ function estimateProcessorFeeCentavos(grossCentavos, paymentMethod) {
 
 module.exports = {
   PLATFORM_FEE_RATE,
+  MAX_DURATION,
   SUPPORTED_PAYMENT_METHODS,
   PricingError,
   parseAmount,

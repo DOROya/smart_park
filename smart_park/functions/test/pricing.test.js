@@ -3,6 +3,7 @@ const assert = require("node:assert/strict");
 
 const {
   PricingError,
+  MAX_DURATION,
   parseAmount,
   computeAmount,
   platformFeeCentavosFor,
@@ -50,6 +51,45 @@ test("daily multiplies the daily rate", () => {
     computeAmount({ ratesByType: rates, vehicleType: "car", plan: "daily", duration: 2 }).amount,
     600,
   );
+});
+
+test("weekly and monthly multiply their own rate", () => {
+  const longTerm = { car: { initial: 50, weekly: "1200", monthly: 4000 } };
+  assert.deepEqual(
+    computeAmount({ ratesByType: longTerm, vehicleType: "car", plan: "weekly", duration: 2 }),
+    { amount: 2400, duration: 2 },
+  );
+  assert.deepEqual(
+    computeAmount({ ratesByType: longTerm, vehicleType: "car", plan: "monthly", duration: 3 }),
+    { amount: 12000, duration: 3 },
+  );
+});
+
+test("long-term plans need an owner rate and an in-range duration", () => {
+  // `rates.car` sets no weekly or monthly rate.
+  for (const plan of ["weekly", "monthly"]) {
+    assert.throws(
+      () => computeAmount({ ratesByType: rates, vehicleType: "car", plan, duration: 1 }),
+      PricingError,
+    );
+  }
+  const longTerm = { car: { weekly: 1200, monthly: 4000 } };
+  for (const [plan, max] of [["weekly", 4], ["monthly", 3]]) {
+    for (const duration of [0, max + 1, 1.5, "1", undefined]) {
+      assert.throws(
+        () => computeAmount({ ratesByType: longTerm, vehicleType: "car", plan, duration }),
+        PricingError,
+      );
+    }
+    assert.equal(
+      computeAmount({ ratesByType: longTerm, vehicleType: "car", plan, duration: max }).duration,
+      max,
+    );
+  }
+});
+
+test("duration limits match the app's kMaxPackageDuration", () => {
+  assert.deepEqual(MAX_DURATION, { extended: 12, daily: 7, weekly: 4, monthly: 3 });
 });
 
 test("plans the establishment does not offer are rejected", () => {

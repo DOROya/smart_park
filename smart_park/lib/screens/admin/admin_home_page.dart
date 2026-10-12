@@ -305,9 +305,13 @@ class _AdminHomePageState extends State<AdminHomePage>
       final String succH = (val['succeedingHour'] ?? '').toString();
       final String succD = (val['succeedingDaily'] ?? val['daily'] ?? '')
           .toString();
+      final String weekly = (val['weekly'] ?? '').toString();
+      final String monthly = (val['monthly'] ?? '').toString();
       String res = initial;
       if (succH.isNotEmpty) res += ' (+$succH/hr)';
       if (succD.isNotEmpty) res += ' ($succD/day)';
+      if (weekly.isNotEmpty) res += ' ($weekly/week)';
+      if (monthly.isNotEmpty) res += ' ($monthly/month)';
       return res;
     }
     return (val ?? '-').toString();

@@ -170,7 +170,7 @@ class _DriverCheckoutPaymentPageState extends State<DriverCheckoutPaymentPage> {
                                 ),
                                 const SizedBox(height: 4),
                                 Text(
-                                  '${widget.vehicleLabel} · ${widget.duration} ${widget.plan}',
+                                  '${widget.vehicleLabel} · ${widget.plan}',
                                   style: TextStyle(
                                     color: AppTheme.textDark,
                                     fontSize: 13,

@@ -64,9 +64,13 @@ class FacilityRegistrationData {
       final String succHour = (val['succeedingHour'] ?? '').toString();
       final String succDaily = (val['succeedingDaily'] ?? val['daily'] ?? '')
           .toString();
+      final String weekly = (val['weekly'] ?? '').toString();
+      final String monthly = (val['monthly'] ?? '').toString();
       String text = initial;
       if (succHour.isNotEmpty) text += ' (+$succHour/hr)';
       if (succDaily.isNotEmpty) text += ' ($succDaily/day)';
+      if (weekly.isNotEmpty) text += ' ($weekly/week)';
+      if (monthly.isNotEmpty) text += ' ($monthly/month)';
       return text;
     }
     return (val ?? '-').toString();
