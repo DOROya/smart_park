@@ -904,8 +904,8 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
             doc,
             name: name,
             username: username,
-            activityLine: activityLine,
-            cashLine: cashLine,
+            stats: stats,
+            statsLoaded: statsLoaded,
             deactivated: deactivated,
           ),
           child: Padding(
@@ -925,14 +925,14 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
     );
   }
 
-  /// Staff member details, laid out like the admin's User Details, with the
-  /// owner's actions: open their scans in Activity, or reset their password.
+  /// Staff member details: who they are, today's gate work, and the owner's
+  /// actions (open their scans in Activity, or reset their password).
   Future<void> _showStaffDetailsDialog(
     QueryDocumentSnapshot<Map<String, dynamic>> doc, {
     required String name,
     required String username,
-    required String activityLine,
-    required String cashLine,
+    required _StaffDayStats? stats,
+    required bool statsLoaded,
     required bool deactivated,
   }) {
     final Map<String, dynamic> data = doc.data();
@@ -940,179 +940,289 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
     final DateTime? deactivatedAt = spParseDateTime(data['deactivatedAt']);
     final DateTime? resetAt = spParseDateTime(data['passwordResetAt']);
     final bool resetting = _resettingStaffId == doc.id;
+    final Color statusColor = deactivated
+        ? AppTheme.textMuted
+        : AppTheme.success;
+
+    final List<(IconData, String, String)> facts = <(IconData, String, String)>[
+      if (!deactivated && statsLoaded) ...[
+        (
+          Icons.qr_code_scanner_rounded,
+          'Scans today',
+          stats == null ? 'None yet' : '${stats.scans}',
+        ),
+        if (stats?.last != null)
+          (
+            Icons.schedule_rounded,
+            'Last scan',
+            spFormatClockTime(stats!.last!),
+          ),
+        if ((stats?.overtimeCollected ?? 0) > 0)
+          (
+            Icons.payments_outlined,
+            'Cash to hand over',
+            spPeso(stats!.overtimeCollected),
+          ),
+        if ((stats?.overtimeOwed ?? 0) > 0)
+          (
+            Icons.pending_outlined,
+            'Cash not confirmed',
+            spPeso(stats!.overtimeOwed),
+          ),
+      ],
+      if (deactivated && deactivatedAt != null)
+        (Icons.person_off_outlined, 'Deactivated', spFormatDate(deactivatedAt)),
+      if (createdAt != null)
+        (Icons.event_outlined, 'Added', spFormatDate(createdAt)),
+      if (resetAt != null)
+        (
+          Icons.lock_reset_rounded,
+          'Password reset',
+          '${spFormatDate(resetAt)}, ${spFormatClockTime(resetAt)}',
+        ),
+    ];
 
     return showDialog<void>(
       context: context,
       builder: (BuildContext dialogContext) {
-        return AlertDialog(
+        final RoundedRectangleBorder buttonShape = RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppTheme.radius),
+        );
+        return Dialog(
           backgroundColor: AppTheme.surface,
+          insetPadding: const EdgeInsets.symmetric(
+            horizontal: 20,
+            vertical: 24,
+          ),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(AppTheme.radiusXLarge),
           ),
-          title: Row(
-            children: [
-              Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  color: AppTheme.accentSoft,
-                  borderRadius: BorderRadius.circular(AppTheme.radius),
-                ),
-                child: Icon(
-                  Icons.badge_rounded,
-                  color: AppTheme.textDark,
-                  size: 24,
-                ),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 420),
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: IconButton(
+                      onPressed: () => Navigator.of(dialogContext).pop(),
+                      icon: const Icon(Icons.close_rounded),
+                      tooltip: 'Close',
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  ),
+                  // Who: avatar, name, role and status.
+                  Center(
+                    child: CircleAvatar(
+                      radius: 34,
+                      backgroundColor: deactivated
+                          ? AppTheme.border
+                          : AppTheme.accent.withValues(alpha: 0.3),
+                      child: Text(
+                        _initials(name),
+                        style: TextStyle(
+                          fontSize: 22,
+                          fontWeight: FontWeight.w800,
+                          color: AppTheme.textDark,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    name,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: AppTheme.textDark,
+                      fontSize: 19,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        'Gate Staff',
+                        style: TextStyle(
+                          color: AppTheme.textMuted,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      SpChip(
+                        label: deactivated ? 'Deactivated' : 'Active',
+                        color: statusColor,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  // Username, copyable for handing over sign-in details.
+                  Container(
+                    padding: const EdgeInsets.fromLTRB(14, 4, 4, 4),
+                    decoration: BoxDecoration(
+                      color: AppTheme.surfaceAlt,
+                      borderRadius: BorderRadius.circular(AppTheme.radius),
+                      border: Border.all(color: AppTheme.border),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.alternate_email_rounded,
+                          size: 18,
+                          color: AppTheme.textMuted,
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Username',
+                                style: TextStyle(
+                                  color: AppTheme.textMuted,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              Text(
+                                username.isEmpty ? 'No username' : username,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: AppTheme.textDark,
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        if (username.isNotEmpty)
+                          IconButton(
+                            onPressed: () {
+                              Clipboard.setData(ClipboardData(text: username));
+                              _showSnackBar('Username copied.');
+                            },
+                            icon: Icon(
+                              Icons.copy_rounded,
+                              size: 18,
+                              color: AppTheme.textMuted,
+                            ),
+                            tooltip: 'Copy username',
+                          ),
+                      ],
+                    ),
+                  ),
+                  if (facts.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    // Everything else as one card of label/value rows.
+                    Container(
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(AppTheme.radius),
+                        border: Border.all(color: AppTheme.border),
+                      ),
+                      child: Column(
+                        children: [
+                          for (int i = 0; i < facts.length; i++) ...[
+                            if (i > 0)
+                              Divider(
+                                height: 1,
+                                thickness: 1,
+                                color: AppTheme.border,
+                              ),
+                            _staffFactRow(
+                              facts[i].$1,
+                              facts[i].$2,
+                              facts[i].$3,
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 20),
+                  // Stacked full-width so labels never wrap on large text.
+                  if (!deactivated) ...[
+                    FilledButton.icon(
+                      onPressed: resetting
+                          ? null
+                          : () {
+                              Navigator.of(dialogContext).pop();
+                              _resetStaffPassword(doc.id, name);
+                            },
+                      style: FilledButton.styleFrom(
+                        backgroundColor: AppTheme.dangerSoft,
+                        foregroundColor: AppTheme.danger,
+                        padding: const EdgeInsets.symmetric(vertical: 13),
+                        shape: buttonShape,
+                      ),
+                      icon: const Icon(Icons.lock_reset_rounded, size: 18),
+                      label: const Text(
+                        'Reset Password',
+                        style: TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                  ],
+                  OutlinedButton.icon(
+                    onPressed: () {
+                      Navigator.of(dialogContext).pop();
+                      setState(() {
+                        _activityStaffId = _staffUid(doc);
+                        _selectedIndex = 2;
+                      });
+                    },
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppTheme.textDark,
+                      side: BorderSide(color: AppTheme.borderStrong),
+                      padding: const EdgeInsets.symmetric(vertical: 13),
+                      shape: buttonShape,
+                    ),
+                    icon: const Icon(Icons.history_rounded, size: 18),
+                    label: const Text(
+                      'View Activity',
+                      style: TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  'Staff Details',
-                  style: TextStyle(
-                    color: AppTheme.textDark,
-                    fontWeight: FontWeight.w800,
-                    fontSize: 18,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          content: SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _staffDetailRow(
-                  Icons.person_outline_rounded,
-                  'Full Name',
-                  name,
-                ),
-                _staffDetailRow(
-                  Icons.work_outline_rounded,
-                  'Role',
-                  'Gate Staff',
-                ),
-                _staffDetailRow(
-                  Icons.alternate_email_rounded,
-                  'Username',
-                  username.isEmpty ? 'No username' : username,
-                ),
-                _staffDetailRow(
-                  deactivated
-                      ? Icons.person_off_outlined
-                      : Icons.verified_user_outlined,
-                  'Status',
-                  deactivated
-                      ? (deactivatedAt == null
-                            ? 'Deactivated'
-                            : 'Deactivated ${spFormatDate(deactivatedAt)}')
-                      : 'Active',
-                ),
-                if (!deactivated && activityLine.isNotEmpty)
-                  _staffDetailRow(
-                    Icons.qr_code_scanner_rounded,
-                    'Today',
-                    activityLine,
-                  ),
-                if (cashLine.isNotEmpty)
-                  _staffDetailRow(
-                    Icons.payments_outlined,
-                    'Overtime Cash',
-                    cashLine,
-                  ),
-                if (createdAt != null)
-                  _staffDetailRow(
-                    Icons.calendar_today_outlined,
-                    'Added',
-                    spFormatDate(createdAt),
-                  ),
-                if (resetAt != null)
-                  _staffDetailRow(
-                    Icons.lock_reset_rounded,
-                    'Password Last Reset',
-                    '${spFormatDate(resetAt)}, ${spFormatClockTime(resetAt)}',
-                  ),
-              ],
             ),
           ),
-          actionsOverflowButtonSpacing: 4,
-          actions: [
-            TextButton.icon(
-              onPressed: () {
-                Navigator.of(dialogContext).pop();
-                setState(() {
-                  _activityStaffId = _staffUid(doc);
-                  _selectedIndex = 2;
-                });
-              },
-              icon: const Icon(Icons.history_rounded, size: 18),
-              label: const Text('View Activity'),
-            ),
-            if (!deactivated)
-              TextButton.icon(
-                onPressed: resetting
-                    ? null
-                    : () {
-                        Navigator.of(dialogContext).pop();
-                        _resetStaffPassword(doc.id, name);
-                      },
-                style: TextButton.styleFrom(foregroundColor: AppTheme.danger),
-                icon: const Icon(Icons.lock_reset_rounded, size: 18),
-                label: const Text('Reset Password'),
-              ),
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: Text(
-                'Close',
-                style: TextStyle(
-                  fontWeight: FontWeight.w700,
-                  color: AppTheme.textDark,
-                ),
-              ),
-            ),
-          ],
         );
       },
     );
   }
 
-  Widget _staffDetailRow(IconData icon, String label, String value) {
-    return Container(
-      width: double.infinity,
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: AppTheme.surfaceAlt,
-        borderRadius: BorderRadius.circular(AppTheme.radius),
-        border: Border.all(color: AppTheme.border),
-      ),
+  Widget _staffFactRow(IconData icon, String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Icon(icon, size: 18, color: AppTheme.textMuted),
           const SizedBox(width: 10),
+          Text(
+            label,
+            style: TextStyle(
+              color: AppTheme.textSecondary,
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          const SizedBox(width: 12),
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  label,
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    color: AppTheme.textMuted,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  value,
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                    color: AppTheme.textDark,
-                  ),
-                ),
-              ],
+            child: Text(
+              value,
+              textAlign: TextAlign.right,
+              style: TextStyle(
+                color: AppTheme.textDark,
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+              ),
             ),
           ),
         ],
