@@ -2,6 +2,7 @@
 // Firestore + Storage emulators, runs these, and shuts them down).
 
 const test = require("node:test");
+const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const {
@@ -148,6 +149,48 @@ test("owners cannot approve their own facility", async () => {
     }),
   );
   await assertSucceeds(updateDoc(doc(admin(), "establishment_details/est1"), { status: "approved", reviewedBy: "admin1" }));
+});
+
+test("an owner's edit replaces the rate map, dropping removed rates", async () => {
+  // Mirrors EstablishmentRepository.saveFacility's update write.
+  await env.withSecurityRulesDisabled((ctx) =>
+    setDoc(doc(ctx.firestore(), "establishment_details/est1"), {
+      status: "approved", reviewedBy: "admin1", rejectionReason: null,
+      rates: { car: { initial: "50", weekly: "1200", monthly: "4000" } },
+    }));
+  const payload = {
+    rates: { car: { initial: "60" } },
+    ratesByType: { car: { initial: "60" } },
+    policies: "No overnight",
+  };
+  await assertSucceeds(
+    setDoc(doc(owner(), "establishment_details/est1"), payload, {
+      mergeFields: Object.keys(payload),
+    }),
+  );
+  const saved = (await getDoc(doc(owner(), "establishment_details/est1"))).data();
+  assert.deepEqual(saved.rates, { car: { initial: "60" } });
+  assert.equal(saved.status, "approved");
+  assert.equal(saved.reviewedBy, "admin1");
+});
+
+test("only admins lift a suspension or deactivation", async () => {
+  for (const status of ["suspended", "deactivated"]) {
+    await env.withSecurityRulesDisabled((ctx) =>
+      setDoc(doc(ctx.firestore(), "establishment_details/est1"), {
+        status, reviewedBy: "admin1", rejectionReason: "Complaints",
+      }));
+    // Editing details is fine, but the status and admin note stay put.
+    await assertSucceeds(updateDoc(doc(owner(), "establishment_details/est1"), { rates: { car: 60 } }));
+    await assertFails(
+      updateDoc(doc(owner(), "establishment_details/est1"), {
+        status: "pending", rejectionReason: null, reviewedBy: null, resubmittedAt: serverTimestamp(),
+      }),
+    );
+    await assertFails(updateDoc(doc(owner(), "establishment_details/est1"), { status: "approved" }));
+    await assertFails(updateDoc(doc(owner(), "establishment_details/est1"), { rejectionReason: null }));
+    await assertSucceeds(updateDoc(doc(admin(), "establishment_details/est1"), { status: "approved", rejectionReason: null }));
+  }
 });
 
 test("owners cannot edit someone else's establishment", async () => {

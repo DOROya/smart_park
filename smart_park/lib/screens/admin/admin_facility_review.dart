@@ -37,19 +37,27 @@ extension _AdminFacilityReview on _AdminHomePageState {
         filteredPending = _pendingEstablishments(filteredAll);
         final List<QueryDocumentSnapshot<Map<String, dynamic>>>
         filteredApproved = _approvedEstablishments(filteredAll);
-        final List<QueryDocumentSnapshot<Map<String, dynamic>>>
-        filteredRejected = filteredAll.where((doc) {
+        List<QueryDocumentSnapshot<Map<String, dynamic>>> withStatus(
+          String wanted,
+        ) => filteredAll.where((doc) {
           final String status =
               ((_mergedEstablishmentData(doc)['status'] as String?) ??
                       'pending')
                   .toLowerCase();
-          return status == 'rejected';
+          return status == wanted;
         }).toList();
+        final List<QueryDocumentSnapshot<Map<String, dynamic>>>
+        filteredRejected = withStatus('rejected');
+        final List<QueryDocumentSnapshot<Map<String, dynamic>>>
+        filteredSuspended = withStatus('suspended');
+        final List<QueryDocumentSnapshot<Map<String, dynamic>>>
+        filteredDeactivated = withStatus('deactivated');
 
         return SpSectionCard(
           icon: Icons.fact_check_outlined,
           title: 'Establishment Review',
-          subtitle: 'Search, sort and open a facility to approve or reject.',
+          subtitle:
+              'Search, sort and open a facility to review, suspend or deactivate it.',
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -160,6 +168,22 @@ extension _AdminFacilityReview on _AdminHomePageState {
                 emptyText: 'No rejected facilities found.',
                 accentColor: AppTheme.danger,
                 icon: Icons.cancel_outlined,
+                initExpanded: false,
+              ),
+              _buildCollapsibleFacilityPanel(
+                title: 'Suspended Facilities',
+                facilities: filteredSuspended,
+                emptyText: 'No suspended facilities.',
+                accentColor: AppTheme.warning,
+                icon: Icons.pause_circle_outline_rounded,
+                initExpanded: false,
+              ),
+              _buildCollapsibleFacilityPanel(
+                title: 'Deactivated Facilities',
+                facilities: filteredDeactivated,
+                emptyText: 'No deactivated facilities.',
+                accentColor: AppTheme.textMuted,
+                icon: Icons.block_rounded,
                 initExpanded: false,
               ),
             ],

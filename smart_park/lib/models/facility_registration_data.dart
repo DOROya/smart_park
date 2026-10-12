@@ -42,9 +42,13 @@ class FacilityRegistrationData {
   /// Whether saving this edit must send the facility back to admin review:
   /// a rejected facility is being resubmitted, or the proof documents of an
   /// already-reviewed facility changed and need to be verified again.
+  /// Suspended and deactivated facilities keep their status: only an admin
+  /// can lift those.
   bool requiresReview({required String? previousStatus}) {
     final String status = (previousStatus ?? 'pending').toLowerCase();
-    if (status == 'pending') {
+    if (status == 'pending' ||
+        status == 'suspended' ||
+        status == 'deactivated') {
       return false;
     }
     return status == 'rejected' || documentsChanged;
@@ -60,9 +64,13 @@ class FacilityRegistrationData {
       final String succHour = (val['succeedingHour'] ?? '').toString();
       final String succDaily = (val['succeedingDaily'] ?? val['daily'] ?? '')
           .toString();
+      final String weekly = (val['weekly'] ?? '').toString();
+      final String monthly = (val['monthly'] ?? '').toString();
       String text = initial;
       if (succHour.isNotEmpty) text += ' (+$succHour/hr)';
       if (succDaily.isNotEmpty) text += ' ($succDaily/day)';
+      if (weekly.isNotEmpty) text += ' ($weekly/week)';
+      if (monthly.isNotEmpty) text += ' ($monthly/month)';
       return text;
     }
     return (val ?? '-').toString();

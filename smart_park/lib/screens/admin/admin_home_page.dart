@@ -24,6 +24,15 @@ enum _UserRoleFilter { all, driver, parkingOwner }
 
 enum _FinanceRangeFilter { all, month, quarter, year }
 
+/// A status change offered in the establishment review dialog.
+typedef _StatusAction = ({
+  String status,
+  String label,
+  IconData icon,
+  Color color,
+  bool primary,
+});
+
 class AdminHomePage extends StatefulWidget {
   const AdminHomePage({super.key});
 
@@ -190,8 +199,10 @@ class _AdminHomePageState extends State<AdminHomePage>
       return switch (_normalize(status)) {
         'pending' => 0,
         'approved' => 1,
-        'rejected' => 2,
-        _ => 3,
+        'suspended' => 2,
+        'rejected' => 3,
+        'deactivated' => 4,
+        _ => 5,
       };
     }
 
@@ -294,9 +305,13 @@ class _AdminHomePageState extends State<AdminHomePage>
       final String succH = (val['succeedingHour'] ?? '').toString();
       final String succD = (val['succeedingDaily'] ?? val['daily'] ?? '')
           .toString();
+      final String weekly = (val['weekly'] ?? '').toString();
+      final String monthly = (val['monthly'] ?? '').toString();
       String res = initial;
       if (succH.isNotEmpty) res += ' (+$succH/hr)';
       if (succD.isNotEmpty) res += ' ($succD/day)';
+      if (weekly.isNotEmpty) res += ' ($weekly/week)';
+      if (monthly.isNotEmpty) res += ' ($monthly/month)';
       return res;
     }
     return (val ?? '-').toString();
@@ -380,7 +395,13 @@ class _AdminHomePageState extends State<AdminHomePage>
       'updatedAt': FieldValue.serverTimestamp(),
     };
 
-    if (status.toLowerCase() == 'rejected') {
+    // `rejectionReason` holds the admin's note for any status the owner
+    // should get an explanation for: rejected, suspended or deactivated.
+    if (const <String>{
+      'rejected',
+      'suspended',
+      'deactivated',
+    }.contains(status.toLowerCase())) {
       final String trimmedReason = (rejectionReason ?? '').trim();
       updates['rejectionReason'] = trimmedReason.isEmpty ? null : trimmedReason;
     } else {
@@ -501,6 +522,8 @@ class _AdminHomePageState extends State<AdminHomePage>
     ) = switch (_normalize(status)) {
       'approved' => (AppTheme.successSoft, AppTheme.success, 'Approved'),
       'rejected' => (AppTheme.dangerSoft, AppTheme.danger, 'Rejected'),
+      'suspended' => (AppTheme.warningSoft, AppTheme.warning, 'Suspended'),
+      'deactivated' => (AppTheme.surfaceAlt, AppTheme.textMuted, 'Deactivated'),
       _ => (
         AppTheme.warningSoft,
         AppTheme.warning,
@@ -712,12 +735,105 @@ class _AdminHomePageState extends State<AdminHomePage>
     return confirmed ?? false;
   }
 
+  /// Confirms suspending or deactivating a facility, both of which pull it
+  /// from drivers and stop ticket sales.
+  Future<bool> _confirmRestrictFacility(
+    BuildContext dialogContext,
+    String newStatus,
+  ) async {
+    final bool suspend = newStatus == 'suspended';
+    final bool? confirmed = await showDialog<bool>(
+      context: dialogContext,
+      builder: (BuildContext confirmContext) {
+        return AlertDialog(
+          title: Text(
+            suspend ? 'Suspend this facility?' : 'Deactivate this facility?',
+          ),
+          content: Text(
+            suspend
+                ? 'It will be hidden from drivers and cannot sell tickets '
+                      'until you reinstate it. Drivers already holding '
+                      'tickets can still be scanned at the gate.'
+                : 'It will be removed from SmartPark and cannot sell '
+                      'tickets. Drivers already holding tickets can still be '
+                      'scanned at the gate. You can reactivate it later.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(confirmContext).pop(false),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(confirmContext).pop(true),
+              style: TextButton.styleFrom(
+                foregroundColor: suspend ? AppTheme.warning : AppTheme.danger,
+              ),
+              child: Text(suspend ? 'Suspend' : 'Deactivate'),
+            ),
+          ],
+        );
+      },
+    );
+    return confirmed ?? false;
+  }
+
+  /// One button in the review dialog's action row: filled for the primary
+  /// action, outlined otherwise.
+  Widget _buildStatusActionButton(
+    _StatusAction action, {
+    required bool busy,
+    required VoidCallback? onPressed,
+  }) {
+    final Widget icon = busy
+        ? const SizedBox(
+            width: 16,
+            height: 16,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          )
+        : Icon(action.icon, size: 18);
+    final Widget label = Text(
+      action.label,
+      style: const TextStyle(fontWeight: FontWeight.w700),
+    );
+    final RoundedRectangleBorder shape = RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(AppTheme.radius),
+    );
+    const EdgeInsets padding = EdgeInsets.symmetric(vertical: 12);
+
+    if (action.primary) {
+      return ElevatedButton.icon(
+        onPressed: onPressed,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: action.color,
+          foregroundColor: AppTheme.onAccent,
+          elevation: 0,
+          padding: padding,
+          shape: shape,
+        ),
+        icon: icon,
+        label: label,
+      );
+    }
+    return OutlinedButton.icon(
+      onPressed: onPressed,
+      style: OutlinedButton.styleFrom(
+        foregroundColor: action.color,
+        side: BorderSide(color: action.color),
+        padding: padding,
+        shape: shape,
+      ),
+      icon: icon,
+      label: label,
+    );
+  }
+
   Future<void> _showEstablishmentReviewDialog(
     QueryDocumentSnapshot<Map<String, dynamic>> doc,
   ) async {
     final TextEditingController rejectionReasonController =
         TextEditingController();
-    bool isSubmitting = false;
+    // The status being saved, so only that button shows a spinner.
+    String? submittingStatus;
 
     await showDialog<void>(
       context: context,
@@ -753,13 +869,28 @@ class _AdminHomePageState extends State<AdminHomePage>
 
             return StatefulBuilder(
               builder: (BuildContext context, StateSetter setDialogState) {
+                final String current = _normalize(status);
+
                 Future<void> submit(String newStatus) async {
-                  if (newStatus == 'approved' &&
+                  bool confirmed = true;
+                  if (newStatus == 'suspended' || newStatus == 'deactivated') {
+                    confirmed = await _confirmRestrictFacility(
+                      dialogContext,
+                      newStatus,
+                    );
+                  } else if (newStatus == 'approved' &&
                       documentUrls.isEmpty &&
-                      !await _confirmApproveWithoutDocuments(dialogContext)) {
+                      (current == 'pending' || current == 'rejected')) {
+                    // Reinstating a facility that was already approved
+                    // once doesn't need the missing-documents warning.
+                    confirmed = await _confirmApproveWithoutDocuments(
+                      dialogContext,
+                    );
+                  }
+                  if (!confirmed) {
                     return;
                   }
-                  setDialogState(() => isSubmitting = true);
+                  setDialogState(() => submittingStatus = newStatus);
                   try {
                     await _updateEstablishmentStatus(
                       doc.id,
@@ -772,16 +903,20 @@ class _AdminHomePageState extends State<AdminHomePage>
                     if (mounted) {
                       ScaffoldMessenger.of(this.context).showSnackBar(
                         SnackBar(
-                          content: Text(
-                            newStatus == 'approved'
-                                ? 'Establishment approved.'
-                                : 'Establishment rejected.',
-                          ),
+                          content: Text(switch (newStatus) {
+                            'approved' =>
+                              current == 'pending' || current == 'rejected'
+                                  ? 'Establishment approved.'
+                                  : 'Establishment reinstated.',
+                            'suspended' => 'Establishment suspended.',
+                            'deactivated' => 'Establishment deactivated.',
+                            _ => 'Establishment rejected.',
+                          }),
                         ),
                       );
                     }
                   } catch (error) {
-                    setDialogState(() => isSubmitting = false);
+                    setDialogState(() => submittingStatus = null);
                     if (mounted) {
                       ScaffoldMessenger.of(this.context).showSnackBar(
                         SnackBar(
@@ -796,6 +931,77 @@ class _AdminHomePageState extends State<AdminHomePage>
                     }
                   }
                 }
+
+                // What the admin can do depends on where the facility
+                // stands: review a submission, restrict a live facility, or
+                // lift a restriction.
+                final bool isSubmitting = submittingStatus != null;
+                final List<_StatusAction> actions = switch (current) {
+                  'approved' => <_StatusAction>[
+                    (
+                      status: 'deactivated',
+                      label: 'Deactivate',
+                      icon: Icons.block_rounded,
+                      color: AppTheme.danger,
+                      primary: false,
+                    ),
+                    (
+                      status: 'suspended',
+                      label: 'Suspend',
+                      icon: Icons.pause_circle_outline_rounded,
+                      color: AppTheme.warning,
+                      primary: false,
+                    ),
+                  ],
+                  'suspended' => <_StatusAction>[
+                    (
+                      status: 'deactivated',
+                      label: 'Deactivate',
+                      icon: Icons.block_rounded,
+                      color: AppTheme.danger,
+                      primary: false,
+                    ),
+                    (
+                      status: 'approved',
+                      label: 'Reinstate',
+                      icon: Icons.play_circle_outline_rounded,
+                      color: AppTheme.accent,
+                      primary: true,
+                    ),
+                  ],
+                  'deactivated' => <_StatusAction>[
+                    (
+                      status: 'approved',
+                      label: 'Reactivate',
+                      icon: Icons.play_circle_outline_rounded,
+                      color: AppTheme.accent,
+                      primary: true,
+                    ),
+                  ],
+                  _ => <_StatusAction>[
+                    (
+                      status: 'rejected',
+                      label: 'Reject',
+                      icon: Icons.close_rounded,
+                      color: AppTheme.danger,
+                      primary: false,
+                    ),
+                    (
+                      status: 'approved',
+                      label: 'Approve',
+                      icon: Icons.check_rounded,
+                      color: AppTheme.accent,
+                      primary: true,
+                    ),
+                  ],
+                };
+                final bool restricting =
+                    current == 'approved' || current == 'suspended';
+                final String noteTitle = switch (current) {
+                  'suspended' => 'Suspension Reason',
+                  'deactivated' => 'Deactivation Reason',
+                  _ => 'Previous Rejection Reason',
+                };
 
                 return Dialog(
                   backgroundColor: AppTheme.background,
@@ -975,11 +1181,13 @@ class _AdminHomePageState extends State<AdminHomePage>
                                       : '${documentUrls.length} submitted',
                                   child: _buildBusinessDocuments(documentUrls),
                                 ),
-                                if (_normalize(status) == 'rejected' &&
+                                if ((current == 'rejected' ||
+                                        current == 'suspended' ||
+                                        current == 'deactivated') &&
                                     previousRejection.isNotEmpty)
                                   _buildReviewSection(
                                     icon: Icons.history_rounded,
-                                    title: 'Previous Rejection Reason',
+                                    title: noteTitle,
                                     child: Text(
                                       previousRejection,
                                       style: TextStyle(
@@ -988,42 +1196,47 @@ class _AdminHomePageState extends State<AdminHomePage>
                                       ),
                                     ),
                                   ),
-                                Text(
-                                  'Rejection Reason (Optional)',
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.w700,
-                                    color: AppTheme.textDark,
-                                  ),
-                                ),
-                                const SizedBox(height: 6),
-                                TextField(
-                                  controller: rejectionReasonController,
-                                  enabled: !isSubmitting,
-                                  maxLines: 3,
-                                  decoration: InputDecoration(
-                                    hintText:
-                                        'Shown to the owner so they can fix issues before resubmitting.',
-                                    hintStyle: const TextStyle(fontSize: 12),
-                                    filled: true,
-                                    fillColor: AppTheme.surface,
-                                    border: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(
-                                        AppTheme.radius,
-                                      ),
-                                      borderSide: BorderSide(
-                                        color: AppTheme.border,
-                                      ),
-                                    ),
-                                    enabledBorder: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(
-                                        AppTheme.radius,
-                                      ),
-                                      borderSide: BorderSide(
-                                        color: AppTheme.border,
-                                      ),
+                                if (current != 'deactivated') ...[
+                                  Text(
+                                    restricting
+                                        ? 'Reason (Optional)'
+                                        : 'Rejection Reason (Optional)',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w700,
+                                      color: AppTheme.textDark,
                                     ),
                                   ),
-                                ),
+                                  const SizedBox(height: 6),
+                                  TextField(
+                                    controller: rejectionReasonController,
+                                    enabled: !isSubmitting,
+                                    maxLines: 3,
+                                    decoration: InputDecoration(
+                                      hintText: restricting
+                                          ? 'Shown to the owner if you suspend or deactivate this facility.'
+                                          : 'Shown to the owner so they can fix issues before resubmitting.',
+                                      hintStyle: const TextStyle(fontSize: 12),
+                                      filled: true,
+                                      fillColor: AppTheme.surface,
+                                      border: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(
+                                          AppTheme.radius,
+                                        ),
+                                        borderSide: BorderSide(
+                                          color: AppTheme.border,
+                                        ),
+                                      ),
+                                      enabledBorder: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(
+                                          AppTheme.radius,
+                                        ),
+                                        borderSide: BorderSide(
+                                          color: AppTheme.border,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
                                 const SizedBox(height: 12),
                               ],
                             ),
@@ -1034,74 +1247,18 @@ class _AdminHomePageState extends State<AdminHomePage>
                           padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
                           child: Row(
                             children: [
-                              Expanded(
-                                child: OutlinedButton.icon(
-                                  onPressed: isSubmitting
-                                      ? null
-                                      : () => submit('rejected'),
-                                  style: OutlinedButton.styleFrom(
-                                    foregroundColor: AppTheme.danger,
-                                    side: BorderSide(color: AppTheme.danger),
-                                    padding: const EdgeInsets.symmetric(
-                                      vertical: 12,
-                                    ),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(
-                                        AppTheme.radius,
-                                      ),
-                                    ),
-                                  ),
-                                  icon: const Icon(
-                                    Icons.close_rounded,
-                                    size: 18,
-                                  ),
-                                  label: const Text(
-                                    'Reject',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.w700,
-                                    ),
+                              for (int i = 0; i < actions.length; i++) ...[
+                                if (i > 0) const SizedBox(width: 10),
+                                Expanded(
+                                  child: _buildStatusActionButton(
+                                    actions[i],
+                                    busy: submittingStatus == actions[i].status,
+                                    onPressed: isSubmitting
+                                        ? null
+                                        : () => submit(actions[i].status),
                                   ),
                                 ),
-                              ),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: ElevatedButton.icon(
-                                  onPressed: isSubmitting
-                                      ? null
-                                      : () => submit('approved'),
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: AppTheme.accent,
-                                    foregroundColor: AppTheme.onAccent,
-                                    elevation: 0,
-                                    padding: const EdgeInsets.symmetric(
-                                      vertical: 12,
-                                    ),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(
-                                        AppTheme.radius,
-                                      ),
-                                    ),
-                                  ),
-                                  icon: isSubmitting
-                                      ? const SizedBox(
-                                          width: 16,
-                                          height: 16,
-                                          child: CircularProgressIndicator(
-                                            strokeWidth: 2,
-                                          ),
-                                        )
-                                      : const Icon(
-                                          Icons.check_rounded,
-                                          size: 18,
-                                        ),
-                                  label: const Text(
-                                    'Approve',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
-                                ),
-                              ),
+                              ],
                             ],
                           ),
                         ),

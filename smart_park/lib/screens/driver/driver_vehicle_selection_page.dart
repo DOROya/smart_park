@@ -151,6 +151,30 @@ class _DriverVehicleSelectionPageState
       );
     }
 
+    if (rates.offersWeekly) {
+      options.add(
+        DriverPackageOption(
+          key: 'weekly',
+          label: 'Weekly Package',
+          icon: Icons.date_range_outlined,
+          initialAmount: 0,
+          weeklyAmount: rates.weekly,
+        ),
+      );
+    }
+
+    if (rates.offersMonthly) {
+      options.add(
+        DriverPackageOption(
+          key: 'monthly',
+          label: 'Monthly Package',
+          icon: Icons.calendar_month_outlined,
+          initialAmount: 0,
+          monthlyAmount: rates.monthly,
+        ),
+      );
+    }
+
     if (options.isEmpty) {
       if (!mounted) {
         return;
@@ -188,7 +212,11 @@ class _DriverVehicleSelectionPageState
         builder: (_) => DriverCheckoutPaymentPage(
           establishmentName: widget.establishmentName,
           vehicleLabel: vehicle.label,
-          plan: packageSelection.displayPlanLabel,
+          // e.g. "Weekly Package · 2 weeks"; the base stay needs no duration.
+          plan: packageSelection.plan == 'base'
+              ? packageSelection.displayPlanLabel
+              : '${packageSelection.displayPlanLabel} · '
+                    '${packageSelection.displayDurationLabel}',
           duration: packageSelection.duration,
           amount: packageSelection.totalAmount,
           isPayMongoConfigured: widget.isPayMongoConfigured,

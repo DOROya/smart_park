@@ -86,7 +86,14 @@ class EstablishmentRepository {
         establishmentPayload,
         SetOptions(merge: true),
       );
-      batch.set(detailsRef, detailsPayload, SetOptions(merge: true));
+      // mergeFields replaces each written field whole, so a rate the owner
+      // removed (e.g. weekly, after turning long-term parking off) is gone
+      // from `rates` instead of surviving a deep merge.
+      batch.set(
+        detailsRef,
+        detailsPayload,
+        SetOptions(mergeFields: detailsPayload.keys.toList()),
+      );
     }
 
     batch.set(_userRef(ownerId), <String, dynamic>{

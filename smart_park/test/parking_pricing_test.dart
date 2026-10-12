@@ -47,6 +47,28 @@ void main() {
       expect(rates.succeedingHour, 15);
       expect(rates.succeedingDaily, 250);
     });
+
+    test('long-term rates are read when the owner offers them', () {
+      final VehicleRates rates = VehicleRates.from(<String, dynamic>{
+        'initial': '50',
+        'weekly': '1200',
+        'monthly': 4000,
+      });
+      expect(rates.weekly, 1200);
+      expect(rates.monthly, 4000);
+      expect(rates.offersWeekly, isTrue);
+      expect(rates.offersMonthly, isTrue);
+    });
+
+    test('long-term packages are off unless a rate is set', () {
+      final VehicleRates rates = VehicleRates.from(<String, dynamic>{
+        'initial': '50',
+        'succeedingDaily': 250,
+        'weekly': '',
+      });
+      expect(rates.offersWeekly, isFalse);
+      expect(rates.offersMonthly, isFalse);
+    });
   });
 
   group('packageTotal (must match functions/src/pricing.js)', () {
@@ -77,6 +99,36 @@ void main() {
         600,
       );
     });
+
+    test('weekly and monthly multiply their own rate', () {
+      expect(
+        packageTotal(
+          plan: 'weekly',
+          initialAmount: 0,
+          weeklyAmount: 1200,
+          duration: 2,
+        ),
+        2400,
+      );
+      expect(
+        packageTotal(
+          plan: 'monthly',
+          initialAmount: 0,
+          monthlyAmount: 4000,
+          duration: 3,
+        ),
+        12000,
+      );
+    });
+
+    test('duration limits match the checkout function', () {
+      expect(kMaxPackageDuration, <String, int>{
+        'extended': 12,
+        'daily': 7,
+        'weekly': 4,
+        'monthly': 3,
+      });
+    });
   });
 
   group('overtime', () {
@@ -85,6 +137,10 @@ void main() {
       expect(includedStayHours(plan: 'extended', duration: 3), 5);
       expect(includedStayHours(plan: 'daily', duration: 2), 48);
       expect(includedStayHours(plan: 'daily', duration: 0), 24);
+      expect(includedStayHours(plan: 'weekly', duration: 1), 168);
+      expect(includedStayHours(plan: 'weekly', duration: 2), 336);
+      expect(includedStayHours(plan: 'monthly', duration: 1), 720);
+      expect(includedStayHours(plan: 'monthly', duration: 3), 2160);
     });
 
     test('every started hour counts, by whole minutes', () {

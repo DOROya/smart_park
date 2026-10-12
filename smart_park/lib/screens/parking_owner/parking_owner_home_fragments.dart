@@ -457,6 +457,10 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
       ];
       if (perHour.isNotEmpty) parts.add('+PHP $perHour/hr');
       if (perDay.isNotEmpty) parts.add('PHP $perDay/day');
+      final String perWeek = (value['weekly'] ?? '').toString().trim();
+      final String perMonth = (value['monthly'] ?? '').toString().trim();
+      if (perWeek.isNotEmpty) parts.add('PHP $perWeek/week');
+      if (perMonth.isNotEmpty) parts.add('PHP $perMonth/month');
       return parts.join(' · ');
     }
     final String text = (value ?? '').toString().trim();

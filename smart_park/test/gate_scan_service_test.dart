@@ -276,6 +276,16 @@ void main() {
       expect(r.reason, 'Paid ticket verified. 22 hours left. Admit.');
       expect((await ticket('t1'))['entryStatus'], 'checked_in');
     });
+
+    test('admits a new weekly ticket with a full week of hours', () async {
+      await seedTicket('t1', <String, dynamic>{
+        'plan': 'weekly',
+        'duration': 1,
+      });
+      final GateScanResult? r = await scan(qr('t1'));
+      expect(r!.isAllowed, isTrue);
+      expect(r.reason, 'Paid ticket verified. 168 hours left. Admit.');
+    });
   });
 
   group('exit', () {
@@ -473,6 +483,30 @@ void main() {
       final Map<String, dynamic> t = await ticket('t1');
       expect(t['entryStatus'], 'checked_out');
       expect(t['remainingHours'], 22);
+    });
+
+    test('a weekly ticket covers a multi-day stay without overtime', () async {
+      // 1 week = 168 hours; 30 hours parked leaves 138.
+      await seedInside(const Duration(hours: 30), <String, dynamic>{
+        'plan': 'weekly',
+        'duration': 1,
+      });
+      final GateScanResult? r = await scan(qr('t1'), mode: 'exit');
+      expect(r!.isAllowed, isTrue);
+      expect(r.hasOvertime, isFalse);
+      expect(r.billableHours, 30);
+      expect((await ticket('t1'))['remainingHours'], 138);
+    });
+
+    test('a monthly ticket counts 30 days per month', () async {
+      // 2 months = 1440 hours; a 2-hour minimum visit leaves 1438.
+      await seedInside(const Duration(minutes: 40), <String, dynamic>{
+        'plan': 'monthly',
+        'duration': 2,
+      });
+      final GateScanResult? r = await scan(qr('t1'), mode: 'exit');
+      expect(r!.hasOvertime, isFalse);
+      expect((await ticket('t1'))['remainingHours'], 1438);
     });
 
     test('rounds every started hour up, with no grace', () async {

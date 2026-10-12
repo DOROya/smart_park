@@ -8,6 +8,20 @@ import 'dart:convert';
 /// off a ticket.
 const int kBaseStayHours = 2;
 
+/// Hours one week and one month of a long-term package cover. A month is
+/// counted as 30 days so every month buys the same amount of parking.
+const int kHoursPerWeek = 24 * 7;
+const int kHoursPerMonth = 24 * 30;
+
+/// Largest duration each package allows; plans not listed take no duration.
+/// Must match `MAX_DURATION` in functions/src/pricing.js.
+const Map<String, int> kMaxPackageDuration = <String, int>{
+  'extended': 12,
+  'daily': 7,
+  'weekly': 4,
+  'monthly': 3,
+};
+
 /// Reads a money value: numbers as-is, else the first number in a string
 /// ("PHP 12.50/hr" -> 12.5). Anything else is 0.
 double parseAmount(dynamic value) {
@@ -24,6 +38,8 @@ class VehicleRates {
     required this.initial,
     required this.succeedingHour,
     required this.succeedingDaily,
+    this.weekly = 0,
+    this.monthly = 0,
   });
 
   factory VehicleRates.from(dynamic vehicleRate) {
@@ -47,6 +63,16 @@ class VehicleRates {
             rateMap['succeeding_daily'] ??
             rateMap['daily'],
       ),
+      weekly: parseAmount(
+        rateMap['weekly'] ??
+            rateMap['succeedingWeekly'] ??
+            rateMap['succeeding_weekly'],
+      ),
+      monthly: parseAmount(
+        rateMap['monthly'] ??
+            rateMap['succeedingMonthly'] ??
+            rateMap['succeeding_monthly'],
+      ),
     );
   }
 
@@ -54,18 +80,27 @@ class VehicleRates {
   final double succeedingHour;
   final double succeedingDaily;
 
+  /// Long-term rates; 0 when the owner doesn't offer them.
+  final double weekly;
+  final double monthly;
+
   bool get offersBase => initial > 0;
   bool get offersExtended => initial > 0 && succeedingHour > 0;
   bool get offersDaily => succeedingDaily > 0;
+  bool get offersWeekly => weekly > 0;
+  bool get offersMonthly => monthly > 0;
 }
 
 /// Price of a package: `base` is one fixed stay, `extended` adds
-/// [duration] succeeding hours, `daily` is [duration] days.
+/// [duration] succeeding hours, and `daily`, `weekly` and `monthly` are
+/// [duration] days, weeks or months.
 double packageTotal({
   required String plan,
   required double initialAmount,
   double succeedingHourAmount = 0,
   double dailyAmount = 0,
+  double weeklyAmount = 0,
+  double monthlyAmount = 0,
   required int duration,
 }) {
   switch (plan) {
@@ -75,6 +110,10 @@ double packageTotal({
       return initialAmount + (succeedingHourAmount * duration);
     case 'daily':
       return dailyAmount * duration;
+    case 'weekly':
+      return weeklyAmount * duration;
+    case 'monthly':
+      return monthlyAmount * duration;
     default:
       return initialAmount > 0 ? initialAmount : dailyAmount * duration;
   }
@@ -86,6 +125,8 @@ int includedStayHours({required String plan, required int duration}) {
   return switch (plan) {
     'extended' => kBaseStayHours + count,
     'daily' => 24 * count,
+    'weekly' => kHoursPerWeek * count,
+    'monthly' => kHoursPerMonth * count,
     _ => kBaseStayHours,
   };
 }
