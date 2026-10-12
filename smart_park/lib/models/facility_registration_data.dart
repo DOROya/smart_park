@@ -42,9 +42,13 @@ class FacilityRegistrationData {
   /// Whether saving this edit must send the facility back to admin review:
   /// a rejected facility is being resubmitted, or the proof documents of an
   /// already-reviewed facility changed and need to be verified again.
+  /// Suspended and deactivated facilities keep their status: only an admin
+  /// can lift those.
   bool requiresReview({required String? previousStatus}) {
     final String status = (previousStatus ?? 'pending').toLowerCase();
-    if (status == 'pending') {
+    if (status == 'pending' ||
+        status == 'suspended' ||
+        status == 'deactivated') {
       return false;
     }
     return status == 'rejected' || documentsChanged;

@@ -150,6 +150,25 @@ test("owners cannot approve their own facility", async () => {
   await assertSucceeds(updateDoc(doc(admin(), "establishment_details/est1"), { status: "approved", reviewedBy: "admin1" }));
 });
 
+test("only admins lift a suspension or deactivation", async () => {
+  for (const status of ["suspended", "deactivated"]) {
+    await env.withSecurityRulesDisabled((ctx) =>
+      setDoc(doc(ctx.firestore(), "establishment_details/est1"), {
+        status, reviewedBy: "admin1", rejectionReason: "Complaints",
+      }));
+    // Editing details is fine, but the status and admin note stay put.
+    await assertSucceeds(updateDoc(doc(owner(), "establishment_details/est1"), { rates: { car: 60 } }));
+    await assertFails(
+      updateDoc(doc(owner(), "establishment_details/est1"), {
+        status: "pending", rejectionReason: null, reviewedBy: null, resubmittedAt: serverTimestamp(),
+      }),
+    );
+    await assertFails(updateDoc(doc(owner(), "establishment_details/est1"), { status: "approved" }));
+    await assertFails(updateDoc(doc(owner(), "establishment_details/est1"), { rejectionReason: null }));
+    await assertSucceeds(updateDoc(doc(admin(), "establishment_details/est1"), { status: "approved", rejectionReason: null }));
+  }
+});
+
 test("owners cannot edit someone else's establishment", async () => {
   await assertFails(updateDoc(doc(otherOwner(), "establishments/est1"), { name: "Mine now" }));
   await assertFails(updateDoc(doc(owner(), "establishments/est1"), { ownerId: "owner2" }));

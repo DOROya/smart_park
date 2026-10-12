@@ -163,11 +163,13 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
-    // Owners may only (re)submit for review; approving, rejecting and the
-    // review fields belong to admins.
+    // Owners may only (re)submit for review; approving, rejecting, suspending,
+    // deactivating and the review fields belong to admins. A suspended or
+    // deactivated facility cannot be resubmitted - only an admin lifts it.
     function ownerReviewFieldsOk() {
       return request.resource.data.get('status', 'pending') == 'pending'
-          ? request.resource.data.get('reviewedBy', null) == null &&
+          ? !(resource.data.get('status', 'pending') in ['suspended', 'deactivated']) &&
+            request.resource.data.get('reviewedBy', null) == null &&
             request.resource.data.get('rejectionReason', null) == null
           : unchanged('status') &&
             unchanged('reviewedBy') &&

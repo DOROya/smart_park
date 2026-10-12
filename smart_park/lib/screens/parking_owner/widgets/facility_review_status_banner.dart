@@ -17,6 +17,10 @@ class FacilityReviewStatusBanner extends StatelessWidget {
   /// Optional extra line, e.g. what saving the form will do.
   final String? hint;
 
+  /// Statuses whose admin note (stored in `rejectionReason`) the owner sees.
+  static bool _hasAdminNote(String status) =>
+      status == 'rejected' || status == 'suspended' || status == 'deactivated';
+
   @override
   Widget build(BuildContext context) {
     final String normalized = (status ?? 'pending').toLowerCase();
@@ -40,6 +44,20 @@ class FacilityReviewStatusBanner extends StatelessWidget {
         'Rejected',
         'Your facility was not approved. Update the details or documents '
             'and save to resubmit it for review.',
+      ),
+      'suspended' => (
+        AppTheme.warning,
+        Icons.pause_circle_rounded,
+        'Suspended',
+        'An admin has suspended your facility. It is hidden from drivers and '
+            'cannot sell tickets until an admin reinstates it.',
+      ),
+      'deactivated' => (
+        AppTheme.textMuted,
+        Icons.block_rounded,
+        'Deactivated',
+        'An admin has deactivated your facility. It is no longer listed on '
+            'SmartPark. Contact the SmartPark admin to reactivate it.',
       ),
       _ => (
         AppTheme.warning,
@@ -84,7 +102,7 @@ class FacilityReviewStatusBanner extends StatelessWidget {
                     fontWeight: FontWeight.w500,
                   ),
                 ),
-                if (normalized == 'rejected' && reason.isNotEmpty) ...[
+                if (_hasAdminNote(normalized) && reason.isNotEmpty) ...[
                   const SizedBox(height: 6),
                   Text(
                     'Admin note: $reason',
