@@ -775,7 +775,8 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
                   title: 'Active Staff',
                   subtitle: staffDocs.isEmpty
                       ? null
-                      : 'Tap a staff member to see the scans they recorded.',
+                      : 'Tap a staff member for details or to reset their '
+                            'password.',
                   trailing: staffDocs.isEmpty
                       ? null
                       : SpChip(
@@ -899,11 +900,14 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
         type: MaterialType.transparency,
         child: InkWell(
           borderRadius: BorderRadius.circular(AppTheme.radiusLarge),
-          // Jump to this staff member's scans in the Activity tab.
-          onTap: () => setState(() {
-            _activityStaffId = _staffUid(doc);
-            _selectedIndex = 2;
-          }),
+          onTap: () => _showStaffDetailsDialog(
+            doc,
+            name: name,
+            username: username,
+            activityLine: activityLine,
+            cashLine: cashLine,
+            deactivated: deactivated,
+          ),
           child: Padding(
             padding: const EdgeInsets.fromLTRB(12, 10, 4, 10),
             child: _staffRowContent(
@@ -917,6 +921,201 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  /// Staff member details, laid out like the admin's User Details, with the
+  /// owner's actions: open their scans in Activity, or reset their password.
+  Future<void> _showStaffDetailsDialog(
+    QueryDocumentSnapshot<Map<String, dynamic>> doc, {
+    required String name,
+    required String username,
+    required String activityLine,
+    required String cashLine,
+    required bool deactivated,
+  }) {
+    final Map<String, dynamic> data = doc.data();
+    final DateTime? createdAt = spParseDateTime(data['createdAt']);
+    final DateTime? deactivatedAt = spParseDateTime(data['deactivatedAt']);
+    final DateTime? resetAt = spParseDateTime(data['passwordResetAt']);
+    final bool resetting = _resettingStaffId == doc.id;
+
+    return showDialog<void>(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return AlertDialog(
+          backgroundColor: AppTheme.surface,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppTheme.radiusXLarge),
+          ),
+          title: Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: AppTheme.accentSoft,
+                  borderRadius: BorderRadius.circular(AppTheme.radius),
+                ),
+                child: Icon(
+                  Icons.badge_rounded,
+                  color: AppTheme.textDark,
+                  size: 24,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Staff Details',
+                  style: TextStyle(
+                    color: AppTheme.textDark,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 18,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _staffDetailRow(
+                  Icons.person_outline_rounded,
+                  'Full Name',
+                  name,
+                ),
+                _staffDetailRow(
+                  Icons.work_outline_rounded,
+                  'Role',
+                  'Gate Staff',
+                ),
+                _staffDetailRow(
+                  Icons.alternate_email_rounded,
+                  'Username',
+                  username.isEmpty ? 'No username' : username,
+                ),
+                _staffDetailRow(
+                  deactivated
+                      ? Icons.person_off_outlined
+                      : Icons.verified_user_outlined,
+                  'Status',
+                  deactivated
+                      ? (deactivatedAt == null
+                            ? 'Deactivated'
+                            : 'Deactivated ${spFormatDate(deactivatedAt)}')
+                      : 'Active',
+                ),
+                if (!deactivated && activityLine.isNotEmpty)
+                  _staffDetailRow(
+                    Icons.qr_code_scanner_rounded,
+                    'Today',
+                    activityLine,
+                  ),
+                if (cashLine.isNotEmpty)
+                  _staffDetailRow(
+                    Icons.payments_outlined,
+                    'Overtime Cash',
+                    cashLine,
+                  ),
+                if (createdAt != null)
+                  _staffDetailRow(
+                    Icons.calendar_today_outlined,
+                    'Added',
+                    spFormatDate(createdAt),
+                  ),
+                if (resetAt != null)
+                  _staffDetailRow(
+                    Icons.lock_reset_rounded,
+                    'Password Last Reset',
+                    '${spFormatDate(resetAt)}, ${spFormatClockTime(resetAt)}',
+                  ),
+              ],
+            ),
+          ),
+          actionsOverflowButtonSpacing: 4,
+          actions: [
+            TextButton.icon(
+              onPressed: () {
+                Navigator.of(dialogContext).pop();
+                setState(() {
+                  _activityStaffId = _staffUid(doc);
+                  _selectedIndex = 2;
+                });
+              },
+              icon: const Icon(Icons.history_rounded, size: 18),
+              label: const Text('View Activity'),
+            ),
+            if (!deactivated)
+              TextButton.icon(
+                onPressed: resetting
+                    ? null
+                    : () {
+                        Navigator.of(dialogContext).pop();
+                        _resetStaffPassword(doc.id, name);
+                      },
+                style: TextButton.styleFrom(foregroundColor: AppTheme.danger),
+                icon: const Icon(Icons.lock_reset_rounded, size: 18),
+                label: const Text('Reset Password'),
+              ),
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: Text(
+                'Close',
+                style: TextStyle(
+                  fontWeight: FontWeight.w700,
+                  color: AppTheme.textDark,
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _staffDetailRow(IconData icon, String label, String value) {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: AppTheme.surfaceAlt,
+        borderRadius: BorderRadius.circular(AppTheme.radius),
+        border: Border.all(color: AppTheme.border),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 18, color: AppTheme.textMuted),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: AppTheme.textMuted,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  value,
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: AppTheme.textDark,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1033,7 +1232,16 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
             ],
           ),
         ),
-        if (deactivated)
+        if (_resettingStaffId == doc.id)
+          const Padding(
+            padding: EdgeInsets.all(14),
+            child: SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+          )
+        else if (deactivated)
           TextButton(
             onPressed: () => _setStaffActive(doc.id, name, active: true),
             child: const Text('Reactivate'),

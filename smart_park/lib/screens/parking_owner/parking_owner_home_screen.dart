@@ -5,6 +5,7 @@ library;
 import 'dart:async';
 import 'dart:math';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
@@ -57,6 +58,9 @@ class _ParkingOwnerHomePageState extends State<ParkingOwnerHomePage>
 
   /// Staff uid the Activity tab is filtered to; set from the Staff tab.
   String? _activityStaffId;
+
+  /// Staff record whose password is being reset, to show progress.
+  String? _resettingStaffId;
 
   final GlobalKey<FormState> _staffFormKey = GlobalKey<FormState>();
   final TextEditingController _staffNameController = TextEditingController();
@@ -412,13 +416,14 @@ class _ParkingOwnerHomePageState extends State<ParkingOwnerHomePage>
   Future<void> _showStaffCredentialsDialog({
     required String username,
     required String password,
+    String title = 'Staff account created',
   }) {
     return showDialog<void>(
       context: context,
       barrierDismissible: false,
       builder: (BuildContext dialogContext) {
         return AlertDialog(
-          title: const Text('Staff account created'),
+          title: Text(title),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -455,6 +460,67 @@ class _ParkingOwnerHomePageState extends State<ParkingOwnerHomePage>
         );
       },
     );
+  }
+
+  /// Emergency reset for a staff member who lost their password or may have
+  /// shared it: the resetStaffPassword function sets a new random password,
+  /// signs out every device using the old one, and returns it once.
+  Future<void> _resetStaffPassword(String staffDocId, String staffName) async {
+    final bool? confirmed = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return AlertDialog(
+          title: const Text('Reset staff password?'),
+          content: Text(
+            '$staffName gets a new password and is signed out of every '
+            'device. Their old password stops working right away. You will '
+            'see the new password once, to give to them.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              style: TextButton.styleFrom(foregroundColor: AppTheme.danger),
+              child: const Text('Reset Password'),
+            ),
+          ],
+        );
+      },
+    );
+    if (confirmed != true || !mounted) {
+      return;
+    }
+
+    setState(() => _resettingStaffId = staffDocId);
+    try {
+      final HttpsCallableResult<dynamic> result =
+          await FirebaseFunctions.instanceFor(region: 'asia-southeast1')
+              .httpsCallable('resetStaffPassword')
+              .call<dynamic>(<String, dynamic>{'staffId': staffDocId});
+      final Map<dynamic, dynamic> data = result.data is Map
+          ? result.data as Map<dynamic, dynamic>
+          : <dynamic, dynamic>{};
+      final String password = (data['password'] as String?) ?? '';
+      if (password.isEmpty) {
+        throw StateError('No password came back from the reset.');
+      }
+      if (!mounted) return;
+      await _showStaffCredentialsDialog(
+        username: (data['username'] as String?) ?? '',
+        password: password,
+        title: 'Password reset',
+      );
+    } catch (error, stack) {
+      reportError(error, stack, reason: 'Resetting staff password failed');
+      _showSnackBar(
+        friendlyError(error, fallback: 'Unable to reset this password.'),
+      );
+    } finally {
+      if (mounted) setState(() => _resettingStaffId = null);
+    }
   }
 
   /// Deactivating keeps the staff record (so their past scans keep a name)
