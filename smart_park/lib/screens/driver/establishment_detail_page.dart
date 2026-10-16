@@ -847,6 +847,7 @@ class _EstablishmentDetailPageState extends State<EstablishmentDetailPage>
           vehicleOptions: vehicleOptions,
           ratesByType: ratesByType,
           packageRates: packageRates,
+          occupancy: SpOccupancy.watch(widget.establishmentId),
           isPayMongoConfigured: true,
           onProcessPayment:
               ({
