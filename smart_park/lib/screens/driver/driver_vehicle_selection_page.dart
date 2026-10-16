@@ -1,7 +1,9 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
 import '../../services/parking_pricing.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/smartpark_ui.dart' show SpOccupancy;
 import 'driver_checkout_payment_page.dart';
 import 'driver_package_selection_page.dart';
 import 'driver_payment_page.dart';
@@ -50,6 +52,7 @@ class DriverVehicleSelectionPage extends StatefulWidget {
     required this.ratesByType,
     required this.packageRates,
     required this.isPayMongoConfigured,
+    this.occupancy,
     this.onProcessPayment,
   });
 
@@ -58,6 +61,11 @@ class DriverVehicleSelectionPage extends StatefulWidget {
   final Map<String, dynamic> ratesByType;
   final Map<String, dynamic> packageRates;
   final bool isPayMongoConfigured;
+
+  /// The facility's live occupancy doc (`establishment_occupancy`), so the
+  /// slot counts follow check-ins and check-outs while the driver picks.
+  /// Without it, [DriverVehicleOption.activeCount] is used.
+  final Stream<DocumentSnapshot<Map<String, dynamic>>>? occupancy;
   final Future<bool> Function({
     required String vehicleType,
     required String plateNumber,
@@ -334,114 +342,127 @@ class _DriverVehicleSelectionPageState
                       ),
                     ),
                     const SizedBox(height: 12),
-                    LayoutBuilder(
-                      builder: (context, constraints) {
-                        final int columns = constraints.maxWidth >= 580 ? 3 : 2;
-                        return GridView.builder(
-                          shrinkWrap: true,
-                          physics: const NeverScrollableScrollPhysics(),
-                          gridDelegate:
-                              SliverGridDelegateWithFixedCrossAxisCount(
-                                crossAxisCount: columns,
-                                mainAxisSpacing: 10,
-                                crossAxisSpacing: 10,
-                                mainAxisExtent: 125,
-                              ),
-                          itemCount: widget.vehicleOptions.length,
-                          itemBuilder: (context, index) {
-                            final DriverVehicleOption option =
-                                widget.vehicleOptions[index];
-                            final bool isSelected =
-                                option.key == _selectedVehicleType;
-                            final int available =
-                                (option.capacity - option.activeCount).clamp(
-                                  0,
-                                  option.capacity,
-                                );
+                    StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+                      stream: widget.occupancy,
+                      builder: (context, occupancySnapshot) {
+                        final SpOccupancy? live = SpOccupancy.fromDoc(
+                          occupancySnapshot.data,
+                        );
+                        return LayoutBuilder(
+                          builder: (context, constraints) {
+                            final int columns = constraints.maxWidth >= 580
+                                ? 3
+                                : 2;
+                            return GridView.builder(
+                              shrinkWrap: true,
+                              physics: const NeverScrollableScrollPhysics(),
+                              gridDelegate:
+                                  SliverGridDelegateWithFixedCrossAxisCount(
+                                    crossAxisCount: columns,
+                                    mainAxisSpacing: 10,
+                                    crossAxisSpacing: 10,
+                                    mainAxisExtent: 125,
+                                  ),
+                              itemCount: widget.vehicleOptions.length,
+                              itemBuilder: (context, index) {
+                                final DriverVehicleOption option =
+                                    widget.vehicleOptions[index];
+                                final bool isSelected =
+                                    option.key == _selectedVehicleType;
+                                final int occupied =
+                                    live?.of(option.key) ?? option.activeCount;
+                                final int available =
+                                    (option.capacity - occupied).clamp(
+                                      0,
+                                      option.capacity,
+                                    );
 
-                            return InkWell(
-                              onTap: () {
-                                setState(() {
-                                  _selectedVehicleType = option.key;
-                                });
-                              },
-                              borderRadius: BorderRadius.circular(
-                                AppTheme.radius,
-                              ),
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 12,
-                                  vertical: 10,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: isSelected
-                                      ? AppTheme.accentSoft
-                                      : AppTheme.surface,
+                                return InkWell(
+                                  onTap: () {
+                                    setState(() {
+                                      _selectedVehicleType = option.key;
+                                    });
+                                  },
                                   borderRadius: BorderRadius.circular(
                                     AppTheme.radius,
                                   ),
-                                  border: Border.all(
-                                    color: isSelected
-                                        ? AppTheme.accent
-                                        : AppTheme.border,
-                                    width: isSelected ? 1.6 : 1,
-                                  ),
-                                ),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Row(
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 10,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: isSelected
+                                          ? AppTheme.accentSoft
+                                          : AppTheme.surface,
+                                      borderRadius: BorderRadius.circular(
+                                        AppTheme.radius,
+                                      ),
+                                      border: Border.all(
+                                        color: isSelected
+                                            ? AppTheme.accent
+                                            : AppTheme.border,
+                                        width: isSelected ? 1.6 : 1,
+                                      ),
+                                    ),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
                                       children: [
-                                        Icon(
-                                          option.icon,
-                                          size: 20,
-                                          color: AppTheme.textDark,
+                                        Row(
+                                          children: [
+                                            Icon(
+                                              option.icon,
+                                              size: 20,
+                                              color: AppTheme.textDark,
+                                            ),
+                                            const Spacer(),
+                                            if (isSelected)
+                                              Icon(
+                                                Icons.check_circle_rounded,
+                                                color: AppTheme.accentText,
+                                                size: 19,
+                                              ),
+                                          ],
                                         ),
                                         const Spacer(),
-                                        if (isSelected)
-                                          Icon(
-                                            Icons.check_circle_rounded,
-                                            color: AppTheme.accentText,
-                                            size: 19,
+                                        Text(
+                                          option.label,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(
+                                            color: AppTheme.textDark,
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.w800,
                                           ),
+                                        ),
+                                        const SizedBox(height: 1),
+                                        Text(
+                                          '$available slots available',
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(
+                                            color: AppTheme.textMuted,
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          option.rate,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(
+                                            color: AppTheme.textDark,
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w800,
+                                          ),
+                                        ),
                                       ],
                                     ),
-                                    const Spacer(),
-                                    Text(
-                                      option.label,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: TextStyle(
-                                        color: AppTheme.textDark,
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.w800,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 1),
-                                    Text(
-                                      '$available slots available',
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: TextStyle(
-                                        color: AppTheme.textMuted,
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 2),
-                                    Text(
-                                      option.rate,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: TextStyle(
-                                        color: AppTheme.textDark,
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w800,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
+                                  ),
+                                );
+                              },
                             );
                           },
                         );
