@@ -340,6 +340,30 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // Gate staff flag a driver's ticket for their owner, who reports it to
+    // SmartPark or dismisses it. The ticket must be the staff member's
+    // facility's and really be that driver's. Drivers never read flags.
+    match /staff_incidents/{incidentId} {
+      allow read: if isAdmin() ||
+        isOwnerOf(resource.data.establishmentId) ||
+        (signedIn() && resource.data.staffId == uid());
+      allow create: if isStaffOf(request.resource.data.establishmentId) &&
+        request.resource.data.staffId == uid() &&
+        request.resource.data.status == 'open' &&
+        request.resource.data.reason is string &&
+        request.resource.data.reason.size() > 0 &&
+        exists(transactionPath(request.resource.data.transactionId)) &&
+        get(transactionPath(request.resource.data.transactionId)).data.establishmentId ==
+          request.resource.data.establishmentId &&
+        get(transactionPath(request.resource.data.transactionId)).data.driverId ==
+          request.resource.data.driverId;
+      allow update: if isOwnerOf(resource.data.establishmentId) &&
+        request.resource.data.status in ['reported', 'dismissed'] &&
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['status', 'handledAt']);
+      allow delete: if false;
+    }
+
     // Admins warn drivers; a driver reads their own warnings and may only
     // mark them as read.
     match /driver_warnings/{warningId} {

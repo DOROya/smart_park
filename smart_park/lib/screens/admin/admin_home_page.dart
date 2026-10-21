@@ -410,6 +410,9 @@ class _AdminHomePageState extends State<AdminHomePage>
     } else {
       updates['rejectionReason'] = null;
     }
+    // Any decision answers the owner's request for review.
+    updates['appealMessage'] = null;
+    updates['appealedAt'] = null;
     // The picked reason only applies while the facility is pulled.
     updates['restrictionReason'] =
         status == 'suspended' || status == 'deactivated'
@@ -1344,6 +1347,29 @@ class _AdminHomePageState extends State<AdminHomePage>
                                       : '${documentUrls.length} submitted',
                                   child: _buildBusinessDocuments(documentUrls),
                                 ),
+                                if (((data['appealMessage'] as String?) ?? '')
+                                    .trim()
+                                    .isNotEmpty)
+                                  _buildReviewSection(
+                                    icon: Icons.forum_outlined,
+                                    title: 'Owner\'s Review Request',
+                                    trailing:
+                                        spParseDateTime(data['appealedAt']) ==
+                                            null
+                                        ? null
+                                        : spFormatDate(
+                                            spParseDateTime(
+                                              data['appealedAt'],
+                                            )!,
+                                          ),
+                                    child: Text(
+                                      (data['appealMessage'] as String).trim(),
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        color: AppTheme.textDark,
+                                      ),
+                                    ),
+                                  ),
                                 if ((current == 'rejected' ||
                                         current == 'suspended' ||
                                         current == 'deactivated') &&

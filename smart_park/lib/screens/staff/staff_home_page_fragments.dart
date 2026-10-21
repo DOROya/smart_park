@@ -118,6 +118,16 @@ extension _StaffHomePageFragments on _StaffHomePageState {
                             const SpSectionLabel("Today's Activity"),
                             const SizedBox(height: 10),
                             SpDailyActivityTiles(summary: summary),
+                            const SizedBox(height: 12),
+                            _ShiftCashCard(
+                              cash: SpOvertimeCash.from(
+                                today.logs.where(
+                                  (Map<String, dynamic> log) =>
+                                      log['staffId'] ==
+                                      FirebaseAuth.instance.currentUser?.uid,
+                                ),
+                              ),
+                            ),
                             const SizedBox(height: 16),
                             SpLiveSlotsCard(
                               establishmentId: _assignedFacilityId ?? '',
@@ -458,6 +468,7 @@ extension _StaffHomePageFragments on _StaffHomePageState {
                           context,
                           log: data,
                           onMarkOvertimeCollected: _markLogOvertimeCollected,
+                          flaggingStaffName: _staffName,
                         ),
                       );
                     }).toList(),
@@ -583,6 +594,7 @@ extension _StaffHomePageFragments on _StaffHomePageState {
                           context,
                           log: data,
                           onMarkOvertimeCollected: _markLogOvertimeCollected,
+                          flaggingStaffName: _staffName,
                         ),
                       ),
                 ],
@@ -663,6 +675,61 @@ extension _StaffHomePageFragments on _StaffHomePageState {
 
 /// Shown above the scanner while an admin has the facility pulled, so staff
 /// know why every entry is refused before the first car is turned away.
+/// The overtime cash this staff member took at the gate today, so the
+/// end-of-shift handover to the owner can be checked against it.
+class _ShiftCashCard extends StatelessWidget {
+  const _ShiftCashCard({required this.cash});
+
+  final SpOvertimeCash cash;
+
+  @override
+  Widget build(BuildContext context) {
+    final bool owed = cash.dueCount > 0;
+    return SpSectionCard(
+      icon: Icons.payments_rounded,
+      title: 'Your Overtime Cash Today',
+      subtitle: 'Hand this to the owner at the end of your shift.',
+      trailing: owed
+          ? SpChip(label: '${cash.dueCount} to confirm', color: spInsideColor)
+          : null,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            spPeso(cash.collectedAmount),
+            style: TextStyle(
+              fontSize: 26,
+              fontWeight: FontWeight.w800,
+              color: AppTheme.textDark,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            cash.collectedCount == 0
+                ? 'No overtime cash collected yet today.'
+                : 'Collected from ${cash.collectedCount} exit'
+                      '${cash.collectedCount == 1 ? '' : 's'}.',
+            style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+          ),
+          if (owed) ...[
+            const SizedBox(height: 8),
+            Text(
+              '${spPeso(cash.dueAmount)} from ${cash.dueCount} exit'
+              '${cash.dueCount == 1 ? '' : 's'} is not confirmed yet. Open '
+              'the scan and tap "Cash collected" once you have it.',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: spInsideColor,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
 class _EntryClosedBanner extends StatelessWidget {
   const _EntryClosedBanner({required this.restriction});
 

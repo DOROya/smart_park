@@ -28,6 +28,7 @@ Future<void> showSpActivityDetails(
   Future<void> Function(Map<String, dynamic> log, String status)?
   onSetOvertimeStatus,
   bool canReportDriver = false,
+  String? flaggingStaffName,
 }) {
   return showModalBottomSheet<void>(
     context: context,
@@ -40,6 +41,7 @@ Future<void> showSpActivityDetails(
       onMarkOvertimeCollected: onMarkOvertimeCollected,
       onSetOvertimeStatus: onSetOvertimeStatus,
       canReportDriver: canReportDriver,
+      flaggingStaffName: flaggingStaffName,
     ),
   );
 }
@@ -58,6 +60,7 @@ class _ActivityDetailsSheet extends StatefulWidget {
     this.onMarkOvertimeCollected,
     this.onSetOvertimeStatus,
     this.canReportDriver = false,
+    this.flaggingStaffName,
   });
 
   final Map<String, dynamic> log;
@@ -69,6 +72,9 @@ class _ActivityDetailsSheet extends StatefulWidget {
 
   /// Owners may report the ticket's driver to the SmartPark admin.
   final bool canReportDriver;
+
+  /// Set for gate staff, who may flag the ticket's driver for their owner.
+  final String? flaggingStaffName;
 
   @override
   State<_ActivityDetailsSheet> createState() => _ActivityDetailsSheetState();
@@ -230,6 +236,24 @@ class _ActivityDetailsSheetState extends State<_ActivityDetailsSheet> {
                     child: SpDriverReportButton(
                       ticketId: transactionId,
                       ticket: ticket,
+                    ),
+                  );
+                },
+              ),
+            if (widget.flaggingStaffName != null &&
+                !walkIn &&
+                transactionId.isNotEmpty)
+              FutureBuilder<Map<String, dynamic>?>(
+                future: _ticket,
+                builder: (BuildContext context, snapshot) {
+                  final Map<String, dynamic>? ticket = snapshot.data;
+                  if (ticket == null) return const SizedBox.shrink();
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: SpIncidentFlagButton(
+                      ticketId: transactionId,
+                      ticket: ticket,
+                      staffName: widget.flaggingStaffName!,
                     ),
                   );
                 },
