@@ -8,13 +8,13 @@ String facilityStatus(Map<String, dynamic>? details) =>
 /// free-text note (`rejectionReason`), which only the owner sees, the picked
 /// reason is also shown to drivers holding tickets for the facility.
 const List<String> kRestrictionReasons = <String>[
-  'Expired or invalid business permit',
-  'Incomplete or falsified documents',
+  'Invalid business permit',
+  'Incomplete or false documents',
   'Safety or security concerns',
-  'Rates charged differ from the listing',
+  'Rates differ from the listing',
   'Repeated driver complaints',
-  'Facility closed or not operating',
-  'Violation of SmartPark policies',
+  'Facility not operating',
+  'SmartPark policy violation',
   'Requested by the owner',
   'Other',
 ];
