@@ -262,6 +262,8 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
                             status: details['status'] as String?,
                             rejectionReason:
                                 details['rejectionReason'] as String?,
+                            restrictionReason:
+                                details['restrictionReason'] as String?,
                           ),
                         ],
                         const SizedBox(height: 16),
@@ -355,6 +357,7 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
           FacilityReviewStatusBanner(
             status: details['status'] as String?,
             rejectionReason: details['rejectionReason'] as String?,
+            restrictionReason: details['restrictionReason'] as String?,
           ),
         ],
         const SizedBox(height: 20),

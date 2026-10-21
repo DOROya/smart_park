@@ -227,7 +227,30 @@ extension _StaffHomePageFragments on _StaffHomePageState {
 
   Widget _buildQrTab() {
     final String? facilityId = _assignedFacilityId;
+    if (facilityId == null || facilityId.isEmpty) {
+      return _buildQrTabContent(null, null);
+    }
+    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+      stream: cachedStream(
+        'details_$facilityId',
+        () => FirebaseFirestore.instance
+            .collection('establishment_details')
+            .doc(facilityId)
+            .snapshots(),
+      ),
+      builder: (BuildContext context, detailsSnapshot) {
+        final Map<String, dynamic>? details = detailsSnapshot.data?.data();
+        return _buildQrTabContent(
+          facilityId,
+          isFacilityRestricted(details) ? facilityStatus(details) : null,
+        );
+      },
+    );
+  }
 
+  /// [restriction] is "suspended" or "deactivated" when an admin pulled the
+  /// facility: entry is closed, exits still work.
+  Widget _buildQrTabContent(String? facilityId, String? restriction) {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
@@ -244,12 +267,19 @@ extension _StaffHomePageFragments on _StaffHomePageState {
           'Set Entry or Exit first, then place the QR code in the frame.',
           style: TextStyle(color: AppTheme.textMuted),
         ),
+        if (restriction != null) ...[
+          const SizedBox(height: 12),
+          _EntryClosedBanner(restriction: restriction),
+        ],
         const SizedBox(height: 12),
         _gateModeSelector(),
         const SizedBox(height: 8),
         Text(
           _gateMode == 'entry'
-              ? 'Entry mode: tickets are verified and checked in.'
+              ? restriction == null
+                    ? 'Entry mode: tickets are verified and checked in.'
+                    : 'Entry mode: every scan is denied while the facility '
+                          'is $restriction.'
               : 'Exit mode: stay time is checked, overtime is billed.',
           style: TextStyle(
             color: AppTheme.textMuted,
@@ -363,12 +393,13 @@ extension _StaffHomePageFragments on _StaffHomePageState {
         ],
         const SizedBox(height: 12),
         _ManualPlateLookup(onLookup: _lookupByPlate),
-        if (facilityId != null && facilityId.isNotEmpty) ...[
+        if (facilityId != null) ...[
           const SizedBox(height: 12),
           WalkInPanel(
             facilityId: facilityId,
             ownerId: _ownerId,
             staffName: _staffName,
+            entryClosed: restriction != null,
           ),
         ],
         const SizedBox(height: 12),
@@ -630,6 +661,64 @@ extension _StaffHomePageFragments on _StaffHomePageState {
   }
 }
 
+/// Shown above the scanner while an admin has the facility pulled, so staff
+/// know why every entry is refused before the first car is turned away.
+class _EntryClosedBanner extends StatelessWidget {
+  const _EntryClosedBanner({required this.restriction});
+
+  /// "suspended" or "deactivated".
+  final String restriction;
+
+  @override
+  Widget build(BuildContext context) {
+    final bool suspended = restriction == 'suspended';
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppTheme.dangerSoft,
+        borderRadius: BorderRadius.circular(AppTheme.radiusLarge),
+        border: Border.all(color: AppTheme.dangerBorder),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            suspended ? Icons.pause_circle_rounded : Icons.block_rounded,
+            color: spDeniedColor,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Entry closed: facility $restriction',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w800,
+                    color: AppTheme.textDark,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'SmartPark has $restriction this facility. Do not admit '
+                  'any vehicle; entry scans and walk-ins are refused until '
+                  'it is ${suspended ? 'reinstated' : 'reactivated'}. '
+                  'Vehicles already inside can still exit.',
+                  style: TextStyle(
+                    fontSize: 12,
+                    height: 1.35,
+                    color: AppTheme.textSecondary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _GateResultCard extends StatelessWidget {
   const _GateResultCard({
     required this.result,
@@ -714,58 +803,29 @@ class _GateResultCard extends StatelessWidget {
             ),
           ],
           if (result.hasOvertime) ...<Widget>[
-            const SizedBox(height: 8),
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: result.overtimeCollected
-                    ? AppTheme.successSoft
-                    : AppTheme.warningSoft,
-                borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
-                border: Border.all(
-                  color: result.overtimeCollected
-                      ? AppTheme.success
-                      : AppTheme.accent,
+            const SizedBox(height: 10),
+            SpOvertimeBreakdown(
+              overtimeHours: result.overtimeHours!.round(),
+              amount: result.overtimeAmount!,
+              elapsed: result.elapsed,
+              rate: result.overtimeAmount! / result.overtimeHours!,
+              status: result.overtimeCollected
+                  ? kOvertimeCollected
+                  : kOvertimeCashDue,
+            ),
+            if (!result.overtimeCollected) ...<Widget>[
+              const SizedBox(height: 8),
+              FilledButton.icon(
+                onPressed: marking ? null : onMarkCollected,
+                icon: const Icon(Icons.check_rounded),
+                label: Text(
+                  marking
+                      ? 'Saving...'
+                      : 'Cash collected '
+                            '(PHP ${result.overtimeAmount!.toStringAsFixed(2)})',
                 ),
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: <Widget>[
-                  Row(
-                    children: <Widget>[
-                      Icon(
-                        result.overtimeCollected
-                            ? Icons.check_circle_rounded
-                            : Icons.payments_rounded,
-                        color: result.overtimeCollected
-                            ? AppTheme.success
-                            : AppTheme.accentText,
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          result.overtimeCollected
-                              ? 'PHP ${result.overtimeAmount!.toStringAsFixed(2)} '
-                                    'overtime cash recorded as collected.'
-                              : 'Collect PHP ${result.overtimeAmount!.toStringAsFixed(2)} '
-                                    'cash for ${result.overtimeHours!.toStringAsFixed(0)}h '
-                                    'overtime before releasing.',
-                          style: const TextStyle(fontWeight: FontWeight.w700),
-                        ),
-                      ),
-                    ],
-                  ),
-                  if (!result.overtimeCollected) ...<Widget>[
-                    const SizedBox(height: 8),
-                    FilledButton.icon(
-                      onPressed: marking ? null : onMarkCollected,
-                      icon: const Icon(Icons.check_rounded),
-                      label: Text(marking ? 'Saving...' : 'Cash collected'),
-                    ),
-                  ],
-                ],
-              ),
-            ),
+            ],
           ],
           if (result.transactionId != null &&
               result.transactionId!.isNotEmpty) ...<Widget>[

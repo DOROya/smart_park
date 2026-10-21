@@ -70,6 +70,9 @@ class _GateActivityContentState extends State<_GateActivityContent>
   DateTime _date = DateTime.now();
   String _filter = 'all';
 
+  /// Text in the search box: part of a plate, a staff name or a ticket #.
+  String _query = '';
+
   Future<void> _pickDate() async {
     final DateTime now = DateTime.now();
     final DateTime? picked = await showDatePicker(
@@ -83,9 +86,13 @@ class _GateActivityContentState extends State<_GateActivityContent>
     }
   }
 
-  bool _matchesFilter(Map<String, dynamic> data) {
+  bool _matchesFilter(
+    Map<String, dynamic> data,
+    Map<String, String>? staffNames,
+  ) {
     final String? staffId = widget.staffFilter;
     if (staffId != null && data['staffId'] != staffId) return false;
+    if (!spActivityMatchesQuery(data, _query, staffNames)) return false;
     return switch (_filter) {
       'entry' => spLogScanType(data) == 'entry',
       'exit' => spLogScanType(data) == 'exit',
@@ -118,63 +125,6 @@ class _GateActivityContentState extends State<_GateActivityContent>
           a.$2.toLowerCase().compareTo(b.$2.toLowerCase()),
     );
     return sorted;
-  }
-
-  Widget _staffPicker(List<(String, String)> options) {
-    final String? selected = widget.staffFilter;
-    String label = 'All staff';
-    for (final (String id, String name) in options) {
-      if (id == selected) label = name;
-    }
-    return PopupMenuButton<String>(
-      tooltip: 'Filter by staff',
-      initialValue: selected ?? '',
-      onSelected: (String value) =>
-          widget.onStaffFilterChanged(value.isEmpty ? null : value),
-      itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
-        const PopupMenuItem<String>(value: '', child: Text('All staff')),
-        for (final (String id, String name) in options)
-          PopupMenuItem<String>(value: id, child: Text(name)),
-      ],
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        decoration: BoxDecoration(
-          color: selected == null ? AppTheme.surface : AppTheme.warningSoft,
-          borderRadius: BorderRadius.circular(AppTheme.radius),
-          border: Border.all(
-            color: selected == null ? spCardBorder : AppTheme.accent,
-          ),
-        ),
-        child: Row(
-          children: <Widget>[
-            Icon(Icons.badge_outlined, size: 18, color: AppTheme.textMuted),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontWeight: FontWeight.w700,
-                  color: AppTheme.textDark,
-                ),
-              ),
-            ),
-            if (selected != null)
-              GestureDetector(
-                onTap: () => widget.onStaffFilterChanged(null),
-                child: Icon(
-                  Icons.close_rounded,
-                  size: 18,
-                  color: AppTheme.textMuted,
-                ),
-              )
-            else
-              Icon(Icons.expand_more_rounded, color: AppTheme.textMuted),
-          ],
-        ),
-      ),
-    );
   }
 
   @override
@@ -210,9 +160,10 @@ class _GateActivityContentState extends State<_GateActivityContent>
           _date,
           insideLogs: insideLogs,
         );
+        bool matches(Map<String, dynamic> d) => _matchesFilter(d, staffNames);
         final List<Map<String, dynamic>> visible = _filter == 'inside'
-            ? insideLogs.where(_matchesFilter).toList()
-            : summary.dayLogs.where(_matchesFilter).toList();
+            ? insideLogs.where(matches).toList()
+            : summary.dayLogs.where(matches).toList();
         final List<(String, String)> staffOptions = _staffOptions(
           staffNames ?? const <String, String>{},
           <Map<String, dynamic>>[...logs, ...insideLogs],
@@ -276,7 +227,14 @@ class _GateActivityContentState extends State<_GateActivityContent>
               onChanged: (String value) => setState(() => _filter = value),
             ),
             const SizedBox(height: 8),
-            _staffPicker(staffOptions),
+            SpActivitySearch(
+              logs: _filter == 'inside' ? insideLogs : summary.dayLogs,
+              staff: staffOptions,
+              query: _query,
+              onQueryChanged: (String value) => setState(() => _query = value),
+              staffFilter: widget.staffFilter,
+              onStaffFilterChanged: widget.onStaffFilterChanged,
+            ),
             const SizedBox(height: 12),
             if (day.error != null)
               const SpEmptyState(
@@ -287,7 +245,13 @@ class _GateActivityContentState extends State<_GateActivityContent>
               const SpSkeletonList()
             else if (visible.isEmpty)
               SpEmptyState(
-                message: widget.staffFilter == null
+                icon: _query.trim().isEmpty
+                    ? Icons.receipt_long_rounded
+                    : Icons.search_off_rounded,
+                message: _query.trim().isNotEmpty
+                    ? 'No scans match "${_query.trim()}" for this filter '
+                          'and date.'
+                    : widget.staffFilter == null
                     ? 'No scans for this filter and date.'
                     : 'No scans by this staff member for this filter '
                           'and date.',

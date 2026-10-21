@@ -1481,6 +1481,8 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
                         status: _reviewStatus,
                         rejectionReason:
                             _facilityData?['rejectionReason'] as String?,
+                        restrictionReason:
+                            _facilityData?['restrictionReason'] as String?,
                         hint: _reviewStatus == 'approved'
                             ? 'Changing business documents will require re-approval.'
                             : null,

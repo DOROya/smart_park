@@ -5,6 +5,7 @@ import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
+import '../../services/facility_status.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/friendly_error.dart';
 import '../../widgets/smartpark_ui.dart';
@@ -387,6 +388,7 @@ class _AdminHomePageState extends State<AdminHomePage>
     String establishmentId,
     String status, {
     String? rejectionReason,
+    String? restrictionReason,
   }) async {
     final Map<String, dynamic> updates = <String, dynamic>{
       'status': status,
@@ -407,6 +409,11 @@ class _AdminHomePageState extends State<AdminHomePage>
     } else {
       updates['rejectionReason'] = null;
     }
+    // The picked reason only applies while the facility is pulled.
+    updates['restrictionReason'] =
+        status == 'suspended' || status == 'deactivated'
+        ? restrictionReason
+        : null;
 
     await FirebaseFirestore.instance
         .collection('establishment_details')
@@ -740,6 +747,7 @@ class _AdminHomePageState extends State<AdminHomePage>
   Future<bool> _confirmRestrictFacility(
     BuildContext dialogContext,
     String newStatus,
+    String reason,
   ) async {
     final bool suspend = newStatus == 'suspended';
     final bool? confirmed = await showDialog<bool>(
@@ -749,14 +757,50 @@ class _AdminHomePageState extends State<AdminHomePage>
           title: Text(
             suspend ? 'Suspend this facility?' : 'Deactivate this facility?',
           ),
-          content: Text(
-            suspend
-                ? 'It will be hidden from drivers and cannot sell tickets '
-                      'until you reinstate it. Drivers already holding '
-                      'tickets can still be scanned at the gate.'
-                : 'It will be removed from SmartPark and cannot sell '
-                      'tickets. Drivers already holding tickets can still be '
-                      'scanned at the gate. You can reactivate it later.',
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: AppTheme.surfaceAlt,
+                  borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
+                ),
+                child: Text.rich(
+                  TextSpan(
+                    children: [
+                      TextSpan(
+                        text: 'Reason: ',
+                        style: TextStyle(color: AppTheme.textMuted),
+                      ),
+                      TextSpan(
+                        text: reason,
+                        style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          color: AppTheme.textDark,
+                        ),
+                      ),
+                    ],
+                  ),
+                  style: const TextStyle(fontSize: 13),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                suspend
+                    ? 'It will be hidden from drivers and cannot sell tickets '
+                          'until you reinstate it. Its gate will refuse every '
+                          'entry, and drivers will see their tickets for it as '
+                          'invalid. Vehicles already inside can still exit.'
+                    : 'It will be removed from SmartPark and cannot sell '
+                          'tickets. Its gate will refuse every entry, and '
+                          'drivers will see their tickets for it as invalid. '
+                          'Vehicles already inside can still exit. You can '
+                          'reactivate it later.',
+              ),
+            ],
           ),
           actions: [
             TextButton(
@@ -775,6 +819,108 @@ class _AdminHomePageState extends State<AdminHomePage>
       },
     );
     return confirmed ?? false;
+  }
+
+  /// Predefined reasons for suspending or deactivating a facility, shown
+  /// above the optional note. One must be picked before either action.
+  Widget _buildRestrictionReasonPicker({
+    required String? selected,
+    required bool missing,
+    required bool enabled,
+    required ValueChanged<String?> onSelected,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text.rich(
+          TextSpan(
+            text: 'Reason for Suspending or Deactivating ',
+            children: [
+              TextSpan(
+                text: '*',
+                style: TextStyle(color: AppTheme.danger),
+              ),
+            ],
+          ),
+          style: TextStyle(
+            fontWeight: FontWeight.w700,
+            color: AppTheme.textDark,
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          'Shown to the owner and to drivers holding tickets here.',
+          style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            for (final String reason in kRestrictionReasons)
+              ChoiceChip(
+                label: Text(reason),
+                selected: selected == reason,
+                showCheckmark: false,
+                avatar: selected == reason
+                    ? Icon(
+                        Icons.check_rounded,
+                        size: 16,
+                        color: AppTheme.onAccent,
+                      )
+                    : null,
+                labelStyle: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: selected == reason
+                      ? AppTheme.onAccent
+                      : AppTheme.textDark,
+                ),
+                selectedColor: AppTheme.accent,
+                backgroundColor: AppTheme.surface,
+                side: BorderSide(
+                  color: selected == reason
+                      ? AppTheme.accent
+                      : missing
+                      ? AppTheme.dangerBorder
+                      : AppTheme.border,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                onSelected: enabled
+                    ? (bool on) => onSelected(on ? reason : null)
+                    : null,
+              ),
+          ],
+        ),
+        if (missing) ...[
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Icon(
+                Icons.error_outline_rounded,
+                size: 16,
+                color: AppTheme.danger,
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  selected == 'Other'
+                      ? 'Describe the reason in the details box below.'
+                      : 'Pick a reason first.',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: AppTheme.danger,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ],
+    );
   }
 
   /// One button in the review dialog's action row: filled for the primary
@@ -834,6 +980,10 @@ class _AdminHomePageState extends State<AdminHomePage>
         TextEditingController();
     // The status being saved, so only that button shows a spinner.
     String? submittingStatus;
+    // Predefined reason for suspending or deactivating, and whether the
+    // admin tried to without one (or picked "Other" with no details).
+    String? restrictionReason;
+    bool reasonMissing = false;
 
     await showDialog<void>(
       context: context,
@@ -855,6 +1005,7 @@ class _AdminHomePageState extends State<AdminHomePage>
             final DateTime? submittedAt =
                 _parseDateTime(data['resubmittedAt']) ??
                 _parseDateTime(data['createdAt']);
+            final String? previousRestriction = facilityRestrictionReason(data);
             final String previousRejection =
                 ((data['rejectionReason'] as String?) ?? '').trim();
             final Map<dynamic, dynamic> rates =
@@ -874,9 +1025,19 @@ class _AdminHomePageState extends State<AdminHomePage>
                 Future<void> submit(String newStatus) async {
                   bool confirmed = true;
                   if (newStatus == 'suspended' || newStatus == 'deactivated') {
+                    final String? reason = restrictionReason;
+                    if (reason == null ||
+                        (reason == 'Other' &&
+                            rejectionReasonController.text.trim().isEmpty)) {
+                      setDialogState(() => reasonMissing = true);
+                      return;
+                    }
                     confirmed = await _confirmRestrictFacility(
                       dialogContext,
                       newStatus,
+                      reason == 'Other'
+                          ? rejectionReasonController.text.trim()
+                          : reason,
                     );
                   } else if (newStatus == 'approved' &&
                       documentUrls.isEmpty &&
@@ -896,6 +1057,7 @@ class _AdminHomePageState extends State<AdminHomePage>
                       doc.id,
                       newStatus,
                       rejectionReason: rejectionReasonController.text,
+                      restrictionReason: restrictionReason,
                     );
                     if (dialogContext.mounted) {
                       Navigator.of(dialogContext).pop();
@@ -1184,22 +1346,59 @@ class _AdminHomePageState extends State<AdminHomePage>
                                 if ((current == 'rejected' ||
                                         current == 'suspended' ||
                                         current == 'deactivated') &&
-                                    previousRejection.isNotEmpty)
+                                    (previousRejection.isNotEmpty ||
+                                        previousRestriction != null))
                                   _buildReviewSection(
                                     icon: Icons.history_rounded,
                                     title: noteTitle,
-                                    child: Text(
-                                      previousRejection,
-                                      style: TextStyle(
-                                        fontSize: 13,
-                                        color: AppTheme.textDark,
-                                      ),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        if (previousRestriction != null)
+                                          Padding(
+                                            padding: EdgeInsets.only(
+                                              bottom: previousRejection.isEmpty
+                                                  ? 0
+                                                  : 6,
+                                            ),
+                                            child: SpChip(
+                                              label: previousRestriction,
+                                              color: current == 'suspended'
+                                                  ? AppTheme.warning
+                                                  : AppTheme.danger,
+                                            ),
+                                          ),
+                                        if (previousRejection.isNotEmpty)
+                                          Text(
+                                            previousRejection,
+                                            style: TextStyle(
+                                              fontSize: 13,
+                                              color: AppTheme.textDark,
+                                            ),
+                                          ),
+                                      ],
                                     ),
                                   ),
+                                if (restricting) ...[
+                                  _buildRestrictionReasonPicker(
+                                    selected: restrictionReason,
+                                    missing: reasonMissing,
+                                    enabled: !isSubmitting,
+                                    onSelected: (String? reason) =>
+                                        setDialogState(() {
+                                          restrictionReason = reason;
+                                          reasonMissing = false;
+                                        }),
+                                  ),
+                                  const SizedBox(height: 14),
+                                ],
                                 if (current != 'deactivated') ...[
                                   Text(
                                     restricting
-                                        ? 'Reason (Optional)'
+                                        ? restrictionReason == 'Other'
+                                              ? 'Additional Details (Required for "Other")'
+                                              : 'Additional Details (Optional)'
                                         : 'Rejection Reason (Optional)',
                                     style: TextStyle(
                                       fontWeight: FontWeight.w700,
@@ -1211,9 +1410,16 @@ class _AdminHomePageState extends State<AdminHomePage>
                                     controller: rejectionReasonController,
                                     enabled: !isSubmitting,
                                     maxLines: 3,
+                                    onChanged: (_) {
+                                      if (reasonMissing) {
+                                        setDialogState(
+                                          () => reasonMissing = false,
+                                        );
+                                      }
+                                    },
                                     decoration: InputDecoration(
                                       hintText: restricting
-                                          ? 'Shown to the owner if you suspend or deactivate this facility.'
+                                          ? 'Anything else the owner should know. Only the owner sees this note.'
                                           : 'Shown to the owner so they can fix issues before resubmitting.',
                                       hintStyle: const TextStyle(fontSize: 12),
                                       filled: true,

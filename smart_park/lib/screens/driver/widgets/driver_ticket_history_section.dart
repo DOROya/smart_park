@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -5,10 +6,12 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
+import '../../../services/facility_status.dart';
 import '../../../services/parking_pricing.dart';
 import '../../../theme/app_theme.dart';
 import '../../../widgets/smartpark_ui.dart';
 import '../../../widgets/sp_loading.dart';
+import '../../../widgets/sp_overtime.dart';
 
 /// Rebuilds a scanner-compatible QR payload for tickets saved before the QR
 /// string was persisted. The gate scanner requires JSON containing at least
@@ -144,73 +147,191 @@ class _DriverTicketHistorySectionState extends State<DriverTicketHistorySection>
               ),
             );
 
-            final List<QueryDocumentSnapshot<Map<String, dynamic>>> active =
-                <QueryDocumentSnapshot<Map<String, dynamic>>>[];
-            final List<QueryDocumentSnapshot<Map<String, dynamic>>> past =
-                <QueryDocumentSnapshot<Map<String, dynamic>>>[];
-            for (final QueryDocumentSnapshot<Map<String, dynamic>> doc
-                in tickets) {
-              final _TicketState state = _ticketState(doc.data());
-              if (state == _TicketState.ready || state == _TicketState.parked) {
-                active.add(doc);
-              } else {
-                past.add(doc);
-              }
-            }
+            // Only tickets with time left can be invalidated by their
+            // facility being pulled, so only those facilities are watched.
+            final List<String> facilityIds = <String>{
+              for (final QueryDocumentSnapshot<Map<String, dynamic>> doc
+                  in tickets)
+                if (_hasTimeLeft(_ticketState(doc.data())))
+                  _ticketFacilityId(doc.data()),
+            }.where((String id) => id.isNotEmpty).toList()..sort();
 
-            return ListView(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-              children: [
-                const SpPageHeader(
-                  title: 'Tickets',
-                  subtitle: 'Show the QR code to gate staff on entry and exit.',
-                ),
-                const SizedBox(height: 16),
-                if (snapshot.hasError)
-                  const SpEmptyState(
-                    icon: Icons.error_outline_rounded,
-                    message: 'Unable to load your tickets right now.',
-                  )
-                else if (snapshot.connectionState == ConnectionState.waiting)
-                  const Padding(
-                    padding: EdgeInsets.all(24),
-                    child: SpSkeletonList(),
-                  )
-                else if (tickets.isEmpty)
-                  const SpEmptyState(
-                    icon: Icons.confirmation_number_outlined,
-                    message:
-                        'No parking tickets yet. Pick a parking spot on the '
-                        'Home tab to buy one.',
-                  )
-                else ...[
-                  const SpSectionLabel('Active'),
-                  const SizedBox(height: 8),
-                  if (active.isEmpty)
-                    const SpEmptyState(
-                      icon: Icons.qr_code_2_rounded,
-                      message:
-                          'No active tickets. Your next ticket shows up here.',
-                    )
-                  else
-                    for (final QueryDocumentSnapshot<Map<String, dynamic>> doc
-                        in active)
-                      _ActiveTicketCard(doc: doc),
-                  if (past.isNotEmpty) ...[
-                    const SizedBox(height: 16),
-                    const SpSectionLabel('Past Tickets'),
-                    const SizedBox(height: 8),
-                    for (final QueryDocumentSnapshot<Map<String, dynamic>> doc
-                        in past)
-                      _PastTicketRow(doc: doc),
-                  ],
-                ],
-              ],
+            return StreamBuilder<Map<String, Map<String, dynamic>>>(
+              stream: facilityIds.isEmpty
+                  ? null
+                  : cachedStream(
+                      'facility_details_${facilityIds.join(',')}',
+                      () => _facilityDetailsStream(facilityIds),
+                    ),
+              builder: (BuildContext context, facilitySnapshot) => _buildList(
+                snapshot,
+                tickets,
+                facilitySnapshot.data ?? const <String, Map<String, dynamic>>{},
+              ),
             );
           },
     );
   }
+
+  Widget _buildList(
+    AsyncSnapshot<QuerySnapshot<Map<String, dynamic>>> snapshot,
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> tickets,
+    Map<String, Map<String, dynamic>> facilities,
+  ) {
+    final List<QueryDocumentSnapshot<Map<String, dynamic>>> active =
+        <QueryDocumentSnapshot<Map<String, dynamic>>>[];
+    final List<QueryDocumentSnapshot<Map<String, dynamic>>> invalid =
+        <QueryDocumentSnapshot<Map<String, dynamic>>>[];
+    final List<QueryDocumentSnapshot<Map<String, dynamic>>> past =
+        <QueryDocumentSnapshot<Map<String, dynamic>>>[];
+    for (final QueryDocumentSnapshot<Map<String, dynamic>> doc in tickets) {
+      final _TicketState state = _ticketState(doc.data());
+      final bool restricted = isFacilityRestricted(
+        facilities[_ticketFacilityId(doc.data())],
+      );
+      // A vehicle already inside keeps its ticket on top: it still
+      // needs the QR to get out.
+      if (state == _TicketState.ready && restricted) {
+        invalid.add(doc);
+      } else if (_hasTimeLeft(state)) {
+        active.add(doc);
+      } else {
+        past.add(doc);
+      }
+    }
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+      children: [
+        const SpPageHeader(
+          title: 'Tickets',
+          subtitle: 'Show the QR code to gate staff on entry and exit.',
+        ),
+        const SizedBox(height: 16),
+        if (snapshot.hasError)
+          const SpEmptyState(
+            icon: Icons.error_outline_rounded,
+            message: 'Unable to load your tickets right now.',
+          )
+        else if (snapshot.connectionState == ConnectionState.waiting)
+          const Padding(padding: EdgeInsets.all(24), child: SpSkeletonList())
+        else if (tickets.isEmpty)
+          const SpEmptyState(
+            icon: Icons.confirmation_number_outlined,
+            message:
+                'No parking tickets yet. Pick a parking spot on the '
+                'Home tab to buy one.',
+          )
+        else ...[
+          const SpSectionLabel('Active'),
+          const SizedBox(height: 8),
+          if (active.isEmpty)
+            const SpEmptyState(
+              icon: Icons.qr_code_2_rounded,
+              message: 'No active tickets. Your next ticket shows up here.',
+            )
+          else
+            for (final QueryDocumentSnapshot<Map<String, dynamic>> doc
+                in active)
+              _ActiveTicketCard(
+                doc: doc,
+                facility: facilities[_ticketFacilityId(doc.data())],
+              ),
+          if (invalid.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            SpSectionLabel(
+              'Invalid Tickets',
+              trailing: SpChip(
+                label: '${invalid.length}',
+                color: spDeniedColor,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'These still have parking time, but SmartPark has '
+              'pulled their facility. Tap one to see why.',
+              style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
+            ),
+            const SizedBox(height: 10),
+            for (final QueryDocumentSnapshot<Map<String, dynamic>> doc
+                in invalid)
+              _InvalidTicketCard(
+                doc: doc,
+                facility: facilities[_ticketFacilityId(doc.data())],
+              ),
+          ],
+          if (past.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            const SpSectionLabel('Past Tickets'),
+            const SizedBox(height: 8),
+            for (final QueryDocumentSnapshot<Map<String, dynamic>> doc in past)
+              _PastTicketRow(doc: doc),
+          ],
+        ],
+      ],
+    );
+  }
 }
+
+bool _hasTimeLeft(_TicketState state) =>
+    state == _TicketState.ready || state == _TicketState.parked;
+
+String _ticketFacilityId(Map<String, dynamic> data) =>
+    ((data['establishmentId'] as String?) ??
+            (data['establishmentID'] as String?) ??
+            '')
+        .trim();
+
+/// Live `establishment_details` for [ids], keyed by id. Firestore's `whereIn`
+/// takes at most 30 values, so larger sets are watched in chunks.
+Stream<Map<String, Map<String, dynamic>>> _facilityDetailsStream(
+  List<String> ids,
+) {
+  final Map<String, Map<String, dynamic>> details =
+      <String, Map<String, dynamic>>{};
+  final List<StreamSubscription<QuerySnapshot<Map<String, dynamic>>>>
+  subscriptions = <StreamSubscription<QuerySnapshot<Map<String, dynamic>>>>[];
+  late final StreamController<Map<String, Map<String, dynamic>>> controller;
+  controller = StreamController<Map<String, Map<String, dynamic>>>(
+    onListen: () {
+      for (int i = 0; i < ids.length; i += 30) {
+        final List<String> chunk = ids.sublist(
+          i,
+          i + 30 > ids.length ? ids.length : i + 30,
+        );
+        subscriptions.add(
+          FirebaseFirestore.instance
+              .collection('establishment_details')
+              .where(FieldPath.documentId, whereIn: chunk)
+              .snapshots()
+              .listen((QuerySnapshot<Map<String, dynamic>> snap) {
+                details.removeWhere((String id, _) => chunk.contains(id));
+                for (final QueryDocumentSnapshot<Map<String, dynamic>> doc
+                    in snap.docs) {
+                  details[doc.id] = doc.data();
+                }
+                controller.add(Map<String, Map<String, dynamic>>.of(details));
+              }, onError: controller.addError),
+        );
+      }
+    },
+    onCancel: () async {
+      for (final StreamSubscription<QuerySnapshot<Map<String, dynamic>>> s
+          in subscriptions) {
+        await s.cancel();
+      }
+      await controller.close();
+    },
+  );
+  return controller.stream;
+}
+
+/// How a pulled facility's tickets are explained to the driver.
+({String verb, String undo}) _restrictionWording(
+  Map<String, dynamic>? facility,
+) => facilityStatus(facility) == 'deactivated'
+    ? (verb: 'deactivated', undo: 'reactivated')
+    : (verb: 'suspended', undo: 'reinstated');
 
 String _vehicleLabel(Map<String, dynamic> data) {
   final String type = ((data['vehicleType'] as String?) ?? '').toLowerCase();
@@ -239,9 +360,12 @@ String _dateTimeLabel(DateTime? date) => date == null
     : '${spFormatDate(date)}, ${spFormatClockTime(date)}';
 
 class _ActiveTicketCard extends StatelessWidget {
-  const _ActiveTicketCard({required this.doc});
+  const _ActiveTicketCard({required this.doc, this.facility});
 
   final QueryDocumentSnapshot<Map<String, dynamic>> doc;
+
+  /// The issuing facility's `establishment_details`, once loaded.
+  final Map<String, dynamic>? facility;
 
   @override
   Widget build(BuildContext context) {
@@ -294,11 +418,13 @@ class _ActiveTicketCard extends StatelessWidget {
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        state == _TicketState.parked && enteredAt != null
-                            ? 'Entered ${spFormatClockTime(enteredAt)}'
-                                  ' · ${ticketHoursLeft(data)}h on ticket'
-                            : '${ticketHoursLeft(data)}h left · '
-                                  'Show this at the entrance',
+                        state == _TicketState.parked
+                            ? enteredAt == null
+                                  ? 'Show this QR at the exit'
+                                  : 'Parked since '
+                                        '${spFormatClockTime(enteredAt)} · '
+                                        'show this QR at the exit'
+                            : 'Show this QR at the entrance',
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w600,
@@ -333,6 +459,25 @@ class _ActiveTicketCard extends StatelessWidget {
             padding: const EdgeInsets.all(16),
             child: Column(
               children: [
+                if (isFacilityRestricted(facility)) ...[
+                  _NoticeStrip(
+                    icon: Icons.warning_amber_rounded,
+                    color: spDeniedColor,
+                    background: AppTheme.dangerSoft,
+                    text:
+                        'SmartPark ${_restrictionWording(facility).verb} this '
+                        'facility while you were parked. Show this QR to exit '
+                        'as usual, but the ticket can\'t be used to enter '
+                        'again until the facility is '
+                        '${_restrictionWording(facility).undo}.',
+                  ),
+                  const SizedBox(height: 12),
+                ],
+                _TimeLeftPanel(
+                  hoursLeft: ticketHoursLeft(data),
+                  parkedSince: state == _TicketState.parked ? enteredAt : null,
+                ),
+                const SizedBox(height: 16),
                 Container(
                   padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
@@ -398,6 +543,415 @@ class _ActiveTicketCard extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// The parking time a ticket still covers, worded so it can't be read as an
+/// expiry date: the hours only run down while the vehicle is parked.
+class _TimeLeftPanel extends StatelessWidget {
+  const _TimeLeftPanel({required this.hoursLeft, this.parkedSince});
+
+  final int hoursLeft;
+
+  /// When the current visit began; null when the vehicle isn't parked.
+  final DateTime? parkedSince;
+
+  @override
+  Widget build(BuildContext context) {
+    final DateTime? since = parkedSince;
+    final DateTime? paidUntil = since?.add(Duration(hours: hoursLeft));
+    final String label = since == null
+        ? 'Parking time left'
+        : 'Parking time left when you entered';
+    final String note = paidUntil == null
+        ? 'Counts down only while you\'re parked, at least '
+              '$spBaseStayHours hours per visit. This is not an expiry date: '
+              'reuse this ticket on later visits until the time runs out.'
+        : 'Covers you until ${spFormatClockTime(paidUntil)}'
+              '${spSameDate(paidUntil, DateTime.now()) ? '' : ', ${spFormatDate(paidUntil)}'}. '
+              'Staying longer adds overtime, paid in cash at the exit.';
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppTheme.surfaceAlt,
+        borderRadius: BorderRadius.circular(AppTheme.radius),
+        border: Border.all(color: spCardBorder),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: AppTheme.accentSoft,
+                  borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
+                ),
+                child: Icon(
+                  Icons.timelapse_rounded,
+                  size: 20,
+                  color: AppTheme.accentText,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      label.toUpperCase(),
+                      style: TextStyle(
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.6,
+                        color: AppTheme.textMuted,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      formatParkingHours(hoursLeft),
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w800,
+                        color: AppTheme.textDark,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.only(top: 1),
+                child: Icon(
+                  Icons.info_outline_rounded,
+                  size: 14,
+                  color: AppTheme.textMuted,
+                ),
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  note,
+                  style: TextStyle(
+                    fontSize: 12,
+                    height: 1.35,
+                    color: AppTheme.textSecondary,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// One-line coloured notice with an icon, for warnings inside a card.
+class _NoticeStrip extends StatelessWidget {
+  const _NoticeStrip({
+    required this.icon,
+    required this.color,
+    required this.background,
+    required this.text,
+  });
+
+  final IconData icon;
+  final Color color;
+  final Color background;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(AppTheme.radius),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 18, color: color),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              text,
+              style: TextStyle(
+                fontSize: 12,
+                height: 1.35,
+                fontWeight: FontWeight.w600,
+                color: AppTheme.textDark,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A ticket that still has time on it but whose facility an admin pulled.
+/// Collapsed it says so at a glance; tapping it explains why it is invalid
+/// and what happens to the time left. The QR is withheld, since no gate will
+/// take it.
+class _InvalidTicketCard extends StatefulWidget {
+  const _InvalidTicketCard({required this.doc, this.facility});
+
+  final QueryDocumentSnapshot<Map<String, dynamic>> doc;
+  final Map<String, dynamic>? facility;
+
+  @override
+  State<_InvalidTicketCard> createState() => _InvalidTicketCardState();
+}
+
+class _InvalidTicketCardState extends State<_InvalidTicketCard> {
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final Map<String, dynamic> data = widget.doc.data();
+    final Map<String, dynamic>? facility = widget.facility;
+    final String name = ((data['establishmentName'] as String?) ?? '').trim();
+    final String facilityName = name.isEmpty ? 'This facility' : name;
+    final int hoursLeft = ticketHoursLeft(data);
+    final String plate = ((data['vehiclePlate'] as String?) ?? '').trim();
+    final String plan = _planLabel(data);
+    final (:String verb, :String undo) = _restrictionWording(facility);
+    final DateTime? since = spParseDateTime(facility?['reviewedAt']);
+    // Only the predefined reason is shown; the admin's free-text note is
+    // for the owner.
+    final String? reason = facilityRestrictionReason(facility);
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      decoration: BoxDecoration(
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.circular(AppTheme.radiusLarge),
+        border: Border.all(
+          color: _expanded ? AppTheme.dangerBorder : spCardBorder,
+        ),
+      ),
+      child: Material(
+        type: MaterialType.transparency,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(AppTheme.radiusLarge),
+          onTap: () => setState(() => _expanded = !_expanded),
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: AnimatedSize(
+              duration: const Duration(milliseconds: 200),
+              curve: Curves.easeOutCubic,
+              alignment: Alignment.topCenter,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        width: 40,
+                        height: 40,
+                        decoration: BoxDecoration(
+                          color: AppTheme.dangerSoft,
+                          borderRadius: BorderRadius.circular(AppTheme.radius),
+                        ),
+                        child: Icon(
+                          Icons.block_rounded,
+                          color: spDeniedColor,
+                          size: 20,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              name.isEmpty ? 'Parking Ticket' : name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontWeight: FontWeight.w700,
+                                color: AppTheme.textDark,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Row(
+                              children: [
+                                SpChip(label: 'Invalid', color: spDeniedColor),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    'Facility $verb',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                      color: AppTheme.textMuted,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Text(
+                            formatParkingHours(hoursLeft),
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w800,
+                              color: AppTheme.textDark,
+                            ),
+                          ),
+                          Text(
+                            'unused',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: AppTheme.textMuted,
+                            ),
+                          ),
+                        ],
+                      ),
+                      AnimatedRotation(
+                        turns: _expanded ? 0.5 : 0,
+                        duration: const Duration(milliseconds: 200),
+                        child: Icon(
+                          Icons.expand_more_rounded,
+                          color: AppTheme.textMuted,
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (_expanded) ...[
+                    const SizedBox(height: 12),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: AppTheme.dangerSoft,
+                        borderRadius: BorderRadius.circular(AppTheme.radius),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Why is this ticket invalid?',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w800,
+                              color: AppTheme.textDark,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            '$facilityName was $verb by SmartPark'
+                            '${since == null ? '' : ' on ${spFormatDate(since)}'}. '
+                            'While it is $verb, its gate does not accept '
+                            'tickets, so this one can\'t be used to enter.',
+                            style: TextStyle(
+                              fontSize: 12,
+                              height: 1.4,
+                              color: AppTheme.textDark,
+                            ),
+                          ),
+                          if (reason != null && reason != 'Other') ...[
+                            const SizedBox(height: 8),
+                            Text.rich(
+                              TextSpan(
+                                children: [
+                                  TextSpan(
+                                    text: 'Reason given: ',
+                                    style: TextStyle(
+                                      color: AppTheme.textSecondary,
+                                    ),
+                                  ),
+                                  TextSpan(
+                                    text: reason,
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w800,
+                                      color: AppTheme.textDark,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              style: const TextStyle(fontSize: 12, height: 1.4),
+                            ),
+                          ],
+                          const SizedBox(height: 8),
+                          Text(
+                            'Your ${formatParkingHours(hoursLeft)} of parking '
+                            'time stay on the ticket. It becomes valid again '
+                            'if the facility is $undo.',
+                            style: TextStyle(
+                              fontSize: 12,
+                              height: 1.4,
+                              color: AppTheme.textSecondary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 6,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        if (plate.isNotEmpty) SpPlateBadge(plate: plate),
+                        Text(
+                          plan.isEmpty
+                              ? _vehicleLabel(data)
+                              : '${_vehicleLabel(data)} · $plan',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: AppTheme.textMuted,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Bought ${_dateTimeLabel(_issuedAt(data))} · '
+                      'Ticket #${widget.doc.id}',
+                      style: TextStyle(fontSize: 11, color: AppTheme.textMuted),
+                    ),
+                  ] else ...[
+                    const SizedBox(height: 6),
+                    Padding(
+                      padding: const EdgeInsets.only(left: 52),
+                      child: Text(
+                        'Tap to see why',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: spDeniedColor,
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -502,30 +1056,8 @@ class _PastTicketRow extends StatelessWidget {
                   ),
                 ],
                 if (overtimeHours > 0 && overtimeAmount > 0) ...[
-                  const SizedBox(height: 6),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: AppTheme.warningSoft,
-                      borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
-                    ),
-                    child: Text(
-                      'Overtime ${overtimeHours}h · PHP ${overtimeAmount.toStringAsFixed(2)} cash'
-                      '${switch (data['overtimeStatus']) {
-                        'collected' => ' · paid',
-                        'waived' => ' · waived',
-                        _ => '',
-                      }}',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                        color: spInsideColor,
-                      ),
-                    ),
-                  ),
+                  const SizedBox(height: 8),
+                  SpOvertimeBreakdown.fromRecord(data, forDriver: true),
                 ],
               ],
             ),

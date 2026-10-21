@@ -18,11 +18,15 @@ class WalkInPanel extends StatefulWidget {
     required this.facilityId,
     required this.ownerId,
     this.staffName = '',
+    this.entryClosed = false,
   });
 
   final String facilityId;
   final String? ownerId;
   final String staffName;
+
+  /// The facility was pulled by an admin: no new walk-ins, exits only.
+  final bool entryClosed;
 
   @override
   State<WalkInPanel> createState() => _WalkInPanelState();
@@ -81,7 +85,7 @@ class _WalkInPanelState extends State<WalkInPanel> {
 
   Future<void> _recordEntry(String vehicleType) async {
     final String? staffId = FirebaseAuth.instance.currentUser?.uid;
-    if (_saving || staffId == null) return;
+    if (_saving || staffId == null || widget.entryClosed) return;
     setState(() => _saving = true);
     final String plate = _plateController.text.trim().toUpperCase();
     final FirebaseFirestore db = FirebaseFirestore.instance;
@@ -211,7 +215,9 @@ class _WalkInPanelState extends State<WalkInPanel> {
   Widget _entryButton(String vehicleType, IconData icon, String label) {
     return Expanded(
       child: ElevatedButton.icon(
-        onPressed: _saving ? null : () => _recordEntry(vehicleType),
+        onPressed: _saving || widget.entryClosed
+            ? null
+            : () => _recordEntry(vehicleType),
         icon: Icon(icon, size: 20),
         label: Text(label, style: const TextStyle(fontWeight: FontWeight.w800)),
         style: ElevatedButton.styleFrom(
@@ -304,8 +310,21 @@ class _WalkInPanelState extends State<WalkInPanel> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          if (widget.entryClosed) ...[
+            Text(
+              'New walk-ins are closed while this facility is pulled. '
+              'Walk-ins already inside can still exit below.',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: spDeniedColor,
+              ),
+            ),
+            const SizedBox(height: 10),
+          ],
           TextField(
             controller: _plateController,
+            enabled: !widget.entryClosed,
             textCapitalization: TextCapitalization.characters,
             decoration: InputDecoration(
               hintText: 'Plate number (optional)',

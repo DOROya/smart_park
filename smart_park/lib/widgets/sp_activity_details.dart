@@ -6,6 +6,7 @@ import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 
 import '../theme/app_theme.dart';
 import 'smartpark_ui.dart';
+import 'sp_overtime.dart';
 
 /// Bottom sheet for one gate log: who scanned it, when, why, and every other
 /// scan of the same ticket, so a disputed entry or exit can be traced to the
@@ -277,7 +278,6 @@ class _ActivityDetailsSheetState extends State<_ActivityDetailsSheet> {
   }
 
   Widget _overtimeRow() {
-    final int hours = ((log['overtimeHours'] as num?) ?? 0).toInt();
     final double amount = ((log['overtimeAmount'] as num?) ?? 0).toDouble();
     final String status =
         _statusOverride ??
@@ -294,17 +294,9 @@ class _ActivityDetailsSheetState extends State<_ActivityDetailsSheet> {
     if ((collector ?? '').isEmpty && collectorId == log['staffId']) {
       collector = _staffLabel(log);
     }
-    final String money = 'PHP ${amount.toStringAsFixed(2)} for ${hours}h';
-    final String value = amount <= 0
-        ? '${hours}h · no rate set, nothing billed'
-        : switch (status) {
-            'collected' =>
-              '$money · collected'
-                  '${(collector ?? '').isEmpty ? '' : ' by $collector'}'
-                  '${_changedHere || collectedAt == null ? '' : ', ${spFormatClockTime(collectedAt)}'}',
-            'waived' => '$money · waived by owner',
-            _ => '$money · not yet confirmed collected',
-          };
+    final String collectedDetail =
+        '${(collector ?? '').isEmpty ? '' : ' by $collector'}'
+        '${_changedHere || collectedAt == null ? '' : ', ${spFormatClockTime(collectedAt)}'}';
     final Future<void> Function(Map<String, dynamic> log)? onMark =
         widget.onMarkOvertimeCollected;
     final Future<void> Function(Map<String, dynamic> log, String status)?
@@ -316,7 +308,14 @@ class _ActivityDetailsSheetState extends State<_ActivityDetailsSheet> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        _row(Icons.payments_outlined, 'Overtime cash', value),
+        Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: SpOvertimeBreakdown.fromRecord(
+            log,
+            status: status,
+            statusDetail: collectedDetail,
+          ),
+        ),
         if (status == 'cash_due' && onMark != null)
           Padding(
             padding: const EdgeInsets.only(bottom: 12),

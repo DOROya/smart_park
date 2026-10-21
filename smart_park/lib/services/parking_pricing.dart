@@ -170,6 +170,18 @@ int ticketHoursLeft(Map<String, dynamic> ticket) {
   );
 }
 
+/// Parking hours in words, split into days once there is at least one:
+/// 166 -> "6 days, 22 hours", 48 -> "2 days", 5 -> "5 hours".
+String formatParkingHours(int hours) {
+  if (hours <= 0) return '0 hours';
+  final int days = hours ~/ 24;
+  final int rest = hours % 24;
+  final String dayText = '$days day${days == 1 ? '' : 's'}';
+  final String hourText = '$rest hour${rest == 1 ? '' : 's'}';
+  if (days == 0) return hourText;
+  return rest == 0 ? dayText : '$dayText, $hourText';
+}
+
 /// A ticket's package duration. Newer tickets store it on the document;
 /// older ones only carried it inside the QR payload.
 int ticketDuration(Map<String, dynamic> ticket) {

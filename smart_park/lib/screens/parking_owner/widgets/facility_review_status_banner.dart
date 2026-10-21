@@ -8,11 +8,15 @@ class FacilityReviewStatusBanner extends StatelessWidget {
     super.key,
     required this.status,
     this.rejectionReason,
+    this.restrictionReason,
     this.hint,
   });
 
   final String? status;
   final String? rejectionReason;
+
+  /// The predefined reason an admin picked when suspending or deactivating.
+  final String? restrictionReason;
 
   /// Optional extra line, e.g. what saving the form will do.
   final String? hint;
@@ -25,6 +29,10 @@ class FacilityReviewStatusBanner extends StatelessWidget {
   Widget build(BuildContext context) {
     final String normalized = (status ?? 'pending').toLowerCase();
     final String reason = rejectionReason?.trim() ?? '';
+    final String picked =
+        normalized == 'suspended' || normalized == 'deactivated'
+        ? restrictionReason?.trim() ?? ''
+        : '';
 
     final (
       Color color,
@@ -102,6 +110,27 @@ class FacilityReviewStatusBanner extends StatelessWidget {
                     fontWeight: FontWeight.w500,
                   ),
                 ),
+                if (picked.isNotEmpty && picked != 'Other') ...[
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: color.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      'Reason: $picked',
+                      style: TextStyle(
+                        color: AppTheme.textDark,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ],
                 if (_hasAdminNote(normalized) && reason.isNotEmpty) ...[
                   const SizedBox(height: 6),
                   Text(

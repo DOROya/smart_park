@@ -179,6 +179,7 @@ test("only admins lift a suspension or deactivation", async () => {
     await env.withSecurityRulesDisabled((ctx) =>
       setDoc(doc(ctx.firestore(), "establishment_details/est1"), {
         status, reviewedBy: "admin1", rejectionReason: "Complaints",
+        restrictionReason: "Repeated driver complaints",
       }));
     // Editing details is fine, but the status and admin note stay put.
     await assertSucceeds(updateDoc(doc(owner(), "establishment_details/est1"), { rates: { car: 60 } }));
@@ -189,7 +190,10 @@ test("only admins lift a suspension or deactivation", async () => {
     );
     await assertFails(updateDoc(doc(owner(), "establishment_details/est1"), { status: "approved" }));
     await assertFails(updateDoc(doc(owner(), "establishment_details/est1"), { rejectionReason: null }));
-    await assertSucceeds(updateDoc(doc(admin(), "establishment_details/est1"), { status: "approved", rejectionReason: null }));
+    await assertFails(updateDoc(doc(owner(), "establishment_details/est1"), { restrictionReason: null }));
+    await assertSucceeds(updateDoc(doc(admin(), "establishment_details/est1"), {
+      status: "approved", rejectionReason: null, restrictionReason: null,
+    }));
   }
 });
 
