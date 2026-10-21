@@ -69,6 +69,10 @@ class _ActivityDetailsSheet extends StatefulWidget {
 
 class _ActivityDetailsSheetState extends State<_ActivityDetailsSheet> {
   late final Future<List<Map<String, dynamic>>> _timeline = _loadTimeline();
+
+  /// The scanned ticket, for the driver on logs made before scans copied
+  /// the driver's name. Null for walk-ins and unreadable tickets.
+  late final Future<Map<String, dynamic>?> _ticket = _loadTicket();
   bool _marking = false;
 
   /// Status this sheet saved (the log map is a snapshot and does not
@@ -108,6 +112,38 @@ class _ActivityDetailsSheetState extends State<_ActivityDetailsSheet> {
               spParseDateTime(b['timestamp']) ?? now,
             ),
       );
+  }
+
+  Future<Map<String, dynamic>?> _loadTicket() async {
+    final String transactionId = ((log['transactionId'] as String?) ?? '')
+        .trim();
+    if (transactionId.isEmpty || log['source'] == 'walk_in') return null;
+    try {
+      final DocumentSnapshot<Map<String, dynamic>> snap =
+          await FirebaseFirestore.instance
+              .collection('transactions')
+              .doc(transactionId)
+              .get();
+      return snap.data();
+    } on FirebaseException {
+      return null;
+    }
+  }
+
+  Widget _driverRow() {
+    final String stamped = ((log['driverName'] as String?) ?? '').trim();
+    if (stamped.isNotEmpty) {
+      return _row(Icons.person_rounded, 'Driver', stamped, emphasize: true);
+    }
+    return FutureBuilder<Map<String, dynamic>?>(
+      future: _ticket,
+      builder: (BuildContext context, snapshot) {
+        final String name = ((snapshot.data?['driverName'] as String?) ?? '')
+            .trim();
+        if (name.isEmpty) return const SizedBox.shrink();
+        return _row(Icons.person_rounded, 'Driver', name, emphasize: true);
+      },
+    );
   }
 
   String _when(Map<String, dynamic> data) {
@@ -161,11 +197,11 @@ class _ActivityDetailsSheetState extends State<_ActivityDetailsSheet> {
               ],
             ),
             const SizedBox(height: 16),
+            if (!walkIn) _driverRow(),
             _row(
               Icons.badge_outlined,
               walkIn ? 'Logged by' : 'Scanned by',
               _staffLabel(log),
-              emphasize: true,
             ),
             _row(
               isExit ? Icons.logout_rounded : Icons.login_rounded,

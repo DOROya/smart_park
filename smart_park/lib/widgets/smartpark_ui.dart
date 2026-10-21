@@ -1346,8 +1346,8 @@ class SpPlateBadge extends StatelessWidget {
   }
 }
 
-/// One gate scan (`activity_logs` doc): entry/exit/denied icon, plate, status,
-/// time, who scanned it, stay length, overtime and ticket number.
+/// One gate scan (`activity_logs` doc): entry/exit/denied icon, plate, driver,
+/// status, time, who scanned it, stay length, overtime and ticket number.
 class SpActivityCard extends StatelessWidget {
   const SpActivityCard({
     super.key,
@@ -1387,6 +1387,7 @@ class SpActivityCard extends StatelessWidget {
     final String transactionId = ((data['transactionId'] as String?) ?? '')
         .trim();
     final String? staffName = spLogStaffName(data, staffNames);
+    final String driverName = ((data['driverName'] as String?) ?? '').trim();
     final String staffId = ((data['staffId'] as String?) ?? '').trim();
     final bool staffRemoved =
         staffNames != null &&
@@ -1448,6 +1449,31 @@ class SpActivityCard extends StatelessWidget {
                   SpChip(label: chipLabel, color: chipColor),
                 ],
               ),
+              if (driverName.isNotEmpty) ...<Widget>[
+                const SizedBox(height: 4),
+                Row(
+                  children: <Widget>[
+                    Icon(
+                      Icons.person_rounded,
+                      size: 14,
+                      color: AppTheme.textDark,
+                    ),
+                    const SizedBox(width: 4),
+                    Flexible(
+                      child: Text(
+                        driverName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: AppTheme.textDark,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
               const SizedBox(height: 6),
               Text(
                 '$typeLabel scan$timeText',

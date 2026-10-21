@@ -595,6 +595,7 @@ class GateScanService {
     }, SetOptions(merge: true));
     batch.set(logRef, <String, dynamic>{
       ..._logBase(staff, facilityId, plate, 'entry'),
+      ..._driverFields(ticket),
       'status': 'ALLOWED',
       'decision': 'ALLOWED',
       'decisionReason': 'Paid ticket verified for this facility.',
@@ -703,6 +704,7 @@ class GateScanService {
     }, SetOptions(merge: true));
     batch.set(exitRef, <String, dynamic>{
       ..._logBase(staff, facilityId, plate, 'exit'),
+      ..._driverFields(ticket),
       'status': 'ALLOWED',
       'decision': 'ALLOWED',
       'decisionReason': extraHours <= 0
@@ -892,6 +894,17 @@ class GateScanService {
       transactionId: transactionId,
       reason: reason,
     );
+  }
+
+  /// Who the ticket belongs to, copied onto its gate logs so the owner can
+  /// see (and report) the driver without opening the ticket.
+  static Map<String, dynamic> _driverFields(Map<String, dynamic> ticket) {
+    final String driverId = ((ticket['driverId'] as String?) ?? '').trim();
+    final String driverName = ((ticket['driverName'] as String?) ?? '').trim();
+    return <String, dynamic>{
+      if (driverId.isNotEmpty) 'driverId': driverId,
+      if (driverName.isNotEmpty) 'driverName': driverName,
+    };
   }
 
   Map<String, dynamic> _logBase(

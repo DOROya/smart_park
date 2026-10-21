@@ -287,6 +287,17 @@ void main() {
       expect(r.reason, 'Paid ticket verified. 7 days left. Admit.');
     });
 
+    test('copies the driver from the ticket onto the entry log', () async {
+      await seedTicket('t1', <String, dynamic>{
+        'driverId': 'driver-1',
+        'driverName': 'Ana Reyes',
+      });
+      await scan(qr('t1'));
+      final Map<String, dynamic> log = (await activityLogs()).single;
+      expect(log['driverId'], 'driver-1');
+      expect(log['driverName'], 'Ana Reyes');
+    });
+
     for (final String status in <String>['suspended', 'deactivated']) {
       test('refuses entry at a $status facility', () async {
         await db.collection('establishment_details').doc(facilityId).set(

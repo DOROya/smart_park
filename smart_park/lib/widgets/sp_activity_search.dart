@@ -8,7 +8,8 @@ String _normalizePlate(String value) =>
     value.toUpperCase().replaceAll(RegExp(r'[\s-]'), '');
 
 /// Whether gate log [data] matches the owner's search [query]: part of the
-/// plate, the staff member's name, or the start of the ticket number.
+/// plate, the driver's or staff member's name, or the start of the ticket
+/// number.
 bool spActivityMatchesQuery(
   Map<String, dynamic> data,
   String query, [
@@ -20,6 +21,8 @@ bool spActivityMatchesQuery(
   if (_normalizePlate(plate).contains(_normalizePlate(q))) return true;
   final String staff = spLogStaffName(data, staffNames) ?? '';
   if (staff.toLowerCase().contains(q.toLowerCase())) return true;
+  final String driver = ((data['driverName'] as String?) ?? '').trim();
+  if (driver.toLowerCase().contains(q.toLowerCase())) return true;
   final String ticket = ((data['transactionId'] as String?) ?? '').trim();
   return ticket.isNotEmpty && ticket.toLowerCase().startsWith(q.toLowerCase());
 }
@@ -208,7 +211,7 @@ class _SpActivitySearchState extends State<SpActivitySearch> {
           onChanged: widget.onQueryChanged,
           onSubmitted: (_) => focusNode.unfocus(),
           decoration: InputDecoration(
-            hintText: 'Search plate, staff or ticket #',
+            hintText: 'Search plate, driver, staff or ticket #',
             isDense: true,
             filled: true,
             fillColor: AppTheme.surface,
