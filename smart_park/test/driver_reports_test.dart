@@ -63,6 +63,33 @@ void main() {
     );
   });
 
+  test('a warning over "Other" carries no reason label', () async {
+    await submitDriverReport(
+      ownerId: 'owner-1',
+      establishmentId: 'fac-1',
+      establishmentName: 'Mall Parking',
+      transactionId: 'tx-2',
+      driverId: 'driver-1',
+      driverName: 'Ana Reyes',
+      reason: 'Other',
+      details: 'Blocked the exit lane.',
+      firestore: db,
+    );
+    final QueryDocumentSnapshot<Map<String, dynamic>> doc =
+        (await db.collection('driver_reports').get()).docs.single;
+    await warnDriverForReport(
+      adminId: 'admin-1',
+      reportId: doc.id,
+      report: doc.data(),
+      message: 'Please keep the exit lane clear.',
+      firestore: db,
+    );
+    expect(
+      (await db.collection('driver_warnings').get()).docs.single['reason'],
+      '',
+    );
+  });
+
   test('dismissing sends the driver nothing', () async {
     final String id = await report();
     await dismissDriverReport(adminId: 'admin-1', reportId: id, firestore: db);
