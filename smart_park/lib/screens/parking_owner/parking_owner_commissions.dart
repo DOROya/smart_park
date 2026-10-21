@@ -430,7 +430,121 @@ class _CommissionsListContentState extends State<_CommissionsListContent>
               ? SpGrid(children: transactionCards)
               : Column(children: transactionCards),
         ),
+        if (reportsByTicket.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          _MyReportsCard(reports: reportsByTicket.values.toList()),
+        ],
       ],
+    );
+  }
+}
+
+/// Every driver report this owner filed, newest first, with where each
+/// stands and the admin's note once reviewed.
+class _MyReportsCard extends StatefulWidget {
+  const _MyReportsCard({required this.reports});
+
+  final List<Map<String, dynamic>> reports;
+
+  @override
+  State<_MyReportsCard> createState() => _MyReportsCardState();
+}
+
+class _MyReportsCardState extends State<_MyReportsCard> {
+  bool _showAll = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final List<Map<String, dynamic>> reports =
+        List<Map<String, dynamic>>.of(widget.reports)..sort(
+          (a, b) => (_parseDateTime(b['createdAt']) ?? DateTime.now())
+              .compareTo(_parseDateTime(a['createdAt']) ?? DateTime.now()),
+        );
+    final int open = reports
+        .where((r) => reportStatus(r) == kReportOpen)
+        .length;
+    final List<Map<String, dynamic>> shown = _showAll
+        ? reports
+        : reports.take(5).toList();
+    return SpSectionCard(
+      icon: Icons.flag_outlined,
+      title: 'My Driver Reports',
+      subtitle: 'Reports you sent to the SmartPark admin.',
+      trailing: open == 0
+          ? null
+          : SpChip(label: '$open under review', color: spInsideColor),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (final Map<String, dynamic> report in shown) _reportRow(report),
+          if (reports.length > shown.length)
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton(
+                onPressed: () => setState(() => _showAll = true),
+                child: Text('Show all (${reports.length})'),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _reportRow(Map<String, dynamic> report) {
+    final String driver = ((report['driverName'] as String?) ?? '').trim();
+    final DateTime? at = _parseDateTime(report['createdAt']);
+    final String note = ((report['adminNote'] as String?) ?? '').trim();
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppTheme.surfaceAlt,
+        borderRadius: BorderRadius.circular(AppTheme.radius),
+        border: Border.all(color: AppTheme.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  driver.isEmpty ? 'Driver' : driver,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w800,
+                    color: AppTheme.textDark,
+                  ),
+                ),
+              ),
+              if (at != null)
+                Text(
+                  spFormatDate(at),
+                  style: TextStyle(fontSize: 11, color: AppTheme.textMuted),
+                ),
+            ],
+          ),
+          const SizedBox(height: 2),
+          Text(
+            (report['reason'] as String?) ?? '',
+            style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+          ),
+          const SizedBox(height: 6),
+          SpDriverReportChip(report: report),
+          if (note.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(
+              'Admin note: $note',
+              style: TextStyle(
+                fontSize: 12,
+                fontStyle: FontStyle.italic,
+                color: AppTheme.textSecondary,
+              ),
+            ),
+          ],
+        ],
+      ),
     );
   }
 }

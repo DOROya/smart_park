@@ -396,6 +396,10 @@ class _DriverHomePageState extends State<DriverHomePage>
       case 2:
         return SpProfileView(
           roleLabel: 'Driver',
+          extraCards: <Widget>[
+            if (FirebaseAuth.instance.currentUser?.uid case final String uid)
+              DriverNoticesCard(driverId: uid),
+          ],
           firstNameController: _profileFirstNameController,
           lastNameController: _profileLastNameController,
           email: _profileEmailController.text.isNotEmpty

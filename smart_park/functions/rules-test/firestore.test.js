@@ -448,3 +448,25 @@ test("drivers read their own warnings and may only mark them read", async () => 
   await assertSucceeds(updateDoc(doc(driver(), "driver_warnings/w1"), { acknowledgedAt: serverTimestamp() }));
   await assertFails(deleteDoc(doc(driver(), "driver_warnings/w1")));
 });
+
+test("a suspended facility refuses check-ins and walk-ins but not exits", async () => {
+  await env.withSecurityRulesDisabled((ctx) =>
+    setDoc(doc(ctx.firestore(), "establishment_details/est1"), { status: "suspended" }));
+  await assertFails(
+    setDoc(doc(staff(), "transactions/tx1"),
+      { entryStatus: "checked_in", entryAt: serverTimestamp(), entryStaffId: "staff1", entryLogId: "l", updatedAt: serverTimestamp() },
+      { merge: true }),
+  );
+  await assertFails(setDoc(doc(staff(), "transactions/walk1"), {
+    establishmentId: "est1", source: "walk_in", status: "walk_in", entryStatus: "checked_in",
+    entryStaffId: "staff1", vehicleType: "car", createdAt: serverTimestamp(),
+  }));
+  // A vehicle already inside can still leave.
+  await env.withSecurityRulesDisabled((ctx) =>
+    updateDoc(doc(ctx.firestore(), "transactions/tx1"), { entryStatus: "checked_in" }));
+  await assertSucceeds(
+    setDoc(doc(staff(), "transactions/tx1"),
+      { entryStatus: "checked_out", remainingHours: 0, updatedAt: serverTimestamp() },
+      { merge: true }),
+  );
+});

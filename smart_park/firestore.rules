@@ -255,8 +255,22 @@ service cloud.firestore {
 
     // Gate staff record check-in/out, the hours left on a reusable ticket,
     // overtime and overtime cash collected; nothing about payment.
+    // A facility an admin suspended or deactivated admits no one, so its
+    // tickets can't be checked in (exits still go through).
+    function facilityOpenForEntry(establishmentId) {
+      let details = /databases/$(database)/documents/establishment_details/$(establishmentId);
+      return !exists(details) ||
+        !(get(details).data.get('status', 'pending') in ['suspended', 'deactivated']);
+    }
+
+    function checkingIn() {
+      return request.resource.data.get('entryStatus', '') == 'checked_in' &&
+        resource.data.get('entryStatus', '') != 'checked_in';
+    }
+
     function staffTicketUpdateOk() {
-      return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+      return (!checkingIn() || facilityOpenForEntry(resource.data.establishmentId)) &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
         'entryStatus', 'entryAt', 'entryStaffId', 'entryLogId',
         'exitAt', 'exitStaffId', 'exitLogId', 'staySeconds', 'remainingHours',
         'overtimeHours', 'overtimeRate', 'overtimeAmount', 'overtimeStatus',
@@ -269,6 +283,7 @@ service cloud.firestore {
     function walkInCreateOk() {
       let d = request.resource.data;
       return isStaffOf(d.establishmentId) &&
+        facilityOpenForEntry(d.establishmentId) &&
         d.source == 'walk_in' &&
         d.status == 'walk_in' &&
         d.entryStatus == 'checked_in' &&
