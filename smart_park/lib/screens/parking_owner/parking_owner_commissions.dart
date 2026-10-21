@@ -18,6 +18,10 @@ class _CommissionRecord {
     required this.netToOwner,
     required this.status,
     this.createdAt,
+    this.overtimeHours = 0,
+    this.overtimeAmount = 0,
+    this.overtimeStatus = '',
+    this.overtimeSettledAt,
   });
 
   final String id;
@@ -31,6 +35,27 @@ class _CommissionRecord {
   double get processingFee => grossAmount - platformFee - netToOwner;
   final String status;
   final DateTime? createdAt;
+
+  /// Overtime billed at the exit, paid in cash at the gate (outside
+  /// PayMongo, so no commission). Zero when the stay had none.
+  final int overtimeHours;
+  final double overtimeAmount;
+
+  /// The ticket's `overtimeStatus`: cash_due, collected or waived.
+  final String overtimeStatus;
+
+  /// When the overtime cash was collected or waived.
+  final DateTime? overtimeSettledAt;
+
+  bool get hasOvertime => overtimeHours > 0 && overtimeAmount > 0;
+
+  /// Latest money event on the ticket, so settling overtime brings the
+  /// ticket back to the top of the list.
+  DateTime? get lastActivityAt =>
+      overtimeSettledAt != null &&
+          (createdAt == null || overtimeSettledAt!.isAfter(createdAt!))
+      ? overtimeSettledAt
+      : createdAt;
 }
 
 class _CommissionsListContent extends StatefulWidget {
@@ -241,6 +266,16 @@ class _CommissionsListContentState extends State<_CommissionsListContent>
                         netToOwner: netToOwner,
                         status: status,
                         createdAt: createdAt,
+                        overtimeHours: ((data['overtimeHours'] as num?) ?? 0)
+                            .toInt(),
+                        overtimeAmount: ((data['overtimeAmount'] as num?) ?? 0)
+                            .toDouble(),
+                        overtimeStatus: spOvertimeStatus(data),
+                        overtimeSettledAt:
+                            _parseDateTime(data['overtimeCollectedAt']) ??
+                            (spOvertimeStatus(data) == kOvertimeWaived
+                                ? _parseDateTime(data['overtimeStatusAt'])
+                                : null),
                       );
                     }
 
@@ -296,9 +331,11 @@ class _CommissionsListContentState extends State<_CommissionsListContent>
                         .toList();
                     records.sort((_CommissionRecord a, _CommissionRecord b) {
                       final DateTime aDate =
-                          a.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+                          a.lastActivityAt ??
+                          DateTime.fromMillisecondsSinceEpoch(0);
                       final DateTime bDate =
-                          b.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+                          b.lastActivityAt ??
+                          DateTime.fromMillisecondsSinceEpoch(0);
                       return bDate.compareTo(aDate);
                     });
 
@@ -424,6 +461,90 @@ class _TransactionCard extends StatelessWidget {
     );
   }
 
+  /// Overtime cash for the stay, which follows the ticket live: owed until
+  /// staff (or the owner) confirm it, then collected or waived.
+  Widget _overtimeLine() {
+    final DateTime? settled = record.overtimeSettledAt;
+    final (
+      String label,
+      Color color,
+      Color fill,
+      IconData icon,
+    ) = switch (record.overtimeStatus) {
+      kOvertimeCollected => (
+        'Collected',
+        spEntryColor,
+        AppTheme.successSoft,
+        Icons.check_circle_rounded,
+      ),
+      kOvertimeWaived => (
+        'Waived',
+        AppTheme.textMuted,
+        AppTheme.surface,
+        Icons.money_off_rounded,
+      ),
+      _ => (
+        'Not collected',
+        spInsideColor,
+        AppTheme.warningSoft,
+        Icons.pending_actions_rounded,
+      ),
+    };
+    return Container(
+      margin: const EdgeInsets.only(top: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: fill,
+        borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, size: 16, color: color),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Overtime cash · ${formatParkingHours(record.overtimeHours)}',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: AppTheme.textDark,
+                  ),
+                ),
+                Text(
+                  settled == null
+                      ? label
+                      : '$label ${spFormatDate(settled)}, '
+                            '${spFormatClockTime(settled)}',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: color,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Text(
+            spPeso(record.overtimeAmount),
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+              color: record.overtimeStatus == kOvertimeWaived
+                  ? AppTheme.textMuted
+                  : AppTheme.textDark,
+              decoration: record.overtimeStatus == kOvertimeWaived
+                  ? TextDecoration.lineThrough
+                  : null,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final bool paid = record.status == 'PAID';
@@ -485,6 +606,7 @@ class _TransactionCard extends StatelessWidget {
                 _line('Commission', record.platformFee),
                 _line('Processing', record.processingFee),
                 _line('Payout', record.netToOwner, strong: true),
+                if (record.hasOvertime) _overtimeLine(),
               ],
             ),
           ),

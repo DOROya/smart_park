@@ -562,7 +562,7 @@ extension _AdminHomePageFragments on _AdminHomePageState {
 
     final Widget header = _buildTabHero(
       title: 'Settings',
-      subtitle: 'Admin account and session.',
+      subtitle: 'Admin account, security and appearance.',
       icon: Icons.settings_rounded,
     );
 
@@ -582,7 +582,8 @@ extension _AdminHomePageFragments on _AdminHomePageState {
               const SpAppearanceCard(),
             ],
           ),
-          right: signOutButton,
+          // Sign Out is at the foot of the navigation rail on tablets.
+          right: const SpChangePasswordCard(),
         ),
       ];
     }
@@ -593,6 +594,8 @@ extension _AdminHomePageFragments on _AdminHomePageState {
       accountCard,
       const SizedBox(height: 12),
       statsCard,
+      const SizedBox(height: 12),
+      const SpChangePasswordCard(),
       const SizedBox(height: 12),
       const SpAppearanceCard(),
       const SizedBox(height: 12),

@@ -18,8 +18,10 @@ import '../../services/gate_scan_service.dart'
         isStaffRecordActive,
         kOvertimeCashDue,
         kOvertimeCollected,
+        kOvertimeWaived,
         setOvertimeStatusAsOwner;
 import '../../services/establishment_repository.dart';
+import '../../services/parking_pricing.dart' show formatParkingHours;
 import '../../services/platform_fees.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/friendly_error.dart';
@@ -793,6 +795,7 @@ class _ParkingOwnerHomePageState extends State<ParkingOwnerHomePage>
                     onSelected: (index) =>
                         setState(() => _selectedIndex = index),
                     extended: _railExtended,
+                    onSignOut: _signOut,
                   ),
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(24, 12, 24, 24),

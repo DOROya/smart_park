@@ -1560,6 +1560,7 @@ class _AdminHomePageState extends State<AdminHomePage>
                 selectedIndex: _selectedTab.index,
                 onSelected: _selectTab,
                 extended: _railExtended,
+                onSignOut: _signOut,
               ),
               child: content,
             )
