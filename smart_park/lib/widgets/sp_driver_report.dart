@@ -68,6 +68,57 @@ class SpDriverReportButton extends StatelessWidget {
   }
 }
 
+/// One-line report status for compact cards (e.g. Recent Transactions):
+/// where the owner's report on this ticket stands.
+class SpDriverReportChip extends StatelessWidget {
+  const SpDriverReportChip({super.key, required this.report});
+
+  final Map<String, dynamic> report;
+
+  @override
+  Widget build(BuildContext context) {
+    final (String label, Color color, IconData icon) = switch (reportStatus(
+      report,
+    )) {
+      kReportWarned => (
+        'Reported · driver warned',
+        spEntryColor,
+        Icons.verified_rounded,
+      ),
+      kReportDismissed => (
+        'Reported · closed, no action',
+        AppTheme.textMuted,
+        Icons.do_not_disturb_on_outlined,
+      ),
+      _ => ('Reported · under review', spInsideColor, Icons.flag_rounded),
+    };
+    final String note = ((report['adminNote'] as String?) ?? '').trim();
+    return Tooltip(
+      message: note.isEmpty
+          ? (report['reason'] as String?) ?? ''
+          : 'Admin note: $note',
+      child: Row(
+        children: [
+          Icon(icon, size: 15, color: color),
+          const SizedBox(width: 6),
+          Flexible(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: color,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _ReportStatusStrip extends StatelessWidget {
   const _ReportStatusStrip({required this.report});
 
