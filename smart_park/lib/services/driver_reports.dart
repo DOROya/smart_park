@@ -9,11 +9,12 @@ const String kReportOpen = 'open';
 const String kReportWarned = 'warned';
 const String kReportDismissed = 'dismissed';
 
-/// Reasons an owner picks from; the last one needs details.
+/// Reasons an owner picks from; the last one needs details. Kept short so
+/// each fits on one chip at phone width.
 const List<String> kDriverReportReasons = <String>[
   'Refused to pay overtime cash',
-  'Overstayed and disputed the charge',
-  'Damaged property or another vehicle',
+  'Disputed the overtime charge',
+  'Damaged property or a vehicle',
   'Rude or abusive to staff',
   'Parked outside the allowed area',
   'Used a shared or fake ticket',

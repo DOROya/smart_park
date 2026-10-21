@@ -615,47 +615,60 @@ class _TransactionCard extends StatelessWidget {
         color: fill,
         borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, size: 16, color: color),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Overtime cash · ${formatParkingHours(record.overtimeHours)}',
+          // Amount on the title line, so the duration and status below get
+          // the full width instead of wrapping beside it.
+          Row(
+            children: [
+              Icon(icon, size: 16, color: color),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Overtime cash',
                   style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w700,
                     color: AppTheme.textDark,
                   ),
                 ),
-                Text(
-                  settled == null
-                      ? label
-                      : '$label ${spFormatDate(settled)}, '
-                            '${spFormatClockTime(settled)}',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    color: color,
-                  ),
+              ),
+              Text(
+                spPeso(record.overtimeAmount),
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                  color: record.overtimeStatus == kOvertimeWaived
+                      ? AppTheme.textMuted
+                      : AppTheme.textDark,
+                  decoration: record.overtimeStatus == kOvertimeWaived
+                      ? TextDecoration.lineThrough
+                      : null,
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
-          Text(
-            spPeso(record.overtimeAmount),
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w800,
-              color: record.overtimeStatus == kOvertimeWaived
-                  ? AppTheme.textMuted
-                  : AppTheme.textDark,
-              decoration: record.overtimeStatus == kOvertimeWaived
-                  ? TextDecoration.lineThrough
-                  : null,
+          const SizedBox(height: 2),
+          Padding(
+            padding: const EdgeInsets.only(left: 24),
+            child: Text.rich(
+              TextSpan(
+                children: [
+                  TextSpan(
+                    text: '${formatParkingHours(record.overtimeHours)} · ',
+                    style: TextStyle(color: AppTheme.textSecondary),
+                  ),
+                  TextSpan(
+                    text: settled == null
+                        ? label
+                        : '$label ${spFormatDate(settled)}, '
+                              '${spFormatClockTime(settled)}',
+                    style: TextStyle(color: color),
+                  ),
+                ],
+              ),
+              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
             ),
           ),
         ],
