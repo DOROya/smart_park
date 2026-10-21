@@ -407,3 +407,44 @@ test("unknown collections are closed", async () => {
   await assertFails(setDoc(doc(admin(), "anything/else"), { a: 1 }));
   await assertFails(getDoc(doc(driver(), "anything/else")));
 });
+
+// ---------- driver reports & warnings ----------
+
+const reportOf = (over = {}) => ({
+  reporterId: "owner1", establishmentId: "est1", transactionId: "tx1",
+  driverId: "driver1", driverName: "Ana", reason: "Rude or abusive to staff",
+  status: "open", createdAt: serverTimestamp(), ...over,
+});
+
+test("owners report only real drivers of their own facility's tickets", async () => {
+  await assertSucceeds(setDoc(doc(owner(), "driver_reports/r1"), reportOf()));
+  // Someone else's facility, a driver who isn't on the ticket, a ticket
+  // from another facility, or a pre-decided status are all refused.
+  await assertFails(setDoc(doc(otherOwner(), "driver_reports/r2"), reportOf({ reporterId: "owner2" })));
+  await assertFails(setDoc(doc(owner(), "driver_reports/r3"), reportOf({ driverId: "driver2" })));
+  await assertFails(setDoc(doc(owner(), "driver_reports/r4"), reportOf({ transactionId: "tx2" })));
+  await assertFails(setDoc(doc(owner(), "driver_reports/r5"), reportOf({ status: "warned" })));
+  await assertFails(setDoc(doc(driver(), "driver_reports/r6"), reportOf({ reporterId: "driver1" })));
+});
+
+test("drivers never read reports; only admins review them", async () => {
+  await env.withSecurityRulesDisabled((ctx) =>
+    setDoc(doc(ctx.firestore(), "driver_reports/r1"), reportOf()));
+  await assertSucceeds(getDoc(doc(owner(), "driver_reports/r1")));
+  await assertFails(getDoc(doc(otherOwner(), "driver_reports/r1")));
+  await assertFails(getDoc(doc(driver(), "driver_reports/r1")));
+  await assertFails(updateDoc(doc(owner(), "driver_reports/r1"), { status: "dismissed" }));
+  await assertSucceeds(updateDoc(doc(admin(), "driver_reports/r1"), { status: "warned" }));
+});
+
+test("drivers read their own warnings and may only mark them read", async () => {
+  await assertFails(setDoc(doc(owner(), "driver_warnings/w1"), { driverId: "driver1", message: "x" }));
+  await assertSucceeds(setDoc(doc(admin(), "driver_warnings/w1"), {
+    driverId: "driver1", message: "Please pay overtime.", acknowledgedAt: null,
+  }));
+  await assertSucceeds(getDoc(doc(driver(), "driver_warnings/w1")));
+  await assertFails(getDoc(doc(otherDriver(), "driver_warnings/w1")));
+  await assertFails(updateDoc(doc(driver(), "driver_warnings/w1"), { message: "" }));
+  await assertSucceeds(updateDoc(doc(driver(), "driver_warnings/w1"), { acknowledgedAt: serverTimestamp() }));
+  await assertFails(deleteDoc(doc(driver(), "driver_warnings/w1")));
+});

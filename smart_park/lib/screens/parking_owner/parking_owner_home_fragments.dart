@@ -415,6 +415,7 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
       data: data,
       onTap: () => showSpActivityDetails(
         context,
+        canReportDriver: true,
         log: data,
         onSetOvertimeStatus: (Map<String, dynamic> log, String status) =>
             _ownerSetOvertimeStatus(context, log, status),

@@ -16,6 +16,7 @@ import 'establishment_detail_page.dart';
 import 'services/driver_establishment_service.dart';
 import 'widgets/driver_home_section.dart';
 import 'widgets/driver_ticket_history_section.dart';
+import 'widgets/driver_warning_watcher.dart';
 
 class DriverHomePage extends StatefulWidget {
   const DriverHomePage({super.key, this.role = 'driver'});
@@ -55,9 +56,16 @@ class _DriverHomePageState extends State<DriverHomePage>
   /// only look the place name up again after moving a few hundred meters.
   Position? _labelPosition;
 
+  /// Pops up warnings from the SmartPark admin until the driver reads them.
+  DriverWarningWatcher? _warnings;
+
   @override
   void initState() {
     super.initState();
+    final String? uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid != null) {
+      _warnings = DriverWarningWatcher(() => context, uid)..start();
+    }
     WidgetsBinding.instance.addObserver(this);
     _searchController.addListener(_onSearchChanged);
     _userFuture = _fetchUserDocument();
@@ -75,6 +83,7 @@ class _DriverHomePageState extends State<DriverHomePage>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _warnings?.dispose();
     _positionSubscription?.cancel();
     _searchController.removeListener(_onSearchChanged);
     _searchController.dispose();

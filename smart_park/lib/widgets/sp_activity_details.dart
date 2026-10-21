@@ -6,6 +6,7 @@ import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 
 import '../theme/app_theme.dart';
 import 'smartpark_ui.dart';
+import 'sp_driver_report.dart';
 import 'sp_overtime.dart';
 
 /// Bottom sheet for one gate log: who scanned it, when, why, and every other
@@ -26,6 +27,7 @@ Future<void> showSpActivityDetails(
   Future<void> Function(Map<String, dynamic> log)? onMarkOvertimeCollected,
   Future<void> Function(Map<String, dynamic> log, String status)?
   onSetOvertimeStatus,
+  bool canReportDriver = false,
 }) {
   return showModalBottomSheet<void>(
     context: context,
@@ -37,6 +39,7 @@ Future<void> showSpActivityDetails(
       staffNames: staffNames,
       onMarkOvertimeCollected: onMarkOvertimeCollected,
       onSetOvertimeStatus: onSetOvertimeStatus,
+      canReportDriver: canReportDriver,
     ),
   );
 }
@@ -54,6 +57,7 @@ class _ActivityDetailsSheet extends StatefulWidget {
     required this.staffNames,
     this.onMarkOvertimeCollected,
     this.onSetOvertimeStatus,
+    this.canReportDriver = false,
   });
 
   final Map<String, dynamic> log;
@@ -62,6 +66,9 @@ class _ActivityDetailsSheet extends StatefulWidget {
   onMarkOvertimeCollected;
   final Future<void> Function(Map<String, dynamic> log, String status)?
   onSetOvertimeStatus;
+
+  /// Owners may report the ticket's driver to the SmartPark admin.
+  final bool canReportDriver;
 
   @override
   State<_ActivityDetailsSheet> createState() => _ActivityDetailsSheetState();
@@ -212,6 +219,21 @@ class _ActivityDetailsSheetState extends State<_ActivityDetailsSheet> {
               _row(Icons.info_outline_rounded, 'Result', reason),
             if (((log['overtimeHours'] as num?) ?? 0) > 0) _overtimeRow(),
             if (transactionId.isNotEmpty) _ticketRow(context, transactionId),
+            if (widget.canReportDriver && !walkIn && transactionId.isNotEmpty)
+              FutureBuilder<Map<String, dynamic>?>(
+                future: _ticket,
+                builder: (BuildContext context, snapshot) {
+                  final Map<String, dynamic>? ticket = snapshot.data;
+                  if (ticket == null) return const SizedBox.shrink();
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: SpDriverReportButton(
+                      ticketId: transactionId,
+                      ticket: ticket,
+                    ),
+                  );
+                },
+              ),
             FutureBuilder<List<Map<String, dynamic>>>(
               future: _timeline,
               builder: (context, snapshot) {
