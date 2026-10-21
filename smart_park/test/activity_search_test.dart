@@ -31,6 +31,13 @@ void main() {
         isTrue,
       );
       expect(spActivityMatchesQuery(logs[0], 'TX9'), isTrue);
+      expect(
+        spActivityMatchesQuery(<String, dynamic>{
+          'vehiclePlate': 'NBC 1234',
+          'driverName': 'Ana Reyes',
+        }, 'reyes'),
+        isTrue,
+      );
       expect(spActivityMatchesQuery(logs[0], ''), isTrue);
     });
   });
