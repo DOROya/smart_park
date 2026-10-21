@@ -119,3 +119,127 @@ class _WarningDialogState extends State<_WarningDialog> {
     );
   }
 }
+
+/// Profile card listing every warning the SmartPark admin has sent the
+/// driver, newest first, so one already acknowledged can be read again.
+class DriverNoticesCard extends StatefulWidget {
+  const DriverNoticesCard({super.key, required this.driverId});
+
+  final String driverId;
+
+  @override
+  State<DriverNoticesCard> createState() => _DriverNoticesCardState();
+}
+
+class _DriverNoticesCardState extends State<DriverNoticesCard> {
+  late final Stream<QuerySnapshot<Map<String, dynamic>>> _warnings =
+      FirebaseFirestore.instance
+          .collection('driver_warnings')
+          .where('driverId', isEqualTo: widget.driverId)
+          .snapshots();
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: _warnings,
+      builder: (BuildContext context, snapshot) {
+        final List<Map<String, dynamic>> notices =
+            (snapshot.data?.docs ??
+                    <QueryDocumentSnapshot<Map<String, dynamic>>>[])
+                .map((d) => d.data())
+                .toList()
+              ..sort(
+                (a, b) => (spParseDateTime(b['createdAt']) ?? DateTime.now())
+                    .compareTo(
+                      spParseDateTime(a['createdAt']) ?? DateTime.now(),
+                    ),
+              );
+        return SpSectionCard(
+          icon: Icons.notifications_outlined,
+          title: 'Account Notices',
+          subtitle: 'Warnings from SmartPark about your parking.',
+          trailing: notices.isEmpty
+              ? null
+              : SpChip(label: '${notices.length}', color: AppTheme.accentText),
+          child: !snapshot.hasData
+              ? const SizedBox(
+                  height: 24,
+                  child: Center(child: LinearProgressIndicator()),
+                )
+              : notices.isEmpty
+              ? const SpEmptyState(
+                  boxed: false,
+                  icon: Icons.verified_outlined,
+                  message: 'No notices. Your account is in good standing.',
+                )
+              : Column(
+                  children: [
+                    for (final Map<String, dynamic> notice in notices)
+                      _NoticeRow(notice: notice),
+                  ],
+                ),
+        );
+      },
+    );
+  }
+}
+
+class _NoticeRow extends StatelessWidget {
+  const _NoticeRow({required this.notice});
+
+  final Map<String, dynamic> notice;
+
+  @override
+  Widget build(BuildContext context) {
+    final DateTime? at = spParseDateTime(notice['createdAt']);
+    final String reason = ((notice['reason'] as String?) ?? '').trim();
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppTheme.warningSoft,
+        borderRadius: BorderRadius.circular(AppTheme.radius),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                Icons.warning_amber_rounded,
+                size: 16,
+                color: AppTheme.accentText,
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  reason.isEmpty ? 'Warning' : reason,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                    color: AppTheme.textDark,
+                  ),
+                ),
+              ),
+              if (at != null)
+                Text(
+                  spFormatDate(at),
+                  style: TextStyle(fontSize: 11, color: AppTheme.textMuted),
+                ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            ((notice['message'] as String?) ?? '').trim(),
+            style: TextStyle(
+              fontSize: 12,
+              height: 1.4,
+              color: AppTheme.textSecondary,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}

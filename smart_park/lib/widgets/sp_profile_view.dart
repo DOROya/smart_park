@@ -22,6 +22,7 @@ class SpProfileView extends StatefulWidget {
     required this.onSignOut,
     this.padding = EdgeInsets.zero,
     this.wide = false,
+    this.extraCards = const <Widget>[],
   });
 
   final String roleLabel;
@@ -34,6 +35,9 @@ class SpProfileView extends StatefulWidget {
   /// Tablet layout: identity and password on the left, name and appearance
   /// on the right. Sign-out moves to the navigation rail.
   final bool wide;
+
+  /// Role-specific cards shown after Appearance (e.g. a driver's notices).
+  final List<Widget> extraCards;
 
   @override
   State<SpProfileView> createState() => _SpProfileViewState();
@@ -159,6 +163,10 @@ class _SpProfileViewState extends State<SpProfileView> {
         const SpChangePasswordCard(),
         const SizedBox(height: 12),
         const SpAppearanceCard(),
+        for (final Widget card in widget.extraCards) ...[
+          const SizedBox(height: 12),
+          card,
+        ],
         const SizedBox(height: 12),
         _signOutButton(),
       ],
