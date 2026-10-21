@@ -70,7 +70,8 @@ Future<void> warnDriverForReport({
   batch.set(warningRef, <String, dynamic>{
     'driverId': report['driverId'],
     'reportId': reportId,
-    'reason': report['reason'],
+    // Drivers see the reason as a label; "Other" would tell them nothing.
+    'reason': report['reason'] == 'Other' ? '' : report['reason'],
     'message': message.trim(),
     'establishmentName': report['establishmentName'],
     'createdBy': adminId,

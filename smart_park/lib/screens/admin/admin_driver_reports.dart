@@ -288,8 +288,10 @@ class _ReportReviewSheetState extends State<_ReportReviewSheet> {
   late final TextEditingController _message = TextEditingController(
     text:
         'SmartPark received a report about your parking at '
-        '${((_data['establishmentName'] as String?) ?? '').trim().isEmpty ? 'a facility' : _data['establishmentName']}: '
-        '${_data['reason']}. Please follow each facility\'s rules and pay '
+        '${((_data['establishmentName'] as String?) ?? '').trim().isEmpty ? 'a facility' : _data['establishmentName']}'
+        // "Other" says nothing to the driver; the admin writes the specifics.
+        '${_data['reason'] == 'Other' ? '' : ': ${_data['reason']}'}. '
+        'Please follow each facility\'s rules and pay '
         'any overtime at the gate. Repeated reports may lead to action on '
         'your account.',
   );
