@@ -31,7 +31,8 @@ class SpProfileView extends StatefulWidget {
   final VoidCallback onSignOut;
   final EdgeInsetsGeometry padding;
 
-  /// Tablet layout: identity and sign-out on the left, forms on the right.
+  /// Tablet layout: identity and password on the left, name and appearance
+  /// on the right. Sign-out moves to the navigation rail.
   final bool wide;
 
   @override
@@ -39,23 +40,7 @@ class SpProfileView extends StatefulWidget {
 }
 
 class _SpProfileViewState extends State<SpProfileView> {
-  final TextEditingController _currentPasswordController =
-      TextEditingController();
-  final TextEditingController _newPasswordController = TextEditingController();
-  final TextEditingController _confirmPasswordController =
-      TextEditingController();
-
   bool _savingProfile = false;
-  bool _changingPassword = false;
-  bool _passwordFormOpen = false;
-
-  @override
-  void dispose() {
-    _currentPasswordController.dispose();
-    _newPasswordController.dispose();
-    _confirmPasswordController.dispose();
-    super.dispose();
-  }
 
   void _showSnackBar(String message) {
     if (!mounted) return;
@@ -117,73 +102,6 @@ class _SpProfileViewState extends State<SpProfileView> {
     }
   }
 
-  void _closePasswordForm() {
-    _currentPasswordController.clear();
-    _newPasswordController.clear();
-    _confirmPasswordController.clear();
-    FocusScope.of(context).unfocus();
-    setState(() => _passwordFormOpen = false);
-  }
-
-  Future<void> _changePassword() async {
-    if (_changingPassword) return;
-    final User? user = FirebaseAuth.instance.currentUser;
-    final String? email = user?.email;
-    if (user == null || email == null) {
-      _showSnackBar('No logged-in user found.');
-      return;
-    }
-
-    final String currentPassword = _currentPasswordController.text;
-    final String newPassword = _newPasswordController.text.trim();
-    if (currentPassword.isEmpty) {
-      _showSnackBar('Enter your current password.');
-      return;
-    }
-    if (newPassword.length < 6) {
-      _showSnackBar('New password must be at least 6 characters.');
-      return;
-    }
-    if (newPassword != _confirmPasswordController.text.trim()) {
-      _showSnackBar('New passwords do not match.');
-      return;
-    }
-    if (newPassword == currentPassword) {
-      _showSnackBar('Choose a password different from your current one.');
-      return;
-    }
-
-    FocusScope.of(context).unfocus();
-    setState(() => _changingPassword = true);
-    try {
-      // Confirming the current password also satisfies Firebase's
-      // recent-login requirement, so no sign-out is needed.
-      await user.reauthenticateWithCredential(
-        EmailAuthProvider.credential(email: email, password: currentPassword),
-      );
-      await user.updatePassword(newPassword);
-      if (!mounted) return;
-      _closePasswordForm();
-      _showSnackBar('Password changed successfully.');
-    } on FirebaseAuthException catch (error) {
-      switch (error.code) {
-        case 'wrong-password':
-        case 'invalid-credential':
-          _showSnackBar('Your current password is incorrect.');
-        case 'weak-password':
-          _showSnackBar('That password is too weak. Try a longer one.');
-        case 'too-many-requests':
-          _showSnackBar('Too many attempts. Please wait a few minutes.');
-        default:
-          _showSnackBar(
-            friendlyError(error, fallback: 'Unable to change your password.'),
-          );
-      }
-    } finally {
-      if (mounted) setState(() => _changingPassword = false);
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     const Widget header = SpPageHeader(
@@ -202,11 +120,13 @@ class _SpProfileViewState extends State<SpProfileView> {
             children: [
               Expanded(
                 flex: 2,
+                // Sign Out lives at the foot of the navigation rail on
+                // tablets, so the password card takes its place here.
                 child: Column(
                   children: [
                     _identityCard(),
                     const SizedBox(height: 12),
-                    _signOutButton(),
+                    const SpChangePasswordCard(),
                   ],
                 ),
               ),
@@ -216,8 +136,6 @@ class _SpProfileViewState extends State<SpProfileView> {
                 child: Column(
                   children: [
                     _personalInfoCard(),
-                    const SizedBox(height: 12),
-                    _securityCard(),
                     const SizedBox(height: 12),
                     const SpAppearanceCard(),
                   ],
@@ -238,7 +156,7 @@ class _SpProfileViewState extends State<SpProfileView> {
         const SizedBox(height: 12),
         _personalInfoCard(),
         const SizedBox(height: 12),
-        _securityCard(),
+        const SpChangePasswordCard(),
         const SizedBox(height: 12),
         const SpAppearanceCard(),
         const SizedBox(height: 12),
@@ -339,7 +257,7 @@ class _SpProfileViewState extends State<SpProfileView> {
             controller: widget.firstNameController,
             textCapitalization: TextCapitalization.words,
             onChanged: (_) => setState(() {}),
-            decoration: _fieldDecoration(
+            decoration: _spFieldDecoration(
               label: 'First Name',
               icon: Icons.person_outline_rounded,
             ),
@@ -349,7 +267,7 @@ class _SpProfileViewState extends State<SpProfileView> {
             controller: widget.lastNameController,
             textCapitalization: TextCapitalization.words,
             onChanged: (_) => setState(() {}),
-            decoration: _fieldDecoration(
+            decoration: _spFieldDecoration(
               label: 'Last Name',
               icon: Icons.person_outline_rounded,
             ),
@@ -360,7 +278,7 @@ class _SpProfileViewState extends State<SpProfileView> {
             initialValue: widget.email,
             readOnly: true,
             enableInteractiveSelection: false,
-            decoration: _fieldDecoration(
+            decoration: _spFieldDecoration(
               label: 'Email Address',
               icon: Icons.lock_outline_rounded,
               helper: 'Your sign-in email cannot be changed.',
@@ -378,7 +296,134 @@ class _SpProfileViewState extends State<SpProfileView> {
     );
   }
 
-  Widget _securityCard() {
+  Widget _signOutButton() {
+    return SizedBox(
+      width: double.infinity,
+      child: OutlinedButton.icon(
+        onPressed: widget.onSignOut,
+        icon: const Icon(Icons.logout_rounded),
+        label: const Text(
+          'Sign Out',
+          style: TextStyle(fontWeight: FontWeight.w700),
+        ),
+        style: OutlinedButton.styleFrom(
+          minimumSize: const Size(double.infinity, 48),
+          foregroundColor: AppTheme.danger,
+          side: BorderSide(color: AppTheme.dangerBorder),
+          backgroundColor: AppTheme.dangerSoft,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppTheme.radius),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Change-password card: a button that opens a form asking for the current
+/// password (which also satisfies Firebase's recent-login check) and the new
+/// one twice.
+class SpChangePasswordCard extends StatefulWidget {
+  const SpChangePasswordCard({super.key});
+
+  @override
+  State<SpChangePasswordCard> createState() => _SpChangePasswordCardState();
+}
+
+class _SpChangePasswordCardState extends State<SpChangePasswordCard> {
+  final TextEditingController _currentPasswordController =
+      TextEditingController();
+  final TextEditingController _newPasswordController = TextEditingController();
+  final TextEditingController _confirmPasswordController =
+      TextEditingController();
+
+  bool _changingPassword = false;
+  bool _passwordFormOpen = false;
+
+  @override
+  void dispose() {
+    _currentPasswordController.dispose();
+    _newPasswordController.dispose();
+    _confirmPasswordController.dispose();
+    super.dispose();
+  }
+
+  void _showSnackBar(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  void _closePasswordForm() {
+    _currentPasswordController.clear();
+    _newPasswordController.clear();
+    _confirmPasswordController.clear();
+    FocusScope.of(context).unfocus();
+    setState(() => _passwordFormOpen = false);
+  }
+
+  Future<void> _changePassword() async {
+    if (_changingPassword) return;
+    final User? user = FirebaseAuth.instance.currentUser;
+    final String? email = user?.email;
+    if (user == null || email == null) {
+      _showSnackBar('No logged-in user found.');
+      return;
+    }
+
+    final String currentPassword = _currentPasswordController.text;
+    final String newPassword = _newPasswordController.text.trim();
+    if (currentPassword.isEmpty) {
+      _showSnackBar('Enter your current password.');
+      return;
+    }
+    if (newPassword.length < 6) {
+      _showSnackBar('New password must be at least 6 characters.');
+      return;
+    }
+    if (newPassword != _confirmPasswordController.text.trim()) {
+      _showSnackBar('New passwords do not match.');
+      return;
+    }
+    if (newPassword == currentPassword) {
+      _showSnackBar('Choose a password different from your current one.');
+      return;
+    }
+
+    FocusScope.of(context).unfocus();
+    setState(() => _changingPassword = true);
+    try {
+      // Confirming the current password also satisfies Firebase's
+      // recent-login requirement, so no sign-out is needed.
+      await user.reauthenticateWithCredential(
+        EmailAuthProvider.credential(email: email, password: currentPassword),
+      );
+      await user.updatePassword(newPassword);
+      if (!mounted) return;
+      _closePasswordForm();
+      _showSnackBar('Password changed successfully.');
+    } on FirebaseAuthException catch (error) {
+      switch (error.code) {
+        case 'wrong-password':
+        case 'invalid-credential':
+          _showSnackBar('Your current password is incorrect.');
+        case 'weak-password':
+          _showSnackBar('That password is too weak. Try a longer one.');
+        case 'too-many-requests':
+          _showSnackBar('Too many attempts. Please wait a few minutes.');
+        default:
+          _showSnackBar(
+            friendlyError(error, fallback: 'Unable to change your password.'),
+          );
+      }
+    } finally {
+      if (mounted) setState(() => _changingPassword = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return SpSectionCard(
       icon: Icons.shield_outlined,
       title: 'Security',
@@ -423,7 +468,7 @@ class _SpProfileViewState extends State<SpProfileView> {
           controller: _currentPasswordController,
           obscureText: true,
           autofocus: true,
-          decoration: _fieldDecoration(
+          decoration: _spFieldDecoration(
             label: 'Current Password',
             icon: Icons.lock_outline_rounded,
           ),
@@ -432,7 +477,7 @@ class _SpProfileViewState extends State<SpProfileView> {
         TextField(
           controller: _newPasswordController,
           obscureText: true,
-          decoration: _fieldDecoration(
+          decoration: _spFieldDecoration(
             label: 'New Password',
             icon: Icons.lock_reset_rounded,
             helper: 'At least 6 characters.',
@@ -442,7 +487,7 @@ class _SpProfileViewState extends State<SpProfileView> {
         TextField(
           controller: _confirmPasswordController,
           obscureText: true,
-          decoration: _fieldDecoration(
+          decoration: _spFieldDecoration(
             label: 'Confirm New Password',
             icon: Icons.verified_user_outlined,
           ),
@@ -496,62 +541,39 @@ class _SpProfileViewState extends State<SpProfileView> {
       ],
     );
   }
+}
 
-  Widget _signOutButton() {
-    return SizedBox(
-      width: double.infinity,
-      child: OutlinedButton.icon(
-        onPressed: widget.onSignOut,
-        icon: const Icon(Icons.logout_rounded),
-        label: const Text(
-          'Sign Out',
-          style: TextStyle(fontWeight: FontWeight.w700),
-        ),
-        style: OutlinedButton.styleFrom(
-          minimumSize: const Size(double.infinity, 48),
-          foregroundColor: AppTheme.danger,
-          side: BorderSide(color: AppTheme.dangerBorder),
-          backgroundColor: AppTheme.dangerSoft,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(AppTheme.radius),
-          ),
-        ),
-      ),
-    );
-  }
-
-  InputDecoration _fieldDecoration({
-    required String label,
-    IconData? icon,
-    String? helper,
-  }) {
-    return InputDecoration(
-      labelText: label,
-      helperText: helper,
-      filled: true,
-      fillColor: AppTheme.surfaceAlt,
-      prefixIcon: icon == null ? null : Icon(icon, size: 20),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(AppTheme.radius),
-        borderSide: BorderSide(color: AppTheme.border),
-      ),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(AppTheme.radius),
-        borderSide: BorderSide(color: AppTheme.border),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(AppTheme.radius),
-        borderSide: const BorderSide(color: AppTheme.accent, width: 1.4),
-      ),
-      labelStyle: TextStyle(
-        color: AppTheme.textMuted,
-        fontSize: 13,
-        fontWeight: FontWeight.w500,
-      ),
-      helperStyle: TextStyle(color: AppTheme.textMuted, fontSize: 11),
-    );
-  }
+InputDecoration _spFieldDecoration({
+  required String label,
+  IconData? icon,
+  String? helper,
+}) {
+  return InputDecoration(
+    labelText: label,
+    helperText: helper,
+    filled: true,
+    fillColor: AppTheme.surfaceAlt,
+    prefixIcon: icon == null ? null : Icon(icon, size: 20),
+    contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+    border: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(AppTheme.radius),
+      borderSide: BorderSide(color: AppTheme.border),
+    ),
+    enabledBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(AppTheme.radius),
+      borderSide: BorderSide(color: AppTheme.border),
+    ),
+    focusedBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(AppTheme.radius),
+      borderSide: const BorderSide(color: AppTheme.accent, width: 1.4),
+    ),
+    labelStyle: TextStyle(
+      color: AppTheme.textMuted,
+      fontSize: 13,
+      fontWeight: FontWeight.w500,
+    ),
+    helperStyle: TextStyle(color: AppTheme.textMuted, fontSize: 11),
+  );
 }
 
 /// Light / dark / follow-the-phone picker.

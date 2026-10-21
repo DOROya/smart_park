@@ -194,12 +194,16 @@ class SpNavRail extends StatelessWidget {
     required this.selectedIndex,
     required this.onSelected,
     this.extended = false,
+    this.onSignOut,
   });
 
   final List<(IconData, IconData, String)> items;
   final int selectedIndex;
   final ValueChanged<int> onSelected;
   final bool extended;
+
+  /// Shows a Sign Out button pinned to the bottom of the rail.
+  final VoidCallback? onSignOut;
 
   @override
   Widget build(BuildContext context) {
@@ -214,6 +218,13 @@ class SpNavRail extends StatelessWidget {
           ? NavigationRailLabelType.none
           : NavigationRailLabelType.all,
       groupAlignment: -0.9,
+      trailingAtBottom: true,
+      trailing: onSignOut == null
+          ? null
+          : Padding(
+              padding: const EdgeInsets.only(bottom: 16),
+              child: _SpRailSignOut(extended: extended, onTap: onSignOut!),
+            ),
       selectedIconTheme: IconThemeData(color: AppTheme.textDark),
       unselectedIconTheme: IconThemeData(color: AppTheme.textMuted),
       selectedLabelTextStyle: TextStyle(
@@ -263,6 +274,79 @@ class SpRailLayout extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// Sign Out at the foot of [SpNavRail]: a labelled button when the rail is
+/// extended, an icon with a caption (like the destinations) when compact.
+class _SpRailSignOut extends StatelessWidget {
+  const _SpRailSignOut({required this.extended, required this.onTap});
+
+  final bool extended;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    if (extended) {
+      return SizedBox(
+        width: 176,
+        child: OutlinedButton.icon(
+          onPressed: onTap,
+          icon: const Icon(Icons.logout_rounded, size: 20),
+          label: const Text(
+            'Sign Out',
+            style: TextStyle(fontWeight: FontWeight.w700),
+          ),
+          style: OutlinedButton.styleFrom(
+            alignment: Alignment.centerLeft,
+            minimumSize: const Size.fromHeight(46),
+            foregroundColor: AppTheme.danger,
+            backgroundColor: AppTheme.dangerSoft,
+            side: BorderSide(color: AppTheme.dangerBorder),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(AppTheme.radius),
+            ),
+          ),
+        ),
+      );
+    }
+    return Tooltip(
+      message: 'Sign Out',
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(AppTheme.radius),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 48,
+                height: 32,
+                decoration: BoxDecoration(
+                  color: AppTheme.dangerSoft,
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Icon(
+                  Icons.logout_rounded,
+                  size: 20,
+                  color: AppTheme.danger,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Sign Out',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: AppTheme.danger,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
