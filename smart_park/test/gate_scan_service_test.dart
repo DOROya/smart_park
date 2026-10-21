@@ -284,7 +284,36 @@ void main() {
       });
       final GateScanResult? r = await scan(qr('t1'));
       expect(r!.isAllowed, isTrue);
-      expect(r.reason, 'Paid ticket verified. 168 hours left. Admit.');
+      expect(r.reason, 'Paid ticket verified. 7 days left. Admit.');
+    });
+
+    for (final String status in <String>['suspended', 'deactivated']) {
+      test('refuses entry at a $status facility', () async {
+        await db.collection('establishment_details').doc(facilityId).set(
+          <String, dynamic>{'status': status},
+        );
+        await seedTicket('t1', <String, dynamic>{});
+        final GateScanResult? r = await scan(qr('t1'));
+        expect(r!.isAllowed, isFalse);
+        expect(r.reason, 'Facility $status by SmartPark. Do not admit.');
+        expect((await ticket('t1'))['entryStatus'], isNull);
+        expect(
+          (await activityLogs()).single['decisionReason'],
+          'Facility $status by admin; entry closed.',
+        );
+      });
+    }
+
+    test('still releases a vehicle parked before the suspension', () async {
+      await db.collection('establishment_details').doc(facilityId).set(
+        <String, dynamic>{'status': 'suspended'},
+      );
+      await seedTicket('t1', <String, dynamic>{
+        'entryStatus': 'checked_in',
+        'entryAt': Timestamp.fromDate(now.subtract(const Duration(hours: 1))),
+      });
+      final GateScanResult? r = await scan(qr('t1'), mode: 'exit');
+      expect(r!.isAllowed, isTrue);
     });
   });
 

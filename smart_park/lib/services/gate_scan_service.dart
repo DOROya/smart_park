@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import 'error_reporter.dart';
+import 'facility_status.dart';
 import 'parking_pricing.dart';
 
 /// Result of a single gate scan shown to the staff member.
@@ -550,6 +551,20 @@ class GateScanService {
         reason: 'Already inside. Do not admit twice.',
       );
     }
+    // A facility an admin pulled admits no one. Exits stay open so vehicles
+    // already inside can still leave.
+    final String? restriction = await _facilityRestriction(facilityId);
+    if (restriction != null) {
+      return _deny(
+        staff: staff,
+        scanType: 'entry',
+        plate: plate,
+        transactionId: transactionId,
+        timestamp: scannedAt,
+        logReason: 'Facility $restriction by admin; entry closed.',
+        reason: 'Facility $restriction by SmartPark. Do not admit.',
+      );
+    }
     // Tickets are reusable: a checked-out ticket may come back in while it
     // has hours left.
     final int hoursLeft = ticketHoursLeft(ticket);
@@ -788,6 +803,28 @@ class GateScanService {
     );
   }
 
+  /// "suspended" or "deactivated" when an admin pulled [facilityId], else
+  /// null. A failed read doesn't block the gate; the ticket itself was just
+  /// read, so the facility's state is the only thing unknown.
+  Future<String?> _facilityRestriction(String facilityId) async {
+    try {
+      final DocumentSnapshot<Map<String, dynamic>> details = await _db
+          .collection('establishment_details')
+          .doc(facilityId)
+          .get();
+      return isFacilityRestricted(details.data())
+          ? facilityStatus(details.data())
+          : null;
+    } catch (error, stack) {
+      reportError(
+        error,
+        stack,
+        reason: 'Loading facility status for entry scan failed',
+      );
+      return null;
+    }
+  }
+
   Future<Map<String, dynamic>?> _loadRates(String facilityId) async {
     try {
       final DocumentSnapshot<Map<String, dynamic>> details = await _db
@@ -932,7 +969,7 @@ class GateScanService {
     });
   }
 
-  static String _hoursText(int hours) => '$hours hour${hours == 1 ? '' : 's'}';
+  static String _hoursText(int hours) => formatParkingHours(hours);
 
   static String _status(Map<String, dynamic> ticket) =>
       ((ticket['status'] as String?) ?? '').toLowerCase();

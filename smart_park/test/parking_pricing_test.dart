@@ -187,6 +187,15 @@ void main() {
       );
     });
 
+    test('parking hours read as days and hours', () {
+      expect(formatParkingHours(166), '6 days, 22 hours');
+      expect(formatParkingHours(48), '2 days');
+      expect(formatParkingHours(25), '1 day, 1 hour');
+      expect(formatParkingHours(5), '5 hours');
+      expect(formatParkingHours(1), '1 hour');
+      expect(formatParkingHours(0), '0 hours');
+    });
+
     test('a daily ticket is not charged after two hours', () {
       final int included = includedStayHours(plan: 'daily', duration: 1);
       expect(overtimeHours(const Duration(hours: 10), included), 0);

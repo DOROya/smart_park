@@ -4,7 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
 import '../services/gate_scan_service.dart'
-    show kOvertimeCashDue, kOvertimeCollected;
+    show kOvertimeCashDue, kOvertimeCollected, kOvertimeWaived;
 import '../services/parking_pricing.dart';
 import '../theme/app_theme.dart';
 import 'smartpark_ui.dart';
@@ -104,6 +104,260 @@ class SpOvertimeCashBanner extends StatelessWidget {
                   ),
                 ),
               ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// How an exit's overtime was worked out, step by step: time parked and how
+/// many hours that counts as, how much of it the ticket covered, the hours
+/// over and their rate, the total, and where the cash stands. Shared by the
+/// driver's ticket, the gate result and the gate log details so all three
+/// explain the same charge the same way.
+class SpOvertimeBreakdown extends StatelessWidget {
+  const SpOvertimeBreakdown({
+    super.key,
+    required this.overtimeHours,
+    required this.amount,
+    this.elapsed,
+    this.rate,
+    this.status = kOvertimeCashDue,
+    this.statusDetail,
+    this.forDriver = false,
+  });
+
+  /// Reads an exit log or a checked-out ticket. [status] overrides the
+  /// stored `overtimeStatus` (e.g. right after it was changed on screen).
+  factory SpOvertimeBreakdown.fromRecord(
+    Map<String, dynamic> data, {
+    String? status,
+    String? statusDetail,
+    bool forDriver = false,
+  }) {
+    final int seconds =
+        ((data['elapsedSeconds'] ?? data['staySeconds']) as num?)?.toInt() ??
+        -1;
+    final int hours = ((data['overtimeHours'] as num?) ?? 0).toInt();
+    final double amount = ((data['overtimeAmount'] as num?) ?? 0).toDouble();
+    final double? storedRate = (data['overtimeRate'] as num?)?.toDouble();
+    return SpOvertimeBreakdown(
+      overtimeHours: hours,
+      amount: amount,
+      elapsed: seconds < 0 ? null : Duration(seconds: seconds),
+      rate: storedRate ?? (hours > 0 && amount > 0 ? amount / hours : null),
+      status: status ?? spOvertimeStatus(data),
+      statusDetail: statusDetail,
+      forDriver: forDriver,
+    );
+  }
+
+  final int overtimeHours;
+  final double amount;
+
+  /// Whole stay; null when the record predates stay tracking.
+  final Duration? elapsed;
+
+  /// Hourly overtime rate; null when the facility had none set.
+  final double? rate;
+
+  /// An `overtimeStatus` value.
+  final String status;
+
+  /// Who collected the cash and when, appended to the collected line.
+  final String? statusDetail;
+
+  /// Words the status for the driver ("pay the gate staff") rather than
+  /// staff and owners ("not yet confirmed collected").
+  final bool forDriver;
+
+  @override
+  Widget build(BuildContext context) {
+    final bool billed = amount > 0;
+    final Duration? stay = elapsed;
+    final int counted = stay == null ? 0 : stayHours(stay);
+    final int paidUsed = counted - overtimeHours;
+
+    final (Color tone, Color fill, IconData icon, String statusText) = !billed
+        ? (
+            AppTheme.textMuted,
+            AppTheme.surfaceAlt,
+            Icons.info_outline_rounded,
+            'No overtime rate was set, so nothing was charged.',
+          )
+        : switch (status) {
+            kOvertimeCollected => (
+              spEntryColor,
+              AppTheme.successSoft,
+              Icons.check_circle_rounded,
+              forDriver
+                  ? 'Paid in cash at the gate.'
+                  : 'Cash collected${statusDetail ?? ''}.',
+            ),
+            kOvertimeWaived => (
+              AppTheme.textMuted,
+              AppTheme.surfaceAlt,
+              Icons.money_off_rounded,
+              forDriver
+                  ? 'Waived by the parking owner. Nothing to pay.'
+                  : 'Waived by the owner. No cash is owed.',
+            ),
+            _ => (
+              spInsideColor,
+              AppTheme.warningSoft,
+              Icons.payments_rounded,
+              forDriver
+                  ? 'Pay this in cash to the gate staff.'
+                  : 'Cash not yet confirmed as collected.',
+            ),
+          };
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: fill,
+        borderRadius: BorderRadius.circular(AppTheme.radius),
+        border: Border.all(
+          color: status == kOvertimeCashDue && billed
+              ? AppTheme.accent
+              : spCardBorder,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Icon(Icons.more_time_rounded, size: 18, color: tone),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Overtime breakdown',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                    color: AppTheme.textDark,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          if (stay != null) ...<Widget>[
+            _line(
+              'Time parked',
+              spFormatDuration(stay),
+              note: 'counts as ${formatParkingHours(counted)}',
+            ),
+            if (paidUsed > 0)
+              _line(
+                'Covered by ticket',
+                formatParkingHours(paidUsed),
+                note: 'the paid time left when the vehicle entered',
+              ),
+          ],
+          _line(
+            'Overtime',
+            formatParkingHours(overtimeHours),
+            note: rate == null || rate! <= 0
+                ? 'no rate set'
+                : '× ${spPeso(rate!)} per hour',
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 6),
+            child: Divider(height: 1, color: spCardBorder),
+          ),
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: Text(
+                  'Overtime charge',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w800,
+                    color: AppTheme.textDark,
+                  ),
+                ),
+              ),
+              Text(
+                spPeso(amount),
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                  color: AppTheme.textDark,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Icon(icon, size: 16, color: tone),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  statusText,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: tone,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Overtime is every started hour past the paid time on the '
+            'ticket, with no grace period (2h 05m counts as 3 hours). '
+            'It is paid in cash at the exit, not through the app.',
+            style: TextStyle(
+              fontSize: 11,
+              height: 1.35,
+              color: AppTheme.textMuted,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _line(String label, String value, {String? note}) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: AppTheme.textSecondary,
+                  ),
+                ),
+                if (note != null)
+                  Text(
+                    note,
+                    style: TextStyle(fontSize: 11, color: AppTheme.textMuted),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              color: AppTheme.textDark,
             ),
           ),
         ],
@@ -421,7 +675,7 @@ class SpParkedStayRow extends StatelessWidget {
                 Text(
                   'In ${spFormatClockTime(stay.entryAt)}'
                   '${spSameDate(stay.entryAt, now) ? '' : ' (${spFormatDate(stay.entryAt)})'}'
-                  ' · paid ${stay.includedHours}h'
+                  ' · paid ${formatParkingHours(stay.includedHours)}'
                   ' · until ${spFormatClockTime(stay.paidUntil)}',
                   style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
                 ),
