@@ -417,6 +417,7 @@ extension _AdminFacilityReview on _AdminHomePageState {
     final bool resubmitted =
         ((data['status'] as String?) ?? 'pending').toLowerCase() == 'pending' &&
         data['resubmittedAt'] != null;
+    final bool appealed = data['appealedAt'] != null;
     final DateTime? submittedAt =
         _parseDateTime(data['resubmittedAt']) ??
         _parseDateTime(data['createdAt']) ??
@@ -515,6 +516,10 @@ extension _AdminFacilityReview on _AdminHomePageState {
                     const SizedBox(height: 2),
                     SpChip(label: 'Resubmitted', color: AppTheme.warning),
                   ],
+                  if (appealed) ...[
+                    const SizedBox(height: 2),
+                    SpChip(label: 'Review requested', color: spExitColor),
+                  ],
                 ],
               ),
             ),
@@ -565,6 +570,7 @@ extension _AdminFacilityReview on _AdminHomePageState {
     final bool resubmitted =
         ((data['status'] as String?) ?? 'pending').toLowerCase() == 'pending' &&
         data['resubmittedAt'] != null;
+    final bool appealed = data['appealedAt'] != null;
     final DateTime? submittedAt =
         _parseDateTime(data['resubmittedAt']) ??
         _parseDateTime(data['createdAt']) ??
@@ -599,6 +605,10 @@ extension _AdminFacilityReview on _AdminHomePageState {
                       if (resubmitted) ...[
                         const SizedBox(width: 6),
                         SpChip(label: 'Resubmitted', color: AppTheme.warning),
+                      ],
+                      if (appealed) ...[
+                        const SizedBox(width: 6),
+                        SpChip(label: 'Review requested', color: spExitColor),
                       ],
                     ],
                   ),

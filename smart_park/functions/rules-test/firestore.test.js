@@ -470,3 +470,42 @@ test("a suspended facility refuses check-ins and walk-ins but not exits", async 
       { merge: true }),
   );
 });
+
+// ---------- staff flags & appeals ----------
+
+const flagOf = (over = {}) => ({
+  establishmentId: "est1", staffId: "staff1", transactionId: "tx1", driverId: "driver1",
+  reason: "Rude or abusive to staff", status: "open", createdAt: serverTimestamp(), ...over,
+});
+
+test("staff flag only real drivers of their own facility's tickets", async () => {
+  await assertSucceeds(setDoc(doc(staff(), "staff_incidents/f1"), flagOf()));
+  await assertFails(setDoc(doc(staff(), "staff_incidents/f2"), flagOf({ driverId: "driver2" })));
+  await assertFails(setDoc(doc(staff(), "staff_incidents/f3"), flagOf({ establishmentId: "est2", transactionId: "tx2", driverId: "driver2" })));
+  await assertFails(setDoc(doc(staff(), "staff_incidents/f4"), flagOf({ staffId: "someone" })));
+  await assertFails(setDoc(doc(owner(), "staff_incidents/f5"), flagOf({ staffId: "owner1" })));
+});
+
+test("owners resolve their staff's flags; drivers never see them", async () => {
+  await env.withSecurityRulesDisabled((ctx) =>
+    setDoc(doc(ctx.firestore(), "staff_incidents/f1"), flagOf()));
+  await assertSucceeds(getDoc(doc(owner(), "staff_incidents/f1")));
+  await assertSucceeds(getDoc(doc(staff(), "staff_incidents/f1")));
+  await assertFails(getDoc(doc(driver(), "staff_incidents/f1")));
+  await assertFails(getDoc(doc(otherOwner(), "staff_incidents/f1")));
+  await assertFails(updateDoc(doc(staff(), "staff_incidents/f1"), { status: "dismissed" }));
+  await assertFails(updateDoc(doc(owner(), "staff_incidents/f1"), { reason: "changed" }));
+  await assertSucceeds(updateDoc(doc(owner(), "staff_incidents/f1"), { status: "reported", handledAt: serverTimestamp() }));
+});
+
+test("an owner of a suspended facility can ask for review but not lift it", async () => {
+  await env.withSecurityRulesDisabled((ctx) =>
+    setDoc(doc(ctx.firestore(), "establishment_details/est1"), { status: "suspended", reviewedBy: "admin1" }));
+  await assertSucceeds(updateDoc(doc(owner(), "establishment_details/est1"), {
+    appealMessage: "Permit renewed.", appealedAt: serverTimestamp(),
+  }));
+  await assertFails(updateDoc(doc(owner(), "establishment_details/est1"), {
+    appealMessage: "x", status: "approved",
+  }));
+  await assertFails(updateDoc(doc(otherOwner(), "establishment_details/est1"), { appealMessage: "x" }));
+});
