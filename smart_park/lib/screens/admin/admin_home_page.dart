@@ -11,6 +11,7 @@ import '../../utils/friendly_error.dart';
 import '../../widgets/smartpark_ui.dart';
 import '../../widgets/sp_profile_view.dart';
 import '../auth/sign_in_screen.dart';
+import 'admin_driver_reports.dart';
 
 part 'admin_home_page_fragments.dart';
 part 'admin_facility_review.dart';

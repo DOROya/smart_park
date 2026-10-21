@@ -298,6 +298,45 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // ---------- driver reports and warnings ----------
+
+    function transactionPath(id) {
+      return /databases/$(database)/documents/transactions/$(id);
+    }
+
+    // An owner reports the driver of one of their facility's tickets; the
+    // ticket must really be that driver's, so reports can't be invented.
+    // Only admins review them. Drivers never read reports.
+    match /driver_reports/{reportId} {
+      allow read: if isAdmin() ||
+        (signedIn() && resource.data.reporterId == uid());
+      allow create: if isParkingOwner() &&
+        request.resource.data.reporterId == uid() &&
+        request.resource.data.status == 'open' &&
+        request.resource.data.reason is string &&
+        request.resource.data.reason.size() > 0 &&
+        isOwnerOf(request.resource.data.establishmentId) &&
+        exists(transactionPath(request.resource.data.transactionId)) &&
+        get(transactionPath(request.resource.data.transactionId)).data.establishmentId ==
+          request.resource.data.establishmentId &&
+        get(transactionPath(request.resource.data.transactionId)).data.driverId ==
+          request.resource.data.driverId;
+      allow update: if isAdmin();
+      allow delete: if false;
+    }
+
+    // Admins warn drivers; a driver reads their own warnings and may only
+    // mark them as read.
+    match /driver_warnings/{warningId} {
+      allow read: if isAdmin() ||
+        (signedIn() && resource.data.driverId == uid());
+      allow create, delete: if isAdmin();
+      allow update: if isAdmin() ||
+        (signedIn() && resource.data.driverId == uid() &&
+          request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['acknowledgedAt']));
+    }
+
     match /payment_splits/{splitId} {
       allow read: if isAdmin() || isOwnerOf(resource.data.establishmentId);
       allow write: if false;

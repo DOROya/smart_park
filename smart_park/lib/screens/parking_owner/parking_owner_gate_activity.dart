@@ -185,6 +185,7 @@ class _GateActivityContentState extends State<_GateActivityContent>
           staffNames: staffNames,
           onTap: () => showSpActivityDetails(
             context,
+            canReportDriver: true,
             log: data,
             staffNames: staffNames,
             onSetOvertimeStatus: (Map<String, dynamic> log, String status) =>
