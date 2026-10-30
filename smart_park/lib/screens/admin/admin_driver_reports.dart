@@ -290,7 +290,7 @@ class _ReportReviewSheetState extends State<_ReportReviewSheet> {
         'SmartPark received a report about your parking at '
         '${((_data['establishmentName'] as String?) ?? '').trim().isEmpty ? 'a facility' : _data['establishmentName']}'
         // "Other" says nothing to the driver; the admin writes the specifics.
-        '${_data['reason'] == 'Other' ? '' : ': ${_data['reason']}'}. '
+        '${warningReasons(_data).isEmpty ? '' : ': ${warningReasons(_data).join(', ')}'}. '
         'Please follow each facility\'s rules and pay '
         'any overtime at the gate. Repeated reports may lead to action on '
         'your account.',
@@ -429,7 +429,10 @@ class _ReportReviewSheetState extends State<_ReportReviewSheet> {
               ],
             ),
             const SizedBox(height: 14),
-            _field('Reason', (_data['reason'] as String?) ?? ''),
+            _field(
+              reportReasons(_data).length > 1 ? 'Reasons' : 'Reason',
+              reportReasons(_data).join(', '),
+            ),
             if (details.isNotEmpty) _field('Owner\'s details', details),
             _field(
               'Facility',

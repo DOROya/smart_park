@@ -13,6 +13,7 @@ import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 
 import '../../models/facility_registration_data.dart';
 import '../../services/error_reporter.dart';
+import '../../services/facility_status.dart' show facilityRestrictionReasons;
 import '../../services/gate_scan_service.dart'
     show
         isStaffRecordActive,

@@ -899,7 +899,11 @@ class _InvalidTicketCardState extends State<_InvalidTicketCard> {
     final DateTime? since = spParseDateTime(facility?['reviewedAt']);
     // Only the predefined reason is shown; the admin's free-text note is
     // for the owner.
-    final String? reason = facilityRestrictionReason(facility);
+    // "Other" alone tells the driver nothing.
+    final List<String> reasons = facilityRestrictionReasons(
+      facility,
+    ).where((String r) => r != 'Other').toList();
+    final String? reason = reasons.isEmpty ? null : joinReasons(reasons);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
@@ -1038,7 +1042,7 @@ class _InvalidTicketCardState extends State<_InvalidTicketCard> {
                               color: AppTheme.textDark,
                             ),
                           ),
-                          if (reason != null && reason != 'Other') ...[
+                          if (reason != null) ...[
                             const SizedBox(height: 8),
                             Text.rich(
                               TextSpan(

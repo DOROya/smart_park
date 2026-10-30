@@ -10,6 +10,7 @@ import '../../theme/app_theme.dart';
 import '../../utils/friendly_error.dart';
 import '../../widgets/smartpark_ui.dart';
 import '../../widgets/sp_profile_view.dart';
+import '../../widgets/sp_reason_dropdowns.dart';
 import '../auth/sign_in_screen.dart';
 import 'admin_driver_reports.dart';
 
@@ -389,7 +390,7 @@ class _AdminHomePageState extends State<AdminHomePage>
     String establishmentId,
     String status, {
     String? rejectionReason,
-    String? restrictionReason,
+    List<String> restrictionReasons = const <String>[],
   }) async {
     final Map<String, dynamic> updates = <String, dynamic>{
       'status': status,
@@ -413,10 +414,13 @@ class _AdminHomePageState extends State<AdminHomePage>
     // Any decision answers the owner's request for review.
     updates['appealMessage'] = null;
     updates['appealedAt'] = null;
-    // The picked reason only applies while the facility is pulled.
-    updates['restrictionReason'] =
-        status == 'suspended' || status == 'deactivated'
-        ? restrictionReason
+    // The picked reasons only apply while the facility is pulled.
+    final bool pulled = status == 'suspended' || status == 'deactivated';
+    updates['restrictionReasons'] = pulled && restrictionReasons.isNotEmpty
+        ? restrictionReasons
+        : null;
+    updates['restrictionReason'] = pulled && restrictionReasons.isNotEmpty
+        ? joinReasons(restrictionReasons)
         : null;
 
     await FirebaseFirestore.instance
@@ -825,13 +829,14 @@ class _AdminHomePageState extends State<AdminHomePage>
     return confirmed ?? false;
   }
 
-  /// Predefined reasons for suspending or deactivating a facility, shown
-  /// above the optional note. One must be picked before either action.
+  /// Predefined reasons for suspending or deactivating a facility, one
+  /// dropdown each, shown above the optional note. At least one must be
+  /// picked before either action.
   Widget _buildRestrictionReasonPicker({
-    required String? selected,
+    required List<String?> selected,
     required bool missing,
     required bool enabled,
-    required ValueChanged<String?> onSelected,
+    required ValueChanged<List<String?>> onChanged,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -857,46 +862,12 @@ class _AdminHomePageState extends State<AdminHomePage>
           style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
         ),
         const SizedBox(height: 8),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            for (final String reason in kRestrictionReasons)
-              ChoiceChip(
-                label: Text(reason),
-                selected: selected == reason,
-                showCheckmark: false,
-                avatar: selected == reason
-                    ? Icon(
-                        Icons.check_rounded,
-                        size: 16,
-                        color: AppTheme.onAccent,
-                      )
-                    : null,
-                labelStyle: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: selected == reason
-                      ? AppTheme.onAccent
-                      : AppTheme.textDark,
-                ),
-                selectedColor: AppTheme.accent,
-                backgroundColor: AppTheme.surface,
-                side: BorderSide(
-                  color: selected == reason
-                      ? AppTheme.accent
-                      : missing
-                      ? AppTheme.dangerBorder
-                      : AppTheme.border,
-                ),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                onSelected: enabled
-                    ? (bool on) => onSelected(on ? reason : null)
-                    : null,
-              ),
-          ],
+        SpReasonDropdowns(
+          options: kRestrictionReasons,
+          values: selected,
+          missing: missing,
+          enabled: enabled,
+          onChanged: onChanged,
         ),
         if (missing) ...[
           const SizedBox(height: 8),
@@ -910,8 +881,9 @@ class _AdminHomePageState extends State<AdminHomePage>
               const SizedBox(width: 6),
               Expanded(
                 child: Text(
-                  selected == 'Other'
-                      ? 'Describe the reason in the details box below.'
+                  spPickedReasons(selected).isNotEmpty
+                      ? 'Describe the "Other" reason in the details box '
+                            'below.'
                       : 'Pick a reason first.',
                   style: TextStyle(
                     fontSize: 12,
@@ -984,9 +956,10 @@ class _AdminHomePageState extends State<AdminHomePage>
         TextEditingController();
     // The status being saved, so only that button shows a spinner.
     String? submittingStatus;
-    // Predefined reason for suspending or deactivating, and whether the
-    // admin tried to without one (or picked "Other" with no details).
-    String? restrictionReason;
+    // Predefined reasons for suspending or deactivating (one dropdown each),
+    // and whether the admin tried to without one (or picked "Other" with no
+    // details).
+    List<String?> restrictionReasons = <String?>[null];
     bool reasonMissing = false;
 
     await showDialog<void>(
@@ -1009,7 +982,9 @@ class _AdminHomePageState extends State<AdminHomePage>
             final DateTime? submittedAt =
                 _parseDateTime(data['resubmittedAt']) ??
                 _parseDateTime(data['createdAt']);
-            final String? previousRestriction = facilityRestrictionReason(data);
+            final List<String> previousRestriction = facilityRestrictionReasons(
+              data,
+            );
             final String previousRejection =
                 ((data['rejectionReason'] as String?) ?? '').trim();
             final Map<dynamic, dynamic> rates =
@@ -1029,19 +1004,22 @@ class _AdminHomePageState extends State<AdminHomePage>
                 Future<void> submit(String newStatus) async {
                   bool confirmed = true;
                   if (newStatus == 'suspended' || newStatus == 'deactivated') {
-                    final String? reason = restrictionReason;
-                    if (reason == null ||
-                        (reason == 'Other' &&
-                            rejectionReasonController.text.trim().isEmpty)) {
+                    final List<String> reasons = spPickedReasons(
+                      restrictionReasons,
+                    );
+                    final String note = rejectionReasonController.text.trim();
+                    if (reasons.isEmpty ||
+                        (reasons.contains('Other') && note.isEmpty)) {
                       setDialogState(() => reasonMissing = true);
                       return;
                     }
                     confirmed = await _confirmRestrictFacility(
                       dialogContext,
                       newStatus,
-                      reason == 'Other'
-                          ? rejectionReasonController.text.trim()
-                          : reason,
+                      joinReasons(<String>[
+                        for (final String reason in reasons)
+                          reason == 'Other' ? note : reason,
+                      ]),
                     );
                   } else if (newStatus == 'approved' &&
                       documentUrls.isEmpty &&
@@ -1061,7 +1039,7 @@ class _AdminHomePageState extends State<AdminHomePage>
                       doc.id,
                       newStatus,
                       rejectionReason: rejectionReasonController.text,
-                      restrictionReason: restrictionReason,
+                      restrictionReasons: spPickedReasons(restrictionReasons),
                     );
                     if (dialogContext.mounted) {
                       Navigator.of(dialogContext).pop();
@@ -1374,7 +1352,7 @@ class _AdminHomePageState extends State<AdminHomePage>
                                         current == 'suspended' ||
                                         current == 'deactivated') &&
                                     (previousRejection.isNotEmpty ||
-                                        previousRestriction != null))
+                                        previousRestriction.isNotEmpty))
                                   _buildReviewSection(
                                     icon: Icons.history_rounded,
                                     title: noteTitle,
@@ -1382,18 +1360,27 @@ class _AdminHomePageState extends State<AdminHomePage>
                                       crossAxisAlignment:
                                           CrossAxisAlignment.start,
                                       children: [
-                                        if (previousRestriction != null)
+                                        if (previousRestriction.isNotEmpty)
                                           Padding(
                                             padding: EdgeInsets.only(
                                               bottom: previousRejection.isEmpty
                                                   ? 0
                                                   : 6,
                                             ),
-                                            child: SpChip(
-                                              label: previousRestriction,
-                                              color: current == 'suspended'
-                                                  ? AppTheme.warning
-                                                  : AppTheme.danger,
+                                            child: Wrap(
+                                              spacing: 6,
+                                              runSpacing: 6,
+                                              children: [
+                                                for (final String reason
+                                                    in previousRestriction)
+                                                  SpChip(
+                                                    label: reason,
+                                                    color:
+                                                        current == 'suspended'
+                                                        ? AppTheme.warning
+                                                        : AppTheme.danger,
+                                                  ),
+                                              ],
                                             ),
                                           ),
                                         if (previousRejection.isNotEmpty)
@@ -1409,12 +1396,12 @@ class _AdminHomePageState extends State<AdminHomePage>
                                   ),
                                 if (restricting) ...[
                                   _buildRestrictionReasonPicker(
-                                    selected: restrictionReason,
+                                    selected: restrictionReasons,
                                     missing: reasonMissing,
                                     enabled: !isSubmitting,
-                                    onSelected: (String? reason) =>
+                                    onChanged: (List<String?> reasons) =>
                                         setDialogState(() {
-                                          restrictionReason = reason;
+                                          restrictionReasons = reasons;
                                           reasonMissing = false;
                                         }),
                                   ),
@@ -1423,7 +1410,7 @@ class _AdminHomePageState extends State<AdminHomePage>
                                 if (current != 'deactivated') ...[
                                   Text(
                                     restricting
-                                        ? restrictionReason == 'Other'
+                                        ? restrictionReasons.contains('Other')
                                               ? 'Additional Details (Required for "Other")'
                                               : 'Additional Details (Optional)'
                                         : 'Rejection Reason (Optional)',

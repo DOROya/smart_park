@@ -7,6 +7,7 @@ import '../services/staff_incidents.dart';
 import '../theme/app_theme.dart';
 import '../utils/friendly_error.dart';
 import 'smartpark_ui.dart';
+import 'sp_reason_dropdowns.dart';
 
 /// Owner's "Report driver" control for one ticket. Once the owner has
 /// reported it, shows where the report stands instead.
@@ -192,23 +193,24 @@ class _ReportStatusStrip extends StatelessWidget {
   }
 }
 
-/// Asks the owner why they're reporting the driver of [ticket], then files
-/// the report. Returns whether one was sent.
+/// Asks the owner why they're reporting the driver of [ticket] (one or more
+/// reasons, [initialReasons] picked to start), then files the report.
+/// Returns whether one was sent.
 Future<bool> showReportDriverDialog(
   BuildContext context, {
   required String ownerId,
   required String ticketId,
   required Map<String, dynamic> ticket,
-  String? initialReason,
+  List<String> initialReasons = const <String>[],
   String initialDetails = '',
 }) async {
   final bool? sent = await showDialog<bool>(
     context: context,
     builder: (BuildContext dialogContext) => _ReportDriverDialog(
       ticket: ticket,
-      initialReason: initialReason,
+      initialReasons: initialReasons,
       initialDetails: initialDetails,
-      submit: (String reason, String details) => submitDriverReport(
+      submit: (List<String> reasons, String details) => submitDriverReport(
         ownerId: ownerId,
         establishmentId: ((ticket['establishmentId'] as String?) ?? '').trim(),
         establishmentName: ((ticket['establishmentName'] as String?) ?? '')
@@ -216,7 +218,7 @@ Future<bool> showReportDriverDialog(
         transactionId: ticketId,
         driverId: ((ticket['driverId'] as String?) ?? '').trim(),
         driverName: ((ticket['driverName'] as String?) ?? '').trim(),
-        reason: reason,
+        reasons: reasons,
         details: details,
       ),
     ),
@@ -230,31 +232,31 @@ Future<bool> showReportDriverDialog(
 }
 
 /// Staff flag a ticket's driver for their owner to look at, optionally with
-/// [initialReason] picked. Returns whether a flag was sent.
+/// [initialReasons] picked. Returns whether a flag was sent.
 Future<bool> showFlagIncidentDialog(
   BuildContext context, {
   required String ticketId,
   required Map<String, dynamic> ticket,
   required String staffName,
-  String? initialReason,
+  List<String> initialReasons = const <String>[],
 }) async {
   final String staffId = FirebaseAuth.instance.currentUser?.uid ?? '';
   final bool? sent = await showDialog<bool>(
     context: context,
     builder: (BuildContext dialogContext) => _ReportDriverDialog(
       ticket: ticket,
-      initialReason: initialReason,
+      initialReasons: initialReasons,
       title: 'Flag incident',
       intro:
           'Your parking owner sees this flag and decides whether to report '
           'the driver to SmartPark.',
       sendLabel: 'Flag for owner',
-      submit: (String reason, String details) => flagIncident(
+      submit: (List<String> reasons, String details) => flagIncident(
         staffId: staffId,
         staffName: staffName,
         transactionId: ticketId,
         ticket: ticket,
-        reason: reason,
+        reasons: reasons,
         details: details,
       ),
     ),
@@ -360,8 +362,9 @@ class SpIncidentFlagButton extends StatelessWidget {
   }
 }
 
-/// The reason-and-details form shared by owners reporting a driver to
-/// SmartPark and staff flagging one for their owner.
+/// The reasons-and-details form shared by owners reporting a driver to
+/// SmartPark and staff flagging one for their owner. One reason is picked
+/// per dropdown; "Add Another Reason" adds more.
 class _ReportDriverDialog extends StatefulWidget {
   const _ReportDriverDialog({
     required this.ticket,
@@ -371,16 +374,16 @@ class _ReportDriverDialog extends StatefulWidget {
         'The SmartPark admin reviews every report and may warn the driver. '
         'The driver is not told who reported them.',
     this.sendLabel = 'Send report',
-    this.initialReason,
+    this.initialReasons = const <String>[],
     this.initialDetails = '',
   });
 
   final Map<String, dynamic> ticket;
-  final Future<void> Function(String reason, String details) submit;
+  final Future<void> Function(List<String> reasons, String details) submit;
   final String title;
   final String intro;
   final String sendLabel;
-  final String? initialReason;
+  final List<String> initialReasons;
   final String initialDetails;
 
   @override
@@ -391,9 +394,11 @@ class _ReportDriverDialogState extends State<_ReportDriverDialog> {
   late final TextEditingController _details = TextEditingController(
     text: widget.initialDetails,
   );
-  late String? _reason = kDriverReportReasons.contains(widget.initialReason)
-      ? widget.initialReason
-      : null;
+  // Reasons no longer on the list (renamed since) aren't pre-picked.
+  late List<String?> _reasons = <String?>[
+    for (final String reason in widget.initialReasons)
+      if (kDriverReportReasons.contains(reason)) reason,
+  ];
   bool _missing = false;
   bool _sending = false;
   String? _error;
@@ -405,8 +410,9 @@ class _ReportDriverDialogState extends State<_ReportDriverDialog> {
   }
 
   Future<void> _send() async {
-    final String? reason = _reason;
-    if (reason == null || (reason == 'Other' && _details.text.trim().isEmpty)) {
+    final List<String> reasons = spPickedReasons(_reasons);
+    if (reasons.isEmpty ||
+        (reasons.contains('Other') && _details.text.trim().isEmpty)) {
       setState(() => _missing = true);
       return;
     }
@@ -415,7 +421,7 @@ class _ReportDriverDialogState extends State<_ReportDriverDialog> {
       _error = null;
     });
     try {
-      await widget.submit(reason, _details.text);
+      await widget.submit(reasons, _details.text);
       if (mounted) Navigator.of(context).pop(true);
     } catch (error) {
       if (mounted) {
@@ -487,42 +493,15 @@ class _ReportDriverDialogState extends State<_ReportDriverDialog> {
                 ),
               ),
               const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  for (final String reason in kDriverReportReasons)
-                    ChoiceChip(
-                      label: Text(reason),
-                      selected: _reason == reason,
-                      showCheckmark: false,
-                      labelStyle: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color: _reason == reason
-                            ? AppTheme.onAccent
-                            : AppTheme.textDark,
-                      ),
-                      selectedColor: AppTheme.accent,
-                      backgroundColor: AppTheme.surface,
-                      side: BorderSide(
-                        color: _reason == reason
-                            ? AppTheme.accent
-                            : _missing
-                            ? AppTheme.dangerBorder
-                            : AppTheme.border,
-                      ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(999),
-                      ),
-                      onSelected: _sending
-                          ? null
-                          : (bool on) => setState(() {
-                              _reason = on ? reason : null;
-                              _missing = false;
-                            }),
-                    ),
-                ],
+              SpReasonDropdowns(
+                options: kDriverReportReasons,
+                values: _reasons,
+                missing: _missing,
+                enabled: !_sending,
+                onChanged: (List<String?> reasons) => setState(() {
+                  _reasons = reasons;
+                  _missing = false;
+                }),
               ),
               const SizedBox(height: 14),
               TextField(
@@ -533,7 +512,7 @@ class _ReportDriverDialogState extends State<_ReportDriverDialog> {
                   if (_missing) setState(() => _missing = false);
                 },
                 decoration: InputDecoration(
-                  labelText: _reason == 'Other'
+                  labelText: _reasons.contains('Other')
                       ? 'Details (required for "Other")'
                       : 'Details (optional)',
                   hintText: 'When it happened, what was said, any damage...',
@@ -549,7 +528,7 @@ class _ReportDriverDialogState extends State<_ReportDriverDialog> {
                 const SizedBox(height: 8),
                 Text(
                   _error ??
-                      (_reason == 'Other'
+                      (_reasons.contains('Other')
                           ? 'Describe what happened in the details box.'
                           : 'Pick what happened first.'),
                   style: TextStyle(
@@ -639,7 +618,7 @@ class _SpStaffFlagsCardState extends State<SpStaffFlagsCard> {
       ownerId: FirebaseAuth.instance.currentUser?.uid ?? '',
       ticketId: (flag['transactionId'] as String?) ?? '',
       ticket: incidentAsTicket(flag),
-      initialReason: flag['reason'] as String?,
+      initialReasons: reportReasons(flag),
       initialDetails: [
         if (details.isNotEmpty) details,
         'Flagged by ${staff.isEmpty ? 'gate staff' : staff}.',

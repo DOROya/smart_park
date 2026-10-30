@@ -172,12 +172,14 @@ service cloud.firestore {
           ? !(resource.data.get('status', 'pending') in ['suspended', 'deactivated']) &&
             request.resource.data.get('reviewedBy', null) == null &&
             request.resource.data.get('rejectionReason', null) == null &&
-            unchanged('restrictionReason')
+            unchanged('restrictionReason') &&
+            unchanged('restrictionReasons')
           : unchanged('status') &&
             unchanged('reviewedBy') &&
             unchanged('reviewedAt') &&
             unchanged('rejectionReason') &&
-            unchanged('restrictionReason');
+            unchanged('restrictionReason') &&
+            unchanged('restrictionReasons');
     }
 
     match /establishment_details/{establishmentId} {
@@ -339,6 +341,15 @@ service cloud.firestore {
       return /databases/$(database)/documents/transactions/$(id);
     }
 
+    // A report or flag names one or more picked reasons: `reasons`, with
+    // `reason` holding them on one line (older ones have only `reason`).
+    function reasonsOk(d) {
+      return d.reason is string &&
+        d.reason.size() > 0 &&
+        (!d.keys().hasAny(['reasons']) ||
+          (d.reasons is list && d.reasons.size() > 0 && d.reasons.size() <= 10));
+    }
+
     // An owner reports the driver of one of their facility's tickets; the
     // ticket must really be that driver's, so reports can't be invented.
     // Only admins review them. Drivers never read reports.
@@ -348,8 +359,7 @@ service cloud.firestore {
       allow create: if isParkingOwner() &&
         request.resource.data.reporterId == uid() &&
         request.resource.data.status == 'open' &&
-        request.resource.data.reason is string &&
-        request.resource.data.reason.size() > 0 &&
+        reasonsOk(request.resource.data) &&
         isOwnerOf(request.resource.data.establishmentId) &&
         exists(transactionPath(request.resource.data.transactionId)) &&
         get(transactionPath(request.resource.data.transactionId)).data.establishmentId ==
@@ -370,8 +380,7 @@ service cloud.firestore {
       allow create: if isStaffOf(request.resource.data.establishmentId) &&
         request.resource.data.staffId == uid() &&
         request.resource.data.status == 'open' &&
-        request.resource.data.reason is string &&
-        request.resource.data.reason.size() > 0 &&
+        reasonsOk(request.resource.data) &&
         exists(transactionPath(request.resource.data.transactionId)) &&
         get(transactionPath(request.resource.data.transactionId)).data.establishmentId ==
           request.resource.data.establishmentId &&

@@ -293,7 +293,7 @@ class _StaffHomePageState extends State<StaffHomePage>
         ticketId: refused.transactionId!,
         ticket: ticket,
         staffName: _staffName,
-        initialReason: kWrongVehicleTypeReason,
+        initialReasons: const <String>[kWrongVehicleTypeReason],
       );
     } catch (error) {
       if (!mounted) return;

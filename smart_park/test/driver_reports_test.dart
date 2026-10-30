@@ -16,7 +16,7 @@ void main() {
       transactionId: 'tx-1',
       driverId: 'driver-1',
       driverName: 'Ana Reyes',
-      reason: 'Refused to pay overtime cash',
+      reasons: const <String>['Refused to pay overtime cash'],
       details: '  Left without paying.  ',
       firestore: db,
     );
@@ -71,7 +71,7 @@ void main() {
       transactionId: 'tx-2',
       driverId: 'driver-1',
       driverName: 'Ana Reyes',
-      reason: 'Other',
+      reasons: const <String>['Other'],
       details: 'Blocked the exit lane.',
       firestore: db,
     );

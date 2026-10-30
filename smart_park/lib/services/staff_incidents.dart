@@ -1,5 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import 'driver_reports.dart' show reasonFields;
+
 /// Gate staff flag a driver's ticket for their owner (`staff_incidents`);
 /// the owner then reports it to SmartPark (see driver_reports.dart) or
 /// dismisses it. Staff see what became of their flag; drivers never do.
@@ -12,17 +14,18 @@ String incidentStatus(Map<String, dynamic> data) =>
     ((data['status'] as String?) ?? kIncidentOpen).trim().toLowerCase();
 
 /// Flags the driver of ticket [transactionId] ([ticket] is its
-/// `transactions` doc). Security rules check the ticket is the staff
-/// member's facility's and belongs to that driver.
+/// `transactions` doc) for one or more [reasons]. Security rules check the
+/// ticket is the staff member's facility's and belongs to that driver.
 Future<void> flagIncident({
   required String staffId,
   required String staffName,
   required String transactionId,
   required Map<String, dynamic> ticket,
-  required String reason,
+  required List<String> reasons,
   String details = '',
   FirebaseFirestore? firestore,
 }) {
+  if (reasons.isEmpty) throw ArgumentError.value(reasons, 'reasons');
   final FirebaseFirestore db = firestore ?? FirebaseFirestore.instance;
   String text(String key) => ((ticket[key] as String?) ?? '').trim();
   return db.collection('staff_incidents').add(<String, dynamic>{
@@ -35,7 +38,7 @@ Future<void> flagIncident({
     'driverId': text('driverId'),
     'driverName': text('driverName'),
     'vehiclePlate': text('vehiclePlate'),
-    'reason': reason,
+    ...reasonFields(reasons),
     'details': details.trim(),
     'status': kIncidentOpen,
     'createdAt': FieldValue.serverTimestamp(),
