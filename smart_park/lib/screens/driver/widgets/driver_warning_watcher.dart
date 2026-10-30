@@ -7,113 +7,173 @@ import '../../../services/driver_reports.dart';
 import '../../../theme/app_theme.dart';
 import '../../../widgets/smartpark_ui.dart';
 
-/// Watches the signed-in driver's warnings from the SmartPark admin and
-/// shows each unread one in a dialog the driver has to acknowledge. Live, so
-/// a warning sent while the app is open appears straight away. Reports
-/// themselves are never shown to drivers, only the admin's warning.
-class DriverWarningWatcher {
-  DriverWarningWatcher(this._context, this.driverId);
+/// Shows the signed-in driver, once, the warnings the SmartPark admin sent
+/// since they last opened the app. Checked when the app opens or comes back
+/// to the foreground, never in the middle of use (e.g. at a gate). A warning
+/// counts as seen as soon as it pops up (`acknowledgedAt`), so it never pops
+/// up again; Account Notices on the Profile keeps every warning to read
+/// later. Reports themselves are never shown to drivers, only the warning.
+class DriverWarningWatcher with WidgetsBindingObserver {
+  DriverWarningWatcher(
+    this._context,
+    this.driverId, {
+    FirebaseFirestore? firestore,
+  }) : _db = firestore ?? FirebaseFirestore.instance;
 
   final BuildContext Function() _context;
   final String driverId;
-  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _sub;
-  bool _showing = false;
+  final FirebaseFirestore _db;
+  bool _checking = false;
 
   void start() {
-    _sub = FirebaseFirestore.instance
-        .collection('driver_warnings')
-        .where('driverId', isEqualTo: driverId)
-        .snapshots()
-        .listen(_onWarnings, onError: (Object _) {});
+    WidgetsBinding.instance.addObserver(this);
+    unawaited(check());
   }
 
-  void dispose() => unawaited(_sub?.cancel());
-
-  Future<void> _onWarnings(QuerySnapshot<Map<String, dynamic>> snap) async {
-    if (_showing) return;
-    final List<QueryDocumentSnapshot<Map<String, dynamic>>> unread =
-        snap.docs.where((d) => d.data()['acknowledgedAt'] == null).toList()
-          ..sort(
-            (a, b) => (spParseDateTime(a.data()['createdAt']) ?? DateTime.now())
-                .compareTo(
-                  spParseDateTime(b.data()['createdAt']) ?? DateTime.now(),
-                ),
-          );
-    if (unread.isEmpty) return;
-    final BuildContext context = _context();
-    if (!context.mounted) return;
-    _showing = true;
-    await showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => _WarningDialog(doc: unread.first),
-    );
-    _showing = false;
-  }
-}
-
-class _WarningDialog extends StatefulWidget {
-  const _WarningDialog({required this.doc});
-
-  final QueryDocumentSnapshot<Map<String, dynamic>> doc;
+  void dispose() => WidgetsBinding.instance.removeObserver(this);
 
   @override
-  State<_WarningDialog> createState() => _WarningDialogState();
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) unawaited(check());
+  }
+
+  /// Pops up the warnings not seen yet, oldest first, in one dialog.
+  Future<void> check() async {
+    if (_checking) return;
+    _checking = true;
+    try {
+      final QuerySnapshot<Map<String, dynamic>> snap = await _db
+          .collection('driver_warnings')
+          .where('driverId', isEqualTo: driverId)
+          .get();
+      final List<QueryDocumentSnapshot<Map<String, dynamic>>> unseen =
+          snap.docs.where((d) => d.data()['acknowledgedAt'] == null).toList()
+            ..sort(
+              (a, b) =>
+                  (spParseDateTime(a.data()['createdAt']) ?? DateTime.now())
+                      .compareTo(
+                        spParseDateTime(b.data()['createdAt']) ??
+                            DateTime.now(),
+                      ),
+            );
+      if (unseen.isEmpty) return;
+      final BuildContext context = _context();
+      if (!context.mounted) return;
+      // Seen once shown, however the dialog is closed. If saving fails it
+      // pops up again next time rather than never.
+      unawaited(
+        Future.wait(<Future<void>>[
+          for (final QueryDocumentSnapshot<Map<String, dynamic>> doc in unseen)
+            acknowledgeDriverWarning(doc.id, firestore: _db),
+        ]).catchError((Object _) => <void>[]),
+      );
+      await showDialog<void>(
+        context: context,
+        builder: (_) => _WarningDialog(
+          warnings: <Map<String, dynamic>>[
+            for (final QueryDocumentSnapshot<Map<String, dynamic>> doc
+                in unseen)
+              doc.data(),
+          ],
+        ),
+      );
+    } catch (_) {
+      // Offline or unreadable: try again the next time the app opens.
+    } finally {
+      _checking = false;
+    }
+  }
 }
 
-class _WarningDialogState extends State<_WarningDialog> {
-  bool _saving = false;
+/// The reasons a warning was sent for, as small labels. Older warnings may
+/// still name "Other", which tells the driver nothing, so it is left out.
+class _ReasonChips extends StatelessWidget {
+  const _ReasonChips({required this.warning});
 
-  Future<void> _acknowledge() async {
-    setState(() => _saving = true);
-    try {
-      await acknowledgeDriverWarning(widget.doc.id);
-    } catch (_) {
-      // Shown again next time; don't trap the driver in the dialog.
-    }
-    if (mounted) Navigator.of(context).pop();
-  }
+  final Map<String, dynamic> warning;
 
   @override
   Widget build(BuildContext context) {
-    final Map<String, dynamic> data = widget.doc.data();
-    final DateTime? at = spParseDateTime(data['createdAt']);
+    final List<String> reasons = warningReasons(warning);
+    if (reasons.isEmpty) return const SizedBox.shrink();
+    return Wrap(
+      spacing: 6,
+      runSpacing: 6,
+      children: [
+        for (final String reason in reasons)
+          SpChip(label: reason, color: AppTheme.accentText),
+      ],
+    );
+  }
+}
+
+/// Where and when a warning's report came from, e.g. "Mall Parking ·
+/// Oct 21, 2026".
+String _warningSource(Map<String, dynamic> warning) {
+  final String facility = ((warning['establishmentName'] as String?) ?? '')
+      .trim();
+  final DateTime? at = spParseDateTime(warning['createdAt']);
+  return <String>[
+    if (facility.isNotEmpty) facility,
+    if (at != null) spFormatDate(at),
+  ].join(' · ');
+}
+
+class _WarningDialog extends StatelessWidget {
+  const _WarningDialog({required this.warnings});
+
+  final List<Map<String, dynamic>> warnings;
+
+  @override
+  Widget build(BuildContext context) {
     return AlertDialog(
       icon: Icon(
         Icons.warning_amber_rounded,
         color: AppTheme.warning,
         size: 36,
       ),
-      title: const Text('Warning from SmartPark'),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (((data['reason'] as String?) ?? '').isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 10),
-              child: SpChip(
-                label: data['reason'] as String,
-                color: AppTheme.accentText,
+      title: Text(
+        warnings.length == 1
+            ? 'Warning from SmartPark'
+            : '${warnings.length} warnings from SmartPark',
+      ),
+      content: SizedBox(
+        width: 420,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              for (int i = 0; i < warnings.length; i++) ...[
+                if (i > 0) const Divider(height: 24),
+                _ReasonChips(warning: warnings[i]),
+                const SizedBox(height: 10),
+                Text(
+                  ((warnings[i]['message'] as String?) ?? '').trim(),
+                  style: TextStyle(height: 1.4, color: AppTheme.textDark),
+                ),
+                if (_warningSource(warnings[i]).isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  Text(
+                    _warningSource(warnings[i]),
+                    style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
+                  ),
+                ],
+              ],
+              const SizedBox(height: 14),
+              Text(
+                'You can read this again under Account Notices in your '
+                'Profile.',
+                style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
               ),
-            ),
-          Text(
-            ((data['message'] as String?) ?? '').trim(),
-            style: TextStyle(height: 1.4, color: AppTheme.textDark),
+            ],
           ),
-          if (at != null) ...[
-            const SizedBox(height: 10),
-            Text(
-              'Sent ${spFormatDate(at)}',
-              style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
-            ),
-          ],
-        ],
+        ),
       ),
       actions: [
         FilledButton(
-          onPressed: _saving ? null : _acknowledge,
-          child: Text(_saving ? 'Saving...' : 'I understand'),
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('I understand'),
         ),
       ],
     );
@@ -121,11 +181,12 @@ class _WarningDialogState extends State<_WarningDialog> {
 }
 
 /// Profile card listing every warning the SmartPark admin has sent the
-/// driver, newest first, so one already acknowledged can be read again.
+/// driver, newest first, so one already seen can be read again.
 class DriverNoticesCard extends StatefulWidget {
-  const DriverNoticesCard({super.key, required this.driverId});
+  const DriverNoticesCard({super.key, required this.driverId, this.firestore});
 
   final String driverId;
+  final FirebaseFirestore? firestore;
 
   @override
   State<DriverNoticesCard> createState() => _DriverNoticesCardState();
@@ -133,7 +194,7 @@ class DriverNoticesCard extends StatefulWidget {
 
 class _DriverNoticesCardState extends State<DriverNoticesCard> {
   late final Stream<QuerySnapshot<Map<String, dynamic>>> _warnings =
-      FirebaseFirestore.instance
+      (widget.firestore ?? FirebaseFirestore.instance)
           .collection('driver_warnings')
           .where('driverId', isEqualTo: widget.driverId)
           .snapshots();
@@ -184,61 +245,126 @@ class _DriverNoticesCardState extends State<DriverNoticesCard> {
   }
 }
 
-class _NoticeRow extends StatelessWidget {
+/// One warning, collapsed to its reasons, date and the start of the message
+/// to save space; tapping shows the whole thing.
+class _NoticeRow extends StatefulWidget {
   const _NoticeRow({required this.notice});
 
   final Map<String, dynamic> notice;
 
   @override
+  State<_NoticeRow> createState() => _NoticeRowState();
+}
+
+class _NoticeRowState extends State<_NoticeRow> {
+  bool _expanded = false;
+
+  @override
   Widget build(BuildContext context) {
+    final Map<String, dynamic> notice = widget.notice;
     final DateTime? at = spParseDateTime(notice['createdAt']);
-    final String reason = ((notice['reason'] as String?) ?? '').trim();
+    final List<String> reasons = warningReasons(notice);
+    final String facility = ((notice['establishmentName'] as String?) ?? '')
+        .trim();
+    final String message = ((notice['message'] as String?) ?? '').trim();
     return Container(
       width: double.infinity,
       margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: AppTheme.warningSoft,
         borderRadius: BorderRadius.circular(AppTheme.radius),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(
-                Icons.warning_amber_rounded,
-                size: 16,
-                color: AppTheme.accentText,
-              ),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  reason.isEmpty ? 'Warning' : reason,
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w800,
-                    color: AppTheme.textDark,
+      child: Material(
+        type: MaterialType.transparency,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(AppTheme.radius),
+          onTap: () => setState(() => _expanded = !_expanded),
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: AnimatedSize(
+              duration: const Duration(milliseconds: 200),
+              curve: Curves.easeOutCubic,
+              alignment: Alignment.topCenter,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.warning_amber_rounded,
+                        size: 16,
+                        color: AppTheme.accentText,
+                      ),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          reasons.isEmpty ? 'Warning' : reasons.join(', '),
+                          maxLines: _expanded ? null : 1,
+                          overflow: _expanded ? null : TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w800,
+                            color: AppTheme.textDark,
+                          ),
+                        ),
+                      ),
+                      if (at != null)
+                        Text(
+                          spFormatDate(at),
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: AppTheme.textMuted,
+                          ),
+                        ),
+                      AnimatedRotation(
+                        turns: _expanded ? 0.5 : 0,
+                        duration: const Duration(milliseconds: 200),
+                        child: Icon(
+                          Icons.expand_more_rounded,
+                          size: 20,
+                          color: AppTheme.textMuted,
+                        ),
+                      ),
+                    ],
                   ),
-                ),
+                  const SizedBox(height: 6),
+                  Text(
+                    message,
+                    maxLines: _expanded ? null : 2,
+                    overflow: _expanded ? null : TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 12,
+                      height: 1.4,
+                      color: AppTheme.textSecondary,
+                    ),
+                  ),
+                  if (_expanded && facility.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      'Facility: $facility',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: AppTheme.textDark,
+                      ),
+                    ),
+                  ],
+                  if (!_expanded) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      'Tap to read more',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: AppTheme.accentText,
+                      ),
+                    ),
+                  ],
+                ],
               ),
-              if (at != null)
-                Text(
-                  spFormatDate(at),
-                  style: TextStyle(fontSize: 11, color: AppTheme.textMuted),
-                ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          Text(
-            ((notice['message'] as String?) ?? '').trim(),
-            style: TextStyle(
-              fontSize: 12,
-              height: 1.4,
-              color: AppTheme.textSecondary,
             ),
           ),
-        ],
+        ),
       ),
     );
   }
