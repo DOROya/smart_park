@@ -690,6 +690,7 @@ class _ChangePlateDialogState extends State<_ChangePlateDialog> {
                   labelText: 'Plate number',
                   hintText: 'ABC 1234',
                   errorText: _error,
+                  errorMaxLines: 3,
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(AppTheme.radius),
                   ),

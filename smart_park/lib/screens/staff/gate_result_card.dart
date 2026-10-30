@@ -88,41 +88,41 @@ class GateResultCard extends StatelessWidget {
               style: const TextStyle(fontWeight: FontWeight.w700),
             ),
           ] else ...<Widget>[
+            // On its own line: beside the plate, "MOTORCYCLE" doesn't fit at
+            // phone width.
             const SizedBox(height: 12),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: SpVehicleTypeBadge(
+                vehicleType: result.vehicleType,
+                large: true,
+              ),
+            ),
+            const SizedBox(height: 8),
             Row(
+              crossAxisAlignment: CrossAxisAlignment.baseline,
+              textBaseline: TextBaseline.alphabetic,
               children: <Widget>[
-                Flexible(
-                  child: SpVehicleTypeBadge(
-                    vehicleType: result.vehicleType,
-                    large: true,
+                Text(
+                  '${result.scanType.toUpperCase()} · PLATE  ',
+                  style: TextStyle(
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.6,
+                    color: AppTheme.textMuted,
                   ),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: <Widget>[
-                      Text(
-                        '${result.scanType.toUpperCase()} · PLATE',
-                        style: TextStyle(
-                          fontSize: 10.5,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: 0.6,
-                          color: AppTheme.textMuted,
-                        ),
-                      ),
-                      Text(
-                        result.vehiclePlate,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: 1,
-                          color: AppTheme.textDark,
-                        ),
-                      ),
-                    ],
+                Flexible(
+                  child: Text(
+                    result.vehiclePlate,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 1,
+                      color: AppTheme.textDark,
+                    ),
                   ),
                 ),
               ],

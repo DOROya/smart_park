@@ -60,7 +60,7 @@ class SpVehicleTypeBadge extends StatelessWidget {
     final (Color fill, Color text) = spVehicleTypeColors(key);
     return Container(
       padding: large
-          ? const EdgeInsets.symmetric(horizontal: 14, vertical: 10)
+          ? const EdgeInsets.symmetric(horizontal: 12, vertical: 10)
           : const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
         color: fill,
@@ -71,18 +71,21 @@ class SpVehicleTypeBadge extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(spVehicleTypeIcon(key), color: text, size: large ? 34 : 18),
-          SizedBox(width: large ? 10 : 6),
+          Icon(spVehicleTypeIcon(key), color: text, size: large ? 30 : 18),
+          SizedBox(width: large ? 8 : 6),
+          // Shrinks rather than cut off: a half-read type is no use.
           Flexible(
-            child: Text(
-              spVehicleTypeLabel(key).toUpperCase(),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: text,
-                fontSize: large ? 24 : 13,
-                fontWeight: FontWeight.w900,
-                letterSpacing: large ? 1.2 : 0.6,
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                spVehicleTypeLabel(key).toUpperCase(),
+                maxLines: 1,
+                style: TextStyle(
+                  color: text,
+                  fontSize: large ? 22 : 13,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 0.6,
+                ),
               ),
             ),
           ),

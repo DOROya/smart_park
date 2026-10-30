@@ -1,5 +1,6 @@
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:smart_park/screens/staff/gate_result_card.dart';
 import 'package:smart_park/services/driver_reports.dart';
@@ -186,6 +187,21 @@ void main() {
           .style!
           .fontSize!;
       expect(typeSize, greaterThan(plateSize));
+    });
+
+    testWidgets('fits MOTORCYCLE whole and full size at phone width', (
+      WidgetTester tester,
+    ) async {
+      await pumpCard(tester, result(), onWrongVehicle: () {});
+      final Finder label = find.text('MOTORCYCLE');
+      expect(
+        tester.renderObject<RenderParagraph>(label).didExceedMaxLines,
+        isFalse,
+      );
+      // Drawn at its own size: not scaled down to fit beside something.
+      final double drawnWidth =
+          tester.getBottomRight(label).dx - tester.getTopLeft(label).dx;
+      expect(drawnWidth, closeTo(tester.getSize(label).width, 0.5));
     });
 
     testWidgets('shows CAR in the car color', (WidgetTester tester) async {
