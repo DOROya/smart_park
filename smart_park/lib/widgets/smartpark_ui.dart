@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
+import '../services/gate_scan_service.dart' show kRefusalWrongVehicle;
 import '../services/parking_pricing.dart';
 import '../theme/app_theme.dart';
 import '../utils/staff_credentials.dart';
@@ -80,6 +81,15 @@ bool spIsAllowedLog(Map<String, dynamic> data) =>
         .toUpperCase() ==
     'ALLOWED';
 
+/// A scan staff turned away by hand as the wrong vehicle type. Unlike other
+/// denied scans it is a decision, not noise, so the activity lists show it.
+bool spIsStaffRefusedLog(Map<String, dynamic> data) =>
+    data['refusal'] == kRefusalWrongVehicle;
+
+/// Gate logs the activity lists show: allowed scans and staff refusals.
+bool spIsListedLog(Map<String, dynamic> data) =>
+    spIsAllowedLog(data) || spIsStaffRefusedLog(data);
+
 /// Whether an allowed entry scan still has no matching exit.
 bool spIsInsideLog(Map<String, dynamic> data) =>
     spIsAllowedLog(data) &&
@@ -152,9 +162,11 @@ class SpActivitySummary {
       if (!spSameDate(timestamp, day)) {
         continue;
       }
-      // Denied scans stay logged but are hidden from the activity UI.
+      // Denied scans stay logged but are hidden from the activity UI, except
+      // staff refusals, which are listed without counting as scans in or out.
       if (!spIsAllowedLog(data)) {
         denied++;
+        if (spIsStaffRefusedLog(data)) dayLogs.add(data);
         continue;
       }
       dayLogs.add(data);

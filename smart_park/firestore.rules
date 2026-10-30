@@ -1,9 +1,10 @@
 rules_version = '2';
 
 // Who may do what:
-// - Drivers read establishments and their own tickets. Tickets, payments,
-//   payment splits and stats are written only by Cloud Functions (Admin SDK,
-//   which bypasses these rules), so no client can mark anything paid.
+// - Drivers read establishments and their own tickets, and may change a
+//   ticket's plate. Tickets, payments, payment splits and stats are
+//   otherwise written only by Cloud Functions (Admin SDK, which bypasses
+//   these rules), so no client can mark anything paid.
 // - Parking owners manage their own establishment and staff, and read their
 //   own establishment's tickets, splits and gate logs.
 // - Staff (staff_accounts/{uid}) work one facility's gate.
@@ -296,6 +297,24 @@ service cloud.firestore {
         ]);
     }
 
+    // A ticket is for one vehicle type, not one plate: its driver may move a
+    // paid ticket to another plate (stored trimmed and upper-cased, as
+    // checkout does) while it isn't parked. Nothing else changes, the
+    // vehicle type included.
+    function driverPlateUpdateOk() {
+      let plate = request.resource.data.get('vehiclePlate', '');
+      return signedIn() &&
+        resource.data.get('driverId', '') == uid() &&
+        resource.data.get('status', '') == 'paid' &&
+        !(resource.data.get('entryStatus', '') in ['checked_in', 'inside']) &&
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['vehiclePlate', 'updatedAt']) &&
+        plate is string &&
+        plate.size() > 0 && plate.size() <= 20 &&
+        plate == plate.trim().upper() &&
+        request.resource.data.get('updatedAt', null) == request.time;
+    }
+
     match /transactions/{transactionId} {
       allow read: if (signedIn() && resource.data.driverId == uid()) ||
         canSeeEstablishment(resource.data.establishmentId);
@@ -303,7 +322,8 @@ service cloud.firestore {
       allow delete: if false;
       allow update: if (isStaffOf(resource.data.establishmentId) &&
           staffTicketUpdateOk()) ||
-        (isOwnerOf(resource.data.establishmentId) && ownerOvertimeUpdateOk());
+        (isOwnerOf(resource.data.establishmentId) && ownerOvertimeUpdateOk()) ||
+        driverPlateUpdateOk();
     }
 
     match /payments/{paymentId} {

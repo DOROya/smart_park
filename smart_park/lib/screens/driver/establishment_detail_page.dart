@@ -959,6 +959,7 @@ class _EstablishmentDetailPageState extends State<EstablishmentDetailPage>
             establishmentName: status.establishmentName,
             amount: status.amount,
             qrData: status.qrCode!,
+            vehicleType: vehicleType,
           ),
         ),
       );
