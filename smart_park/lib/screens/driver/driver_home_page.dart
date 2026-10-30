@@ -56,7 +56,7 @@ class _DriverHomePageState extends State<DriverHomePage>
   /// only look the place name up again after moving a few hundred meters.
   Position? _labelPosition;
 
-  /// Pops up warnings from the SmartPark admin until the driver reads them.
+  /// Pops up new warnings from the SmartPark admin once, when the app opens.
   DriverWarningWatcher? _warnings;
 
   @override

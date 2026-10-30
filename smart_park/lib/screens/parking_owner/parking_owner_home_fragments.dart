@@ -263,8 +263,9 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
                             status: details['status'] as String?,
                             rejectionReason:
                                 details['rejectionReason'] as String?,
-                            restrictionReason:
-                                details['restrictionReason'] as String?,
+                            restrictionReasons: facilityRestrictionReasons(
+                              details,
+                            ),
                             appealedAt: spParseDateTime(details['appealedAt']),
                             onAskForReview: () => showFacilityAppealDialog(
                               context,
@@ -365,7 +366,7 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
           FacilityReviewStatusBanner(
             status: details['status'] as String?,
             rejectionReason: details['rejectionReason'] as String?,
-            restrictionReason: details['restrictionReason'] as String?,
+            restrictionReasons: facilityRestrictionReasons(details),
             appealedAt: spParseDateTime(details['appealedAt']),
             onAskForReview: () => showFacilityAppealDialog(
               context,

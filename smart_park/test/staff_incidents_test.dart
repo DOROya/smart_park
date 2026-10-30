@@ -18,7 +18,7 @@ void main() {
           'driverName': 'Ana Reyes',
           'vehiclePlate': 'ABC 123',
         },
-        reason: 'Refused to pay overtime cash',
+        reasons: const <String>['Refused to pay overtime cash'],
         details: ' Drove off. ',
         firestore: db,
       );

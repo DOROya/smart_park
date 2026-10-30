@@ -8,6 +8,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../../models/facility_registration_data.dart';
+import '../../../services/facility_status.dart' show facilityRestrictionReasons;
 import '../../../services/operating_hours.dart';
 import '../../../services/parking_storage_service.dart';
 import '../../../theme/app_theme.dart';
@@ -1481,8 +1482,9 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
                         status: _reviewStatus,
                         rejectionReason:
                             _facilityData?['rejectionReason'] as String?,
-                        restrictionReason:
-                            _facilityData?['restrictionReason'] as String?,
+                        restrictionReasons: facilityRestrictionReasons(
+                          _facilityData,
+                        ),
                         hint: _reviewStatus == 'approved'
                             ? 'Changing business documents will require re-approval.'
                             : null,

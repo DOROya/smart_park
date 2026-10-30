@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import '../../../services/facility_status.dart' show joinReasons;
 import '../../../theme/app_theme.dart';
 import '../../../utils/friendly_error.dart';
 import '../../../widgets/smartpark_ui.dart';
@@ -11,7 +12,7 @@ class FacilityReviewStatusBanner extends StatelessWidget {
     super.key,
     required this.status,
     this.rejectionReason,
-    this.restrictionReason,
+    this.restrictionReasons = const <String>[],
     this.hint,
     this.appealedAt,
     this.onAskForReview,
@@ -20,8 +21,8 @@ class FacilityReviewStatusBanner extends StatelessWidget {
   final String? status;
   final String? rejectionReason;
 
-  /// The predefined reason an admin picked when suspending or deactivating.
-  final String? restrictionReason;
+  /// The predefined reasons an admin picked when suspending or deactivating.
+  final List<String> restrictionReasons;
 
   /// Optional extra line, e.g. what saving the form will do.
   final String? hint;
@@ -41,9 +42,13 @@ class FacilityReviewStatusBanner extends StatelessWidget {
   Widget build(BuildContext context) {
     final String normalized = (status ?? 'pending').toLowerCase();
     final String reason = rejectionReason?.trim() ?? '';
+    // "Other" alone says nothing; the admin's note explains it.
+    final int shownReasons = restrictionReasons
+        .where((String r) => r != 'Other')
+        .length;
     final String picked =
         normalized == 'suspended' || normalized == 'deactivated'
-        ? restrictionReason?.trim() ?? ''
+        ? joinReasons(restrictionReasons.where((String r) => r != 'Other'))
         : '';
 
     final (
@@ -122,7 +127,7 @@ class FacilityReviewStatusBanner extends StatelessWidget {
                     fontWeight: FontWeight.w500,
                   ),
                 ),
-                if (picked.isNotEmpty && picked != 'Other') ...[
+                if (picked.isNotEmpty) ...[
                   const SizedBox(height: 8),
                   Container(
                     padding: const EdgeInsets.symmetric(
@@ -134,7 +139,7 @@ class FacilityReviewStatusBanner extends StatelessWidget {
                       borderRadius: BorderRadius.circular(999),
                     ),
                     child: Text(
-                      'Reason: $picked',
+                      '${shownReasons > 1 ? 'Reasons' : 'Reason'}: $picked',
                       style: TextStyle(
                         color: AppTheme.textDark,
                         fontSize: 12,

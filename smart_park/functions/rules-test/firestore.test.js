@@ -180,7 +180,8 @@ test("only admins lift a suspension or deactivation", async () => {
     await env.withSecurityRulesDisabled((ctx) =>
       setDoc(doc(ctx.firestore(), "establishment_details/est1"), {
         status, reviewedBy: "admin1", rejectionReason: "Complaints",
-        restrictionReason: "Repeated driver complaints",
+        restrictionReason: "Repeated driver complaints, Facility not operating",
+        restrictionReasons: ["Repeated driver complaints", "Facility not operating"],
       }));
     // Editing details is fine, but the status and admin note stay put.
     await assertSucceeds(updateDoc(doc(owner(), "establishment_details/est1"), { rates: { car: 60 } }));
@@ -192,8 +193,10 @@ test("only admins lift a suspension or deactivation", async () => {
     await assertFails(updateDoc(doc(owner(), "establishment_details/est1"), { status: "approved" }));
     await assertFails(updateDoc(doc(owner(), "establishment_details/est1"), { rejectionReason: null }));
     await assertFails(updateDoc(doc(owner(), "establishment_details/est1"), { restrictionReason: null }));
+    await assertFails(updateDoc(doc(owner(), "establishment_details/est1"), { restrictionReasons: [] }));
+    await assertFails(updateDoc(doc(owner(), "establishment_details/est1"), { restrictionReasons: null }));
     await assertSucceeds(updateDoc(doc(admin(), "establishment_details/est1"), {
-      status: "approved", rejectionReason: null, restrictionReason: null,
+      status: "approved", rejectionReason: null, restrictionReason: null, restrictionReasons: null,
     }));
   }
 });
@@ -487,6 +490,19 @@ test("owners report only real drivers of their own facility's tickets", async ()
   await assertFails(setDoc(doc(owner(), "driver_reports/r4"), reportOf({ transactionId: "tx2" })));
   await assertFails(setDoc(doc(owner(), "driver_reports/r5"), reportOf({ status: "warned" })));
   await assertFails(setDoc(doc(driver(), "driver_reports/r6"), reportOf({ reporterId: "driver1" })));
+});
+
+test("reports and flags carry one or more picked reasons", async () => {
+  const two = { reasons: ["Rude or abusive to staff", "Other"], reason: "Rude or abusive to staff, Other" };
+  await assertSucceeds(setDoc(doc(owner(), "driver_reports/m1"), reportOf(two)));
+  await assertSucceeds(setDoc(doc(staff(), "staff_incidents/m1"), flagOf(two)));
+  // The one-line reason is still required, and the list can't be empty,
+  // something else, or endless.
+  await assertFails(setDoc(doc(owner(), "driver_reports/m2"), reportOf({ ...two, reason: "" })));
+  await assertFails(setDoc(doc(owner(), "driver_reports/m3"), reportOf({ reasons: [] })));
+  await assertFails(setDoc(doc(owner(), "driver_reports/m4"), reportOf({ reasons: "Other" })));
+  await assertFails(setDoc(doc(owner(), "driver_reports/m5"), reportOf({ reasons: Array(11).fill("Other") })));
+  await assertFails(setDoc(doc(staff(), "staff_incidents/m2"), flagOf({ reasons: [] })));
 });
 
 test("drivers never read reports; only admins review them", async () => {
