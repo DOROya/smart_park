@@ -43,6 +43,9 @@ class FacilityReviewStatusBanner extends StatelessWidget {
     final String normalized = (status ?? 'pending').toLowerCase();
     final String reason = rejectionReason?.trim() ?? '';
     // "Other" alone says nothing; the admin's note explains it.
+    final int shownReasons = restrictionReasons
+        .where((String r) => r != 'Other')
+        .length;
     final String picked =
         normalized == 'suspended' || normalized == 'deactivated'
         ? joinReasons(restrictionReasons.where((String r) => r != 'Other'))
@@ -136,7 +139,7 @@ class FacilityReviewStatusBanner extends StatelessWidget {
                       borderRadius: BorderRadius.circular(999),
                     ),
                     child: Text(
-                      'Reason: $picked',
+                      '${shownReasons > 1 ? 'Reasons' : 'Reason'}: $picked',
                       style: TextStyle(
                         color: AppTheme.textDark,
                         fontSize: 12,

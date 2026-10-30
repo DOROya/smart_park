@@ -1048,7 +1048,9 @@ class _InvalidTicketCardState extends State<_InvalidTicketCard> {
                               TextSpan(
                                 children: [
                                   TextSpan(
-                                    text: 'Reason given: ',
+                                    text: reasons.length > 1
+                                        ? 'Reasons given: '
+                                        : 'Reason given: ',
                                     style: TextStyle(
                                       color: AppTheme.textSecondary,
                                     ),

@@ -1,6 +1,7 @@
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:smart_park/screens/parking_owner/widgets/facility_review_status_banner.dart';
 import 'package:smart_park/services/driver_reports.dart';
 import 'package:smart_park/services/facility_status.dart';
 import 'package:smart_park/services/staff_incidents.dart';
@@ -165,6 +166,36 @@ void main() {
         isEmpty,
       );
       expect(facilityRestrictionReason(null), isNull);
+    });
+  });
+
+  group('owner banner', () {
+    Future<void> pumpBanner(WidgetTester tester, List<String> reasons) =>
+        tester.pumpWidget(
+          MaterialApp(
+            theme: AppTheme.theme,
+            home: Scaffold(
+              body: FacilityReviewStatusBanner(
+                status: 'suspended',
+                restrictionReasons: reasons,
+              ),
+            ),
+          ),
+        );
+
+    testWidgets('names every picked reason', (WidgetTester tester) async {
+      await pumpBanner(tester, <String>['Facility not operating', 'Safety']);
+      expect(
+        find.text('Reasons: Facility not operating, Safety'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('leaves out "Other"', (WidgetTester tester) async {
+      await pumpBanner(tester, <String>['Facility not operating', 'Other']);
+      expect(find.text('Reason: Facility not operating'), findsOneWidget);
+      await pumpBanner(tester, <String>['Other']);
+      expect(find.textContaining('Reason'), findsNothing);
     });
   });
 

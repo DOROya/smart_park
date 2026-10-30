@@ -755,7 +755,7 @@ class _AdminHomePageState extends State<AdminHomePage>
   Future<bool> _confirmRestrictFacility(
     BuildContext dialogContext,
     String newStatus,
-    String reason,
+    List<String> reasons,
   ) async {
     final bool suspend = newStatus == 'suspended';
     final bool? confirmed = await showDialog<bool>(
@@ -780,11 +780,11 @@ class _AdminHomePageState extends State<AdminHomePage>
                   TextSpan(
                     children: [
                       TextSpan(
-                        text: 'Reason: ',
+                        text: reasons.length > 1 ? 'Reasons: ' : 'Reason: ',
                         style: TextStyle(color: AppTheme.textMuted),
                       ),
                       TextSpan(
-                        text: reason,
+                        text: joinReasons(reasons),
                         style: TextStyle(
                           fontWeight: FontWeight.w700,
                           color: AppTheme.textDark,
@@ -1016,10 +1016,10 @@ class _AdminHomePageState extends State<AdminHomePage>
                     confirmed = await _confirmRestrictFacility(
                       dialogContext,
                       newStatus,
-                      joinReasons(<String>[
+                      <String>[
                         for (final String reason in reasons)
                           reason == 'Other' ? note : reason,
-                      ]),
+                      ],
                     );
                   } else if (newStatus == 'approved' &&
                       documentUrls.isEmpty &&
@@ -1142,8 +1142,10 @@ class _AdminHomePageState extends State<AdminHomePage>
                 final bool restricting =
                     current == 'approved' || current == 'suspended';
                 final String noteTitle = switch (current) {
-                  'suspended' => 'Suspension Reason',
-                  'deactivated' => 'Deactivation Reason',
+                  'suspended' =>
+                    'Suspension Reason${previousRestriction.length > 1 ? 's' : ''}',
+                  'deactivated' =>
+                    'Deactivation Reason${previousRestriction.length > 1 ? 's' : ''}',
                   _ => 'Previous Rejection Reason',
                 };
 
