@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
 import '../../theme/app_theme.dart';
+import '../../widgets/sp_vehicle_type.dart';
 
 class DriverPaidTicketPage extends StatelessWidget {
   const DriverPaidTicketPage({
@@ -9,11 +10,15 @@ class DriverPaidTicketPage extends StatelessWidget {
     required this.establishmentName,
     required this.amount,
     required this.qrData,
+    required this.vehicleType,
   });
 
   final String establishmentName;
   final double amount;
   final String qrData;
+
+  /// The vehicle type the ticket was bought for.
+  final String vehicleType;
 
   @override
   Widget build(BuildContext context) {
@@ -85,6 +90,23 @@ class DriverPaidTicketPage extends StatelessWidget {
                           data: qrData,
                           size: 210,
                           backgroundColor: Colors.white,
+                        ),
+                        const SizedBox(height: 14),
+                        SpVehicleTypeBadge(
+                          vehicleType: vehicleType,
+                          large: true,
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          spTicketSharingRule(
+                            spVehicleTypeLabel(spVehicleTypeKey(vehicleType)),
+                          ),
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: AppTheme.textSecondary,
+                            fontSize: 12,
+                            height: 1.35,
+                          ),
                         ),
                         const SizedBox(height: 14),
                         Text(

@@ -229,19 +229,21 @@ Future<bool> showReportDriverDialog(
   return sent ?? false;
 }
 
-/// Staff flag a ticket's driver for their owner to look at. Returns whether
-/// a flag was sent.
+/// Staff flag a ticket's driver for their owner to look at, optionally with
+/// [initialReason] picked. Returns whether a flag was sent.
 Future<bool> showFlagIncidentDialog(
   BuildContext context, {
   required String ticketId,
   required Map<String, dynamic> ticket,
   required String staffName,
+  String? initialReason,
 }) async {
   final String staffId = FirebaseAuth.instance.currentUser?.uid ?? '';
   final bool? sent = await showDialog<bool>(
     context: context,
     builder: (BuildContext dialogContext) => _ReportDriverDialog(
       ticket: ticket,
+      initialReason: initialReason,
       title: 'Flag incident',
       intro:
           'Your parking owner sees this flag and decides whether to report '

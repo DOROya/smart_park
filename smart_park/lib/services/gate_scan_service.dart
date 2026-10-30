@@ -21,6 +21,7 @@ class GateScanResult {
     this.overtimeAmount,
     this.activityLogId,
     this.overtimeCollected = false,
+    this.vehicleType,
   });
 
   final String decision;
@@ -40,26 +41,68 @@ class GateScanResult {
   /// Staff confirmed the overtime cash was handed over.
   final bool overtimeCollected;
 
+  /// The vehicle type the ticket was bought for, which staff check against
+  /// the vehicle at the gate; null when no ticket was read.
+  final String? vehicleType;
+
   bool get isAllowed => decision == 'ALLOWED';
   bool get isDenied => decision == 'DENIED';
   bool get hasOvertime => (overtimeHours ?? 0) > 0 && (overtimeAmount ?? 0) > 0;
 
-  /// This result after the overtime cash was marked collected.
-  GateScanResult markedCollected() => GateScanResult(
+  /// An admitted entry staff may still refuse as the wrong vehicle type.
+  bool get canRefuseVehicle => isAllowed && scanType == 'entry';
+
+  GateScanResult _copy({
+    String? reason,
+    bool? overtimeCollected,
+    String? vehicleType,
+  }) => GateScanResult(
     decision: decision,
     vehiclePlate: vehiclePlate,
     scanType: scanType,
     timestamp: timestamp,
-    reason: 'Overtime cash collected. Release.',
+    reason: reason ?? this.reason,
     transactionId: transactionId,
     elapsed: elapsed,
     billableHours: billableHours,
     overtimeHours: overtimeHours,
     overtimeAmount: overtimeAmount,
     activityLogId: activityLogId,
+    overtimeCollected: overtimeCollected ?? this.overtimeCollected,
+    vehicleType: vehicleType ?? this.vehicleType,
+  );
+
+  /// This result after the overtime cash was marked collected.
+  GateScanResult markedCollected() => _copy(
+    reason: 'Overtime cash collected. Release.',
     overtimeCollected: true,
   );
 }
+
+/// `refusal` on a gate log that staff refused by hand after the scan
+/// admitted it: the vehicle was not the type the ticket was bought for.
+const String kRefusalWrongVehicle = 'wrong_vehicle';
+
+const String kWrongVehicleReason = 'Vehicle type does not match ticket.';
+
+/// What an entry scan changed on its ticket, so staff can undo it.
+class _AdmittedEntry {
+  const _AdmittedEntry(this.transactionId, this.logId, this.prior);
+
+  final String transactionId;
+  final String logId;
+
+  /// The ticket's entry fields from before the check-in; absent ones are
+  /// missing.
+  final Map<String, dynamic> prior;
+}
+
+const List<String> _entryFields = <String>[
+  'entryStatus',
+  'entryAt',
+  'entryStaffId',
+  'entryLogId',
+];
 
 /// `overtimeStatus` values on exit logs and tickets.
 const String kOvertimeNone = 'none';
@@ -185,6 +228,9 @@ class GateScanService {
   /// reporting it.
   String? _lastProcessedTicketKey;
   DateTime? _lastProcessedAt;
+
+  /// The latest entry this gate admitted, which staff may still refuse.
+  _AdmittedEntry? _lastEntry;
 
   static const Duration rescanCooldown = Duration(seconds: 8);
 
@@ -474,8 +520,9 @@ class GateScanService {
       final String ticketPlate =
           ((ticket['vehiclePlate'] as String?) ?? payloadPlate).trim();
       final String plate = ticketPlate.isEmpty ? '--' : ticketPlate;
+      final String vehicleType = _vehicleType(ticket);
       if (_ticketFacility(ticket) != facilityId) {
-        return _deny(
+        return (await _deny(
           staff: staff,
           scanType: gateMode,
           plate: plate,
@@ -483,10 +530,10 @@ class GateScanService {
           timestamp: now,
           logReason: 'Ticket belongs to another facility.',
           reason: 'Ticket issued for another facility.',
-        );
+        ))._copy(vehicleType: vehicleType);
       }
       if (status != 'paid') {
-        return _deny(
+        return (await _deny(
           staff: staff,
           scanType: gateMode,
           plate: plate,
@@ -494,7 +541,7 @@ class GateScanService {
           timestamp: now,
           logReason: 'Ticket not paid ($status).',
           reason: 'Payment not confirmed.',
-        );
+        ))._copy(vehicleType: vehicleType);
       }
       final GateScanResult result = gateMode == 'entry'
           ? await _processEntryScan(
@@ -517,7 +564,7 @@ class GateScanService {
         _lastProcessedTicketKey = ticketKey;
         _lastProcessedAt = now;
       }
-      return result;
+      return result._copy(vehicleType: vehicleType);
     } catch (error, stack) {
       reportError(error, stack, reason: 'Gate scan verification failed');
       return GateScanResult(
@@ -604,6 +651,10 @@ class GateScanService {
       'remainingHours': hoursLeft,
     });
     await batch.commit();
+    _lastEntry = _AdmittedEntry(transactionId, logRef.id, <String, dynamic>{
+      for (final String field in _entryFields)
+        if (ticket.containsKey(field)) field: ticket[field],
+    });
     await _logStaffAction(
       staff: staff,
       action: 'scan_entry',
@@ -617,7 +668,79 @@ class GateScanService {
       scanType: 'entry',
       timestamp: scannedAt,
       transactionId: transactionId,
+      activityLogId: logRef.id,
       reason: 'Paid ticket verified. ${_hoursText(hoursLeft)} left. Admit.',
+    );
+  }
+
+  /// Staff turn away the vehicle on the entry just admitted ([admitted])
+  /// because it isn't the type the ticket was bought for. Entry scans check
+  /// the ticket in as they're read, so this undoes that check-in and turns
+  /// its gate log into a refused scan. Returns the refused result and the
+  /// ticket, for flagging its driver.
+  Future<(GateScanResult, Map<String, dynamic>)> refuseWrongVehicle({
+    required GateStaff staff,
+    required GateScanResult admitted,
+  }) async {
+    final _AdmittedEntry? entry = _lastEntry;
+    if (!admitted.canRefuseVehicle ||
+        entry == null ||
+        entry.logId != admitted.activityLogId) {
+      throw StateError('Only the entry just admitted can be refused.');
+    }
+    final DocumentReference<Map<String, dynamic>> ticketRef = _db
+        .collection('transactions')
+        .doc(entry.transactionId);
+    final Map<String, dynamic> ticket =
+        (await ticketRef.get()).data() ?? <String, dynamic>{};
+    // Only while that check-in still stands; an exit since then is real.
+    if (_entryStatus(ticket) != 'checked_in' ||
+        ticket['entryLogId'] != entry.logId) {
+      throw StateError('This ticket was scanned again since. Rescan it.');
+    }
+    final WriteBatch batch = _db.batch();
+    batch.set(ticketRef, <String, dynamic>{
+      for (final String field in _entryFields)
+        field: entry.prior.containsKey(field)
+            ? entry.prior[field]
+            : FieldValue.delete(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+    batch.set(
+      _db.collection('activity_logs').doc(entry.logId),
+      <String, dynamic>{
+        'status': 'DENIED',
+        'decision': 'DENIED',
+        'decisionReason': kWrongVehicleReason,
+        'refusal': kRefusalWrongVehicle,
+        'isActive': false,
+        'refusedAt': FieldValue.serverTimestamp(),
+      },
+      SetOptions(merge: true),
+    );
+    await batch.commit();
+    _lastEntry = null;
+    // The right vehicle may come back with the same ticket straight away.
+    _lastProcessedTicketKey = null;
+    await _logStaffAction(
+      staff: staff,
+      action: 'refuse_wrong_vehicle',
+      transactionId: entry.transactionId,
+      activityLogId: entry.logId,
+      vehiclePlate: admitted.vehiclePlate,
+    );
+    return (
+      GateScanResult(
+        decision: 'DENIED',
+        vehiclePlate: admitted.vehiclePlate,
+        scanType: 'entry',
+        timestamp: _now(),
+        transactionId: entry.transactionId,
+        activityLogId: entry.logId,
+        vehicleType: admitted.vehicleType,
+        reason: 'Vehicle type does not match ticket. Do not admit.',
+      ),
+      ticket,
     );
   }
 
@@ -665,10 +788,7 @@ class GateScanService {
     }
     final Map<String, dynamic>? rates = await _loadRates(facilityId);
 
-    final String vType = ((ticket['vehicleType'] as String?) ?? 'car')
-        .trim()
-        .toLowerCase();
-    final double? rate = resolveOvertimeRate(rates, vType);
+    final double? rate = resolveOvertimeRate(rates, _vehicleType(ticket));
     // Overtime starts after the hours left on the ticket. The rest stays on
     // the ticket for the next visit.
     final int paidHours = ticketHoursLeft(ticket);
@@ -989,6 +1109,14 @@ class GateScanService {
 
   static String _entryStatus(Map<String, dynamic> ticket) =>
       ((ticket['entryStatus'] as String?) ?? '').toLowerCase();
+
+  /// Tickets without a type count as cars.
+  static String _vehicleType(Map<String, dynamic> ticket) {
+    final String type = ((ticket['vehicleType'] as String?) ?? '')
+        .trim()
+        .toLowerCase();
+    return type.isEmpty ? 'car' : type;
+  }
 
   static String _ticketFacility(Map<String, dynamic> ticket) =>
       ((ticket['establishmentId'] as String?) ??

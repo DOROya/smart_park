@@ -692,4 +692,225 @@ void main() {
       expect((await ticket('a-unused'))['entryStatus'], 'not_checked_in');
     });
   });
+
+  group('vehicle type', () {
+    test('comes with QR entry and exit results', () async {
+      await seedTicket('t1', <String, dynamic>{'vehicleType': 'motorcycle'});
+      final GateScanResult? entry = await scan(qr('t1'));
+      expect(entry!.vehicleType, 'motorcycle');
+      now = now.add(const Duration(hours: 1));
+      final GateScanResult? exit = await scan(qr('t1'), mode: 'exit');
+      expect(exit!.isAllowed, isTrue);
+      expect(exit.vehicleType, 'motorcycle');
+    });
+
+    test('comes with plate lookups', () async {
+      await seedTicket('t1', <String, dynamic>{
+        'vehiclePlate': 'MC 1',
+        'vehicleType': 'Motorcycle',
+      });
+      final GateScanResult? r = await service.lookupByPlate(
+        staff: staff,
+        gateMode: 'entry',
+        rawPlate: 'mc 1',
+      );
+      expect(r!.vehicleType, 'motorcycle');
+    });
+
+    test('comes with denials once the ticket is read', () async {
+      await seedTicket('t1', <String, dynamic>{'status': 'pending'});
+      expect((await scan(qr('t1')))!.vehicleType, 'car');
+      await seedTicket('t2', <String, dynamic>{
+        'entryStatus': 'checked_in',
+        'vehicleType': 'motorcycle',
+      });
+      final GateScanResult? inside = await scan(qr('t2'));
+      expect(inside!.reason, 'Already inside. Do not admit twice.');
+      expect(inside.vehicleType, 'motorcycle');
+    });
+
+    test('is unknown when no ticket was read', () async {
+      expect((await scan('not json'))!.vehicleType, isNull);
+    });
+
+    test('defaults to car for tickets without one', () async {
+      await db.collection('transactions').doc('t1').set(<String, dynamic>{
+        'establishmentId': facilityId,
+        'vehiclePlate': 'OLD 1',
+        'status': 'paid',
+      });
+      expect((await scan(qr('t1')))!.vehicleType, 'car');
+    });
+  });
+
+  group('refuseWrongVehicle', () {
+    test('undoes the check-in and turns the entry into a refusal', () async {
+      await seedTicket('t1', <String, dynamic>{
+        'vehicleType': 'motorcycle',
+        'entryStatus': 'not_checked_in',
+      });
+      final GateScanResult admitted = (await scan(qr('t1')))!;
+      expect(admitted.canRefuseVehicle, isTrue);
+
+      final (GateScanResult refused, Map<String, dynamic> t) = await service
+          .refuseWrongVehicle(staff: staff, admitted: admitted);
+
+      expect(refused.isDenied, isTrue);
+      expect(refused.vehicleType, 'motorcycle');
+      expect(refused.canRefuseVehicle, isFalse);
+      expect(t['vehicleType'], 'motorcycle');
+      final Map<String, dynamic> after = await ticket('t1');
+      expect(after['entryStatus'], 'not_checked_in');
+      expect(after.containsKey('entryAt'), isFalse);
+      expect(after.containsKey('entryStaffId'), isFalse);
+      expect(after.containsKey('entryLogId'), isFalse);
+      // The same log, now shaped like any other refused scan.
+      final Map<String, dynamic> log = (await activityLogs()).single;
+      expect(log['decision'], 'DENIED');
+      expect(log['status'], 'DENIED');
+      expect(log['decisionReason'], kWrongVehicleReason);
+      expect(log['refusal'], kRefusalWrongVehicle);
+      expect(log['isActive'], isFalse);
+      expect(log['transactionId'], 't1');
+      expect(log['vehiclePlate'], 'ABC 123');
+      final List<String> actions =
+          (await db.collection('StaffActivityLogs').get()).docs
+              .map((d) => d.data()['action'] as String)
+              .toList();
+      expect(actions, contains('refuse_wrong_vehicle'));
+    });
+
+    test('restores a reused ticket\'s previous visit', () async {
+      final Timestamp lastVisit = Timestamp.fromDate(
+        now.subtract(const Duration(days: 1)),
+      );
+      await seedTicket('t1', <String, dynamic>{
+        'plan': 'daily',
+        'duration': 1,
+        'entryStatus': 'checked_out',
+        'remainingHours': 20,
+        'entryAt': lastVisit,
+        'entryStaffId': 'staff-0',
+        'entryLogId': 'old-log',
+      });
+      final GateScanResult admitted = (await scan(qr('t1')))!;
+      await service.refuseWrongVehicle(staff: staff, admitted: admitted);
+      final Map<String, dynamic> after = await ticket('t1');
+      expect(after['entryStatus'], 'checked_out');
+      expect(after['entryAt'], lastVisit);
+      expect(after['entryStaffId'], 'staff-0');
+      expect(after['entryLogId'], 'old-log');
+      expect(after['remainingHours'], 20);
+    });
+
+    test('lets the right vehicle in straight after', () async {
+      await seedTicket('t1', <String, dynamic>{});
+      final GateScanResult admitted = (await scan(qr('t1')))!;
+      await service.refuseWrongVehicle(staff: staff, admitted: admitted);
+      // Within the re-scan cooldown, which would otherwise ignore it.
+      now = now.add(const Duration(seconds: 2));
+      final GateScanResult? again = await scan(qr('t1'));
+      expect(again!.isAllowed, isTrue);
+      expect((await ticket('t1'))['entryStatus'], 'checked_in');
+    });
+
+    test('only refuses the entry just admitted', () async {
+      await seedTicket('t1', <String, dynamic>{});
+      await seedTicket('t2', <String, dynamic>{'vehiclePlate': 'XYZ 9'});
+      final GateScanResult first = (await scan(qr('t1')))!;
+      await scan(qr('t2'));
+      await expectLater(
+        service.refuseWrongVehicle(staff: staff, admitted: first),
+        throwsStateError,
+      );
+      expect((await ticket('t1'))['entryStatus'], 'checked_in');
+    });
+
+    test('cannot refuse twice, or an exit or denial', () async {
+      await seedTicket('t1', <String, dynamic>{});
+      final GateScanResult admitted = (await scan(qr('t1')))!;
+      final (GateScanResult refused, _) = await service.refuseWrongVehicle(
+        staff: staff,
+        admitted: admitted,
+      );
+      await expectLater(
+        service.refuseWrongVehicle(staff: staff, admitted: admitted),
+        throwsStateError,
+      );
+      await expectLater(
+        service.refuseWrongVehicle(staff: staff, admitted: refused),
+        throwsStateError,
+      );
+
+      await scan(qr('t1'));
+      now = now.add(const Duration(hours: 1));
+      final GateScanResult exit = (await scan(qr('t1'), mode: 'exit'))!;
+      expect(exit.canRefuseVehicle, isFalse);
+      await expectLater(
+        service.refuseWrongVehicle(staff: staff, admitted: exit),
+        throwsStateError,
+      );
+    });
+
+    test('leaves a ticket alone once it was scanned out', () async {
+      await seedTicket('t1', <String, dynamic>{});
+      final GateScanResult admitted = (await scan(qr('t1')))!;
+      // Another gate scans it out meanwhile.
+      final GateScanService otherGate = GateScanService(
+        firestore: db,
+        clock: () => now.add(const Duration(minutes: 30)),
+      );
+      await otherGate.handleScanPayload(
+        staff: staff,
+        gateMode: 'exit',
+        rawPayload: qr('t1'),
+      );
+      await expectLater(
+        service.refuseWrongVehicle(staff: staff, admitted: admitted),
+        throwsStateError,
+      );
+      expect((await ticket('t1'))['entryStatus'], 'checked_out');
+    });
+  });
+
+  group('after a plate change', () {
+    test('each visit logs the plate it used', () async {
+      await seedTicket('t1', <String, dynamic>{
+        'plan': 'daily',
+        'duration': 1,
+        'vehiclePlate': 'FIRST 1',
+      });
+      await scan(qr('t1', 'FIRST 1'));
+      now = now.add(const Duration(hours: 2));
+      await scan(qr('t1', 'FIRST 1'), mode: 'exit');
+
+      // The QR still carries the old plate; the ticket's plate wins.
+      await db.collection('transactions').doc('t1').update(<String, dynamic>{
+        'vehiclePlate': 'SECOND 2',
+      });
+      now = now.add(const Duration(hours: 1));
+      final GateScanResult? r = await scan(qr('t1', 'FIRST 1'));
+      expect(r!.isAllowed, isTrue);
+      expect(r.vehiclePlate, 'SECOND 2');
+
+      final List<String> plates =
+          (await activityLogs())
+              .where((Map<String, dynamic> l) => l['scanType'] == 'entry')
+              .map((Map<String, dynamic> l) => l['vehiclePlate'] as String)
+              .toList()
+            ..sort();
+      expect(plates, <String>['FIRST 1', 'SECOND 2']);
+    });
+
+    test('plate lookup finds the ticket by its new plate', () async {
+      await seedTicket('t1', <String, dynamic>{'vehiclePlate': 'NEW 7'});
+      final GateScanResult? r = await service.lookupByPlate(
+        staff: staff,
+        gateMode: 'entry',
+        rawPlate: ' new 7 ',
+      );
+      expect(r!.isAllowed, isTrue);
+      expect(r.transactionId, 't1');
+    });
+  });
 }

@@ -9,15 +9,21 @@ const String kReportOpen = 'open';
 const String kReportWarned = 'warned';
 const String kReportDismissed = 'dismissed';
 
+/// A ticket may be shared, but only for the vehicle type it was bought for;
+/// staff refusing a different type at the gate flag it with this reason.
+const String kWrongVehicleTypeReason = 'Wrong vehicle type for ticket';
+
 /// Reasons an owner picks from; the last one needs details. Kept short so
-/// each fits on one chip at phone width.
+/// each fits on one chip at phone width. Sharing a ticket is allowed, so
+/// only a fake one is a reason.
 const List<String> kDriverReportReasons = <String>[
   'Refused to pay overtime cash',
   'Disputed the overtime charge',
   'Damaged property or a vehicle',
   'Rude or abusive to staff',
   'Parked outside the allowed area',
-  'Used a shared or fake ticket',
+  kWrongVehicleTypeReason,
+  'Used a fake ticket',
   'Other',
 ];
 

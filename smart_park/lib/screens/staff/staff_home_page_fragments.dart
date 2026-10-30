@@ -395,10 +395,12 @@ extension _StaffHomePageFragments on _StaffHomePageState {
         ),
         if (_lastScanResult != null) ...[
           const SizedBox(height: 12),
-          _GateResultCard(
+          GateResultCard(
             result: _lastScanResult!,
             marking: _markingOvertime,
             onMarkCollected: _markLastOvertimeCollected,
+            refusing: _refusingEntry,
+            onWrongVehicle: _refuseLastEntry,
           ),
         ],
         const SizedBox(height: 12),
@@ -536,7 +538,8 @@ extension _StaffHomePageFragments on _StaffHomePageState {
                 return const SpSkeletonList();
               }
 
-              // Denied scans stay logged but are hidden from the history.
+              // Denied scans stay logged but are hidden from the history;
+              // staff refusals are listed but not counted.
               final List<Map<String, dynamic>> dayLogs = day.logs
                   .where(spIsAllowedLog)
                   .toList();
@@ -545,7 +548,10 @@ extension _StaffHomePageFragments on _StaffHomePageState {
               final bool insideTab = _historyFilter == 'active';
               final List<Map<String, dynamic>> filtered = insideTab
                   ? day.insideLogs.where(spIsInsideLog).toList()
-                  : dayLogs.where(_matchesHistoryFilter).toList();
+                  : day.logs
+                        .where(spIsListedLog)
+                        .where(_matchesHistoryFilter)
+                        .toList();
 
               final int entries = dayLogs
                   .where(
@@ -784,137 +790,6 @@ class _EntryClosedBanner extends StatelessWidget {
       ),
     );
   }
-}
-
-class _GateResultCard extends StatelessWidget {
-  const _GateResultCard({
-    required this.result,
-    required this.onMarkCollected,
-    this.marking = false,
-  });
-
-  final GateScanResult result;
-  final VoidCallback onMarkCollected;
-  final bool marking;
-
-  @override
-  Widget build(BuildContext context) {
-    final bool allowed = result.isAllowed;
-    final Color accent = allowed ? AppTheme.success : AppTheme.danger;
-    final Color bg = allowed ? AppTheme.successSoft : AppTheme.dangerSoft;
-    final String title = allowed
-        ? (result.scanType == 'exit' ? 'Exit allowed' : 'Entry allowed')
-        : (result.decision == 'ERROR' ? 'Scan error' : 'Scan denied');
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(AppTheme.radiusLarge),
-        border: Border.all(color: accent.withValues(alpha: 0.35)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Row(
-            children: <Widget>[
-              Icon(
-                allowed ? Icons.check_circle_rounded : Icons.cancel_rounded,
-                color: accent,
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  title,
-                  style: TextStyle(
-                    fontWeight: FontWeight.w800,
-                    fontSize: 16,
-                    color: accent,
-                  ),
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 5,
-                ),
-                decoration: BoxDecoration(
-                  color: AppTheme.surface,
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                child: Text(
-                  result.decision,
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w800,
-                    color: accent,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Plate ${result.vehiclePlate} - ${result.scanType.toUpperCase()}',
-            style: const TextStyle(fontWeight: FontWeight.w700),
-          ),
-          if ((result.reason ?? '').isNotEmpty) ...<Widget>[
-            const SizedBox(height: 4),
-            Text(result.reason!),
-          ],
-          if (result.scanType == 'exit' && result.elapsed != null) ...<Widget>[
-            const SizedBox(height: 6),
-            Text(
-              'Stay ${_formatStay(result.elapsed!)}'
-              '${result.billableHours == null ? '' : ' - billed ${result.billableHours}h'}.',
-              style: const TextStyle(fontWeight: FontWeight.w600),
-            ),
-          ],
-          if (result.hasOvertime) ...<Widget>[
-            const SizedBox(height: 10),
-            SpOvertimeBreakdown(
-              overtimeHours: result.overtimeHours!.round(),
-              amount: result.overtimeAmount!,
-              elapsed: result.elapsed,
-              rate: result.overtimeAmount! / result.overtimeHours!,
-              status: result.overtimeCollected
-                  ? kOvertimeCollected
-                  : kOvertimeCashDue,
-            ),
-            if (!result.overtimeCollected) ...<Widget>[
-              const SizedBox(height: 8),
-              FilledButton.icon(
-                onPressed: marking ? null : onMarkCollected,
-                icon: const Icon(Icons.check_rounded),
-                label: Text(
-                  marking
-                      ? 'Saving...'
-                      : 'Cash collected '
-                            '(PHP ${result.overtimeAmount!.toStringAsFixed(2)})',
-                ),
-              ),
-            ],
-          ],
-          if (result.transactionId != null &&
-              result.transactionId!.isNotEmpty) ...<Widget>[
-            const SizedBox(height: 6),
-            Text(
-              'Ticket ${result.transactionId}',
-              style: TextStyle(fontSize: 11, color: AppTheme.textMuted),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-String _formatStay(Duration elapsed) {
-  final int hours = elapsed.inHours;
-  final int minutes = elapsed.inMinutes.remainder(60);
-  if (hours <= 0) {
-    return '${minutes}m';
-  }
-  return '${hours}h ${minutes}m';
 }
 
 class _ManualPlateLookup extends StatefulWidget {

@@ -22,6 +22,7 @@ const {
   getDocs,
   writeBatch,
   serverTimestamp,
+  deleteField,
 } = require("firebase/firestore");
 
 const PROJECT_ID = "demo-smartpark";
@@ -261,6 +262,67 @@ test("staff read and check in their facility's tickets only", async () => {
   await assertFails(updateDoc(doc(staff(), "transactions/tx1"), { status: "refunded" }));
   await assertFails(updateDoc(doc(staff(), "transactions/tx1"), { amount: 0 }));
   await assertFails(updateDoc(doc(staff(), "transactions/tx2"), { entryStatus: "checked_in" }));
+});
+
+test("drivers change only the plate on their own tickets while not parked", async () => {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const d = ctx.firestore();
+    await setDoc(doc(d, "transactions/tx1"), { vehicleType: "motorcycle", entryStatus: "checked_out" }, { merge: true });
+    await setDoc(doc(d, "transactions/parked"), {
+      driverId: "driver1", establishmentId: "est1", status: "paid", vehiclePlate: "IN1",
+      vehicleType: "car", entryStatus: "checked_in",
+    });
+    await setDoc(doc(d, "transactions/unpaid"), {
+      driverId: "driver1", establishmentId: "est1", status: "pending", vehiclePlate: "P1",
+    });
+  });
+  const plate = (p) => ({ vehiclePlate: p, updatedAt: serverTimestamp() });
+  await assertSucceeds(updateDoc(doc(driver(), "transactions/tx1"), plate("NEW 123")));
+  // Someone else's ticket, one that is parked, or one not paid.
+  await assertFails(updateDoc(doc(otherDriver(), "transactions/tx1"), plate("HIS 1")));
+  await assertFails(updateDoc(doc(driver(), "transactions/tx2"), plate("X 1")));
+  await assertFails(updateDoc(doc(driver(), "transactions/parked"), plate("X 1")));
+  await assertFails(updateDoc(doc(driver(), "transactions/unpaid"), plate("X 1")));
+  // The vehicle type and every other field stay as bought.
+  await assertFails(updateDoc(doc(driver(), "transactions/tx1"), { ...plate("NEW 124"), vehicleType: "car" }));
+  await assertFails(updateDoc(doc(driver(), "transactions/tx1"), { vehicleType: "car", updatedAt: serverTimestamp() }));
+  await assertFails(updateDoc(doc(driver(), "transactions/tx1"), { ...plate("NEW 125"), remainingHours: 99 }));
+  await assertFails(updateDoc(doc(driver(), "transactions/tx1"), { ...plate("NEW 126"), entryStatus: "checked_in" }));
+  // Stored the way checkout stores it, stamped by the server.
+  await assertFails(updateDoc(doc(driver(), "transactions/tx1"), plate("new 127")));
+  await assertFails(updateDoc(doc(driver(), "transactions/tx1"), plate(" NEW 128 ")));
+  await assertFails(updateDoc(doc(driver(), "transactions/tx1"), plate("")));
+  await assertFails(updateDoc(doc(driver(), "transactions/tx1"), plate("A".repeat(21))));
+  await assertFails(updateDoc(doc(driver(), "transactions/tx1"), { vehiclePlate: "NEW 129", updatedAt: new Date(0) }));
+  // Staff still can't touch the plate.
+  await assertFails(updateDoc(doc(staff(), "transactions/tx1"), plate("STAFF 1")));
+});
+
+test("staff undo a check-in they refuse as the wrong vehicle", async () => {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const d = ctx.firestore();
+    await setDoc(doc(d, "transactions/tx1"), {
+      entryStatus: "checked_in", entryAt: new Date(), entryStaffId: "staff1", entryLogId: "in1",
+    }, { merge: true });
+    await setDoc(doc(d, "activity_logs/in1"), {
+      establishmentID: "est1", transactionId: "tx1", scanType: "entry", staffId: "staff1",
+      status: "ALLOWED", decision: "ALLOWED", isActive: true,
+    });
+  });
+  await assertSucceeds(
+    setDoc(doc(staff(), "transactions/tx1"), {
+      entryStatus: deleteField(), entryAt: deleteField(), entryStaffId: deleteField(),
+      entryLogId: deleteField(), updatedAt: serverTimestamp(),
+    }, { merge: true }),
+  );
+  await assertSucceeds(
+    setDoc(doc(staff(), "activity_logs/in1"), {
+      status: "DENIED", decision: "DENIED", decisionReason: "Vehicle type does not match ticket.",
+      refusal: "wrong_vehicle", isActive: false, refusedAt: serverTimestamp(),
+    }, { merge: true }),
+  );
+  // The log stays tied to its ticket.
+  await assertFails(setDoc(doc(staff(), "activity_logs/in1"), { transactionId: "tx2" }, { merge: true }));
 });
 
 test("staff record overtime cash as collected in their own name only", async () => {

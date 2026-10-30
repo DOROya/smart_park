@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show HapticFeedback;
 import 'package:mobile_scanner/mobile_scanner.dart';
 
+import '../../services/driver_reports.dart' show kWrongVehicleTypeReason;
 import '../../services/facility_status.dart';
 import '../../services/gate_scan_service.dart';
 import '../../services/permission_service.dart';
@@ -14,9 +15,11 @@ import '../../theme/theme_controller.dart';
 import '../../utils/friendly_error.dart';
 import '../../widgets/smartpark_ui.dart';
 import '../../widgets/sp_activity_details.dart';
+import '../../widgets/sp_driver_report.dart' show showFlagIncidentDialog;
 import '../../widgets/sp_loading.dart';
 import '../../widgets/sp_overtime.dart';
 import '../auth/sign_in_screen.dart';
+import 'gate_result_card.dart';
 import 'walk_in_panel.dart';
 
 part 'staff_home_page_fragments.dart';
@@ -55,6 +58,7 @@ class _StaffHomePageState extends State<StaffHomePage>
   bool _isProcessingScan = false;
   GateScanResult? _lastScanResult;
   bool _markingOvertime = false;
+  bool _refusingEntry = false;
 
   /// Staff-side gate direction. Entry/exit is chosen here in the app and is
   /// never taken from the scanned QR content.
@@ -264,6 +268,47 @@ class _StaffHomePageState extends State<StaffHomePage>
         _lastScanResult = result.markedCollected();
       }
     });
+  }
+
+  /// Turns away the vehicle on the entry just admitted because it isn't the
+  /// ticket's vehicle type, then offers to flag the driver for the owner.
+  Future<void> _refuseLastEntry() async {
+    final GateScanResult? result = _lastScanResult;
+    final GateStaff? staff = _currentStaff();
+    if (result == null || staff == null || _refusingEntry) return;
+    setState(() => _refusingEntry = true);
+    try {
+      final (GateScanResult refused, Map<String, dynamic> ticket) =
+          await _gateService.refuseWrongVehicle(staff: staff, admitted: result);
+      if (!mounted) return;
+      unawaited(HapticFeedback.heavyImpact());
+      setState(() {
+        _refusingEntry = false;
+        if (identical(_lastScanResult, result)) _lastScanResult = refused;
+      });
+      // Walk-ins have no driver to flag.
+      if (((ticket['driverId'] as String?) ?? '').trim().isEmpty) return;
+      await showFlagIncidentDialog(
+        context,
+        ticketId: refused.transactionId!,
+        ticket: ticket,
+        staffName: _staffName,
+        initialReason: kWrongVehicleTypeReason,
+      );
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _refusingEntry = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            friendlyError(
+              error,
+              fallback: 'Could not refuse it. Check your connection and retry.',
+            ),
+          ),
+        ),
+      );
+    }
   }
 
   /// Confirms the overtime cash on an exit log opened from the scan lists.

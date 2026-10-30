@@ -8,10 +8,13 @@ import 'package:qr_flutter/qr_flutter.dart';
 
 import '../../../services/facility_status.dart';
 import '../../../services/parking_pricing.dart';
+import '../../../services/ticket_plate.dart';
 import '../../../theme/app_theme.dart';
+import '../../../utils/friendly_error.dart';
 import '../../../widgets/smartpark_ui.dart';
 import '../../../widgets/sp_loading.dart';
 import '../../../widgets/sp_overtime.dart';
+import '../../../widgets/sp_vehicle_type.dart';
 
 /// Rebuilds a scanner-compatible QR payload for tickets saved before the QR
 /// string was persisted. The gate scanner requires JSON containing at least
@@ -492,6 +495,21 @@ class _ActiveTicketCard extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 14),
+                SpVehicleTypeBadge(
+                  vehicleType: data['vehicleType'],
+                  large: true,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  spTicketSharingRule(_vehicleLabel(data)),
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 12,
+                    height: 1.35,
+                    color: AppTheme.textSecondary,
+                  ),
+                ),
+                const SizedBox(height: 14),
                 Row(
                   children: [
                     Icon(
@@ -514,6 +532,25 @@ class _ActiveTicketCard extends StatelessWidget {
                     ),
                   ],
                 ),
+                // Not while parked: the vehicle inside is the one on the
+                // ticket until it exits.
+                if (canChangeTicketPlate(data))
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton.icon(
+                      onPressed: () => _showChangePlateDialog(context, doc),
+                      icon: const Icon(Icons.edit_rounded, size: 16),
+                      label: const Text(
+                        'Change plate',
+                        style: TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                      style: TextButton.styleFrom(
+                        foregroundColor: AppTheme.accentText,
+                        padding: EdgeInsets.zero,
+                        visualDensity: VisualDensity.compact,
+                      ),
+                    ),
+                  ),
                 const SizedBox(height: 8),
                 Row(
                   children: [
@@ -544,6 +581,134 @@ class _ActiveTicketCard extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Lets the driver put the ticket on another plate of the same vehicle type.
+Future<void> _showChangePlateDialog(
+  BuildContext context,
+  QueryDocumentSnapshot<Map<String, dynamic>> doc,
+) async {
+  final bool? changed = await showDialog<bool>(
+    context: context,
+    builder: (BuildContext dialogContext) => _ChangePlateDialog(doc: doc),
+  );
+  if (changed == true && context.mounted) {
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Plate updated.')));
+  }
+}
+
+class _ChangePlateDialog extends StatefulWidget {
+  const _ChangePlateDialog({required this.doc});
+
+  final QueryDocumentSnapshot<Map<String, dynamic>> doc;
+
+  @override
+  State<_ChangePlateDialog> createState() => _ChangePlateDialogState();
+}
+
+class _ChangePlateDialogState extends State<_ChangePlateDialog> {
+  late final TextEditingController _plate = TextEditingController(
+    text: ((widget.doc.data()['vehiclePlate'] as String?) ?? '').trim(),
+  );
+  bool _saving = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _plate.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    final String plate = normalizePlate(_plate.text);
+    if (plate.isEmpty || plate.length > kMaxPlateLength) {
+      setState(() => _error = 'Enter a plate number.');
+      return;
+    }
+    final String current = normalizePlate(
+      (widget.doc.data()['vehiclePlate'] as String?) ?? '',
+    );
+    if (plate == current) {
+      Navigator.of(context).pop(false);
+      return;
+    }
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    try {
+      await changeTicketPlate(transactionId: widget.doc.id, plate: plate);
+      if (mounted) Navigator.of(context).pop(true);
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          _saving = false;
+          _error = friendlyError(
+            error,
+            fallback:
+                'Could not change the plate. It can\'t be changed while the '
+                'vehicle is parked.',
+          );
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final Map<String, dynamic> data = widget.doc.data();
+    return AlertDialog(
+      title: const Text('Change plate'),
+      content: SizedBox(
+        width: 420,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SpVehicleTypeBadge(vehicleType: data['vehicleType']),
+              const SizedBox(height: 10),
+              Text(
+                'Use this ticket for another ${_vehicleLabel(data).toLowerCase()}. '
+                'The vehicle type stays the same, and the hours left are '
+                'shared by every visit.',
+                style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+              ),
+              const SizedBox(height: 14),
+              TextField(
+                controller: _plate,
+                enabled: !_saving,
+                autofocus: true,
+                maxLength: kMaxPlateLength,
+                textCapitalization: TextCapitalization.characters,
+                onSubmitted: (_) => _save(),
+                decoration: InputDecoration(
+                  labelText: 'Plate number',
+                  hintText: 'ABC 1234',
+                  errorText: _error,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(AppTheme.radius),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _saving ? null : () => Navigator.of(context).pop(false),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: _saving ? null : _save,
+          child: Text(_saving ? 'Saving...' : 'Save plate'),
+        ),
+      ],
     );
   }
 }
