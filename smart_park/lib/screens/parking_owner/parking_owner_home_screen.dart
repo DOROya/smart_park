@@ -23,7 +23,8 @@ import '../../services/gate_scan_service.dart'
         setOvertimeStatusAsOwner;
 import '../../services/establishment_repository.dart';
 import '../../services/driver_reports.dart' show kReportOpen, reportStatus;
-import '../../services/parking_pricing.dart' show formatParkingHours;
+import '../../services/parking_pricing.dart'
+    show facilityGraceMinutes, formatParkingHours, graceOptionLabel;
 import '../../services/platform_fees.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/friendly_error.dart';

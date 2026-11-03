@@ -479,6 +479,7 @@ class _ActiveTicketCard extends StatelessWidget {
                 _TimeLeftPanel(
                   hoursLeft: ticketHoursLeft(data),
                   parkedSince: state == _TicketState.parked ? enteredAt : null,
+                  graceMinutes: facilityGraceMinutes(facility),
                 ),
                 const SizedBox(height: 16),
                 Container(
@@ -717,9 +718,16 @@ class _ChangePlateDialogState extends State<_ChangePlateDialog> {
 /// The parking time a ticket still covers, worded so it can't be read as an
 /// expiry date: the hours only run down while the vehicle is parked.
 class _TimeLeftPanel extends StatelessWidget {
-  const _TimeLeftPanel({required this.hoursLeft, this.parkedSince});
+  const _TimeLeftPanel({
+    required this.hoursLeft,
+    this.parkedSince,
+    this.graceMinutes = kDefaultGraceMinutes,
+  });
 
   final int hoursLeft;
+
+  /// The facility's grace period after the paid time.
+  final int graceMinutes;
 
   /// When the current visit began; null when the vehicle isn't parked.
   final DateTime? parkedSince;
@@ -737,7 +745,7 @@ class _TimeLeftPanel extends StatelessWidget {
               'reuse this ticket on later visits until the time runs out.'
         : 'Covers you until ${spFormatClockTime(paidUntil)}'
               '${spSameDate(paidUntil, DateTime.now()) ? '' : ', ${spFormatDate(paidUntil)}'}. '
-              'Staying longer adds overtime, paid in cash at the exit.';
+              '${graceMinutes <= 0 ? 'Staying longer adds overtime, paid in cash at the exit.' : 'With the ${formatGracePeriod(graceMinutes)}, leave by ${spFormatClockTime(paidUntil.add(Duration(minutes: graceMinutes)))} to pay no overtime. Later than that, overtime is paid in cash at the exit.'}';
 
     return Container(
       width: double.infinity,

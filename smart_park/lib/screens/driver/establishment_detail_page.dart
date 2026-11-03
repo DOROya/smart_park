@@ -8,6 +8,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../services/error_reporter.dart';
 import '../../services/operating_hours.dart';
 import '../../services/parking_checkout_service.dart';
+import '../../services/parking_pricing.dart' show facilityGraceMinutes;
 import '../../theme/app_theme.dart';
 import '../../utils/friendly_error.dart';
 import '../../widgets/smartpark_ui.dart';
@@ -654,7 +655,44 @@ class _EstablishmentDetailPageState extends State<EstablishmentDetailPage>
       children: [
         for (final String key in _rateVehicleKeys(data))
           _buildRatesCard(data, key),
+        _buildGraceNote(facilityGraceMinutes(data)),
       ],
+    );
+  }
+
+  /// How long after the paid time a driver can still leave for free.
+  Widget _buildGraceNote(int minutes) {
+    return Container(
+      margin: const EdgeInsets.only(top: 4),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppTheme.surfaceAlt,
+        borderRadius: BorderRadius.circular(AppTheme.radius),
+        border: Border.all(color: spCardBorder),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.more_time_rounded, size: 18, color: AppTheme.accentText),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              minutes <= 0
+                  ? 'No grace period: overtime starts the minute your paid '
+                        'time ends, paid in cash at the exit.'
+                  : 'Overtime grace period: $minutes minutes. Leave within '
+                        '$minutes minutes after your paid time and you pay no '
+                        'overtime; after that, overtime counts from the end '
+                        'of your paid time, paid in cash at the exit.',
+              style: TextStyle(
+                fontSize: 12,
+                height: 1.4,
+                color: AppTheme.textSecondary,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 

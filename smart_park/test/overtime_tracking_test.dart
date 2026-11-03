@@ -9,22 +9,30 @@ void main() {
     'car': <String, dynamic>{'initial': 50, 'succeedingHour': 20},
   };
 
-  SpParkedStay stay(Map<String, dynamic> extra, {Map<String, dynamic>? r}) =>
-      SpParkedStay.fromTicket('t1', <String, dynamic>{
-        'vehicleType': 'car',
-        'vehiclePlate': 'ABC 123',
-        'plan': 'base',
-        'entryAt': Timestamp.fromDate(entry),
-        ...extra,
-      }, r ?? rates)!;
+  SpParkedStay stay(
+    Map<String, dynamic> extra, {
+    Map<String, dynamic>? r,
+    int grace = kDefaultGraceMinutes,
+  }) => SpParkedStay.fromTicket(
+    't1',
+    <String, dynamic>{
+      'vehicleType': 'car',
+      'vehiclePlate': 'ABC 123',
+      'plan': 'base',
+      'entryAt': Timestamp.fromDate(entry),
+      ...extra,
+    },
+    r ?? rates,
+    graceMinutes: grace,
+  )!;
 
   group('SpParkedStay', () {
-    test('overtime starts the first minute past the paid hours', () {
+    test('with no grace, overtime starts the first minute past paid', () {
       expect(
         overtimeStartsAt(entry, 2),
         entry.add(const Duration(hours: 2, minutes: 1)),
       );
-      final SpParkedStay s = stay(<String, dynamic>{});
+      final SpParkedStay s = stay(<String, dynamic>{}, grace: 0);
       expect(s.paidUntil, entry.add(const Duration(hours: 2)));
       expect(s.isOverAt(entry.add(const Duration(hours: 2))), isFalse);
       expect(
@@ -37,12 +45,35 @@ void main() {
       final SpParkedStay s = stay(<String, dynamic>{
         'plan': 'daily',
         'remainingHours': 3,
-      });
+      }, grace: 0);
       expect(s.includedHours, 3);
       expect(s.isOverAt(entry.add(const Duration(hours: 3))), isFalse);
       expect(
         s.isOverAt(entry.add(const Duration(hours: 3, minutes: 1))),
         isTrue,
+      );
+    });
+
+    test("overtime waits for the facility's grace period", () {
+      final SpParkedStay s = stay(<String, dynamic>{});
+      expect(s.overtimeFrom, entry.add(const Duration(hours: 2, minutes: 21)));
+      expect(
+        s.isOverAt(entry.add(const Duration(hours: 2, minutes: 20))),
+        isFalse,
+      );
+      expect(
+        s.isOverAt(entry.add(const Duration(hours: 2, minutes: 21))),
+        isTrue,
+      );
+      // Counted from the end of the paid time: 1 hour, not 0.
+      expect(
+        s.overtimeHoursAt(entry.add(const Duration(hours: 2, minutes: 21))),
+        1,
+      );
+      final SpParkedStay longGrace = stay(<String, dynamic>{}, grace: 30);
+      expect(
+        longGrace.isOverAt(entry.add(const Duration(hours: 2, minutes: 30))),
+        isFalse,
       );
     });
 

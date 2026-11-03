@@ -201,6 +201,21 @@ test("only admins lift a suspension or deactivation", async () => {
   }
 });
 
+test("owners pick a grace period of 0 to 60 minutes", async () => {
+  const details = doc(owner(), "establishment_details/est1");
+  await assertSucceeds(updateDoc(details, { gracePeriodMinutes: 30 }));
+  await assertSucceeds(updateDoc(details, { gracePeriodMinutes: 0 }));
+  await assertFails(updateDoc(details, { gracePeriodMinutes: 90 }));
+  await assertFails(updateDoc(details, { gracePeriodMinutes: -5 }));
+  await assertFails(updateDoc(details, { gracePeriodMinutes: "20" }));
+  await assertFails(updateDoc(doc(otherOwner(), "establishment_details/est1"), { gracePeriodMinutes: 15 }));
+  // Gate logs record the grace period that applied to an exit.
+  await assertSucceeds(setDoc(doc(staff(), "activity_logs/g1"), {
+    establishmentID: "est1", staffId: "staff1", scanType: "exit", transactionId: "tx1",
+    status: "ALLOWED", decision: "ALLOWED", gracePeriodMinutes: 30,
+  }));
+});
+
 test("owners cannot edit someone else's establishment", async () => {
   await assertFails(updateDoc(doc(otherOwner(), "establishments/est1"), { name: "Mine now" }));
   await assertFails(updateDoc(doc(owner(), "establishments/est1"), { ownerId: "owner2" }));

@@ -22,6 +22,7 @@ class GateScanResult {
     this.activityLogId,
     this.overtimeCollected = false,
     this.vehicleType,
+    this.graceMinutes,
   });
 
   final String decision;
@@ -44,6 +45,9 @@ class GateScanResult {
   /// The vehicle type the ticket was bought for, which staff check against
   /// the vehicle at the gate; null when no ticket was read.
   final String? vehicleType;
+
+  /// The facility's grace period on an exit; null for other scans.
+  final int? graceMinutes;
 
   bool get isAllowed => decision == 'ALLOWED';
   bool get isDenied => decision == 'DENIED';
@@ -70,6 +74,7 @@ class GateScanResult {
     activityLogId: activityLogId,
     overtimeCollected: overtimeCollected ?? this.overtimeCollected,
     vehicleType: vehicleType ?? this.vehicleType,
+    graceMinutes: graceMinutes,
   );
 
   /// This result after the overtime cash was marked collected.
@@ -786,13 +791,21 @@ class GateScanService {
     if (elapsed.isNegative) {
       elapsed = Duration.zero;
     }
-    final Map<String, dynamic>? rates = await _loadRates(facilityId);
-
-    final double? rate = resolveOvertimeRate(rates, _vehicleType(ticket));
-    // Overtime starts after the hours left on the ticket. The rest stays on
-    // the ticket for the next visit.
+    final Map<String, dynamic>? details = await _loadDetails(facilityId);
+    final double? rate = resolveOvertimeRate(
+      _ratesOf(details),
+      _vehicleType(ticket),
+    );
+    final int grace = facilityGraceMinutes(details);
+    // Overtime starts after the hours left on the ticket and the facility's
+    // grace period. The rest stays on the ticket for the next visit.
     final int paidHours = ticketHoursLeft(ticket);
-    final int extraHours = overtimeHours(elapsed, paidHours);
+    final int extraHours = overtimeHours(
+      elapsed,
+      paidHours,
+      graceMinutes: grace,
+    );
+    final bool graced = withinGrace(elapsed, paidHours, graceMinutes: grace);
     final int deducted = hoursDeducted(elapsed, paidHours);
     final int hoursLeft = paidHours - deducted;
     final double amount = rate == null ? 0 : extraHours * rate;
@@ -827,9 +840,11 @@ class GateScanService {
       ..._driverFields(ticket),
       'status': 'ALLOWED',
       'decision': 'ALLOWED',
-      'decisionReason': extraHours <= 0
-          ? 'Within paid time.'
-          : (cashDue ? 'Overtime: collect cash.' : 'Overtime: rate missing.'),
+      'decisionReason': extraHours > 0
+          ? (cashDue ? 'Overtime: collect cash.' : 'Overtime: rate missing.')
+          : graced
+          ? 'Within the ${formatGracePeriod(grace)}.'
+          : 'Within paid time.',
       'isActive': false,
       'transactionId': transactionId,
       'elapsedSeconds': elapsed.inSeconds,
@@ -840,6 +855,7 @@ class GateScanService {
       'overtimeRate': rate,
       'overtimeAmount': amount,
       'overtimeStatus': oStatus,
+      'gracePeriodMinutes': grace,
     });
     if (openEntry != null) {
       batch.set(openEntry.reference, <String, dynamic>{
@@ -868,8 +884,11 @@ class GateScanService {
       overtimeHours: extraHours.toDouble(),
       overtimeAmount: amount,
       activityLogId: exitRef.id,
+      graceMinutes: grace,
       reason: extraHours > 0
           ? (cashDue ? 'Overtime: collect cash first.' : 'Overtime: confirm.')
+          : graced
+          ? 'Within the ${formatGracePeriod(grace)}. No overtime. Release.'
           : hoursLeft > 0
           ? 'Within paid time. ${_hoursText(hoursLeft)} left on ticket. '
                 'Release.'
@@ -947,18 +966,15 @@ class GateScanService {
     }
   }
 
-  Future<Map<String, dynamic>?> _loadRates(String facilityId) async {
+  /// The facility's `establishment_details` (rates and grace period); null
+  /// when it can't be read, which leaves no rate and the default grace.
+  Future<Map<String, dynamic>?> _loadDetails(String facilityId) async {
     try {
       final DocumentSnapshot<Map<String, dynamic>> details = await _db
           .collection('establishment_details')
           .doc(facilityId)
           .get();
-      final dynamic raw = details.data()?['rates'];
-      if (raw is Map) {
-        return raw.map<String, dynamic>(
-          (dynamic k, dynamic v) => MapEntry<String, dynamic>(k.toString(), v),
-        );
-      }
+      return details.data();
     } catch (error, stack) {
       reportError(
         error,
@@ -967,6 +983,14 @@ class GateScanService {
       );
     }
     return null;
+  }
+
+  static Map<String, dynamic>? _ratesOf(Map<String, dynamic>? details) {
+    final dynamic raw = details?['rates'];
+    if (raw is! Map) return null;
+    return raw.map<String, dynamic>(
+      (dynamic k, dynamic v) => MapEntry<String, dynamic>(k.toString(), v),
+    );
   }
 
   Future<QueryDocumentSnapshot<Map<String, dynamic>>?> _findOpenEntry(

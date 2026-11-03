@@ -115,9 +115,17 @@ extension _StaffHomePageFragments on _StaffHomePageState {
                               ),
                             ),
                             const SizedBox(height: 16),
-                            const SpSectionLabel("Today's Activity"),
+                            const SpSectionLabel('Right Now'),
                             const SizedBox(height: 10),
-                            SpDailyActivityTiles(summary: summary),
+                            SpDailyActivityTiles(
+                              summary: summary,
+                              insideOnly: true,
+                              entriesAndExitsLabel: 'History',
+                              onSeeEntriesAndExits: () => setState(() {
+                                _selectedHistoryDate = DateTime.now();
+                                _selectedNavIndex = 2;
+                              }),
+                            ),
                             const SizedBox(height: 12),
                             _ShiftCashCard(
                               cash: SpOvertimeCash.from(

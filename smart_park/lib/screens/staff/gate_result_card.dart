@@ -167,6 +167,7 @@ class GateResultCard extends StatelessWidget {
               amount: result.overtimeAmount!,
               elapsed: result.elapsed,
               rate: result.overtimeAmount! / result.overtimeHours!,
+              graceMinutes: result.graceMinutes,
               status: result.overtimeCollected
                   ? kOvertimeCollected
                   : kOvertimeCashDue,
