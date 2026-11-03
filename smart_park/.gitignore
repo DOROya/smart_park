@@ -46,3 +46,10 @@ app.*.map.json
 
 # Local payment credentials
 paymongo.dev.json
+
+# Gradle output inside android/ (the root /build/ rule doesn't cover it)
+/android/build/
+
+# Personal editor and AI-tool settings (launch.json stays shared)
+.clineignore
+.vscode/settings.json

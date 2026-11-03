@@ -1,0 +1,5 @@
+# Local Claude Code settings
+.claude/
+
+# Capstone paper drafts, screenshots and diagrams: kept on this PC, not in the repo
+paper-revision/
