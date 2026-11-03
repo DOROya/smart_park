@@ -5,6 +5,7 @@ import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
+import '../../content/terms_content.dart' show kTermsVersion;
 import '../../services/auth_email_service.dart';
 import '../../services/email_rate_limiter.dart';
 import '../../theme/app_theme.dart';
@@ -265,6 +266,11 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen>
     };
     if (canonicalRole != null) {
       userData['role'] = canonicalRole;
+    }
+    // Only sign-up passes a role, right after the terms were agreed to.
+    if (widget.role != null) {
+      userData['termsVersion'] = kTermsVersion;
+      userData['termsAcceptedAt'] = FieldValue.serverTimestamp();
     }
 
     await FirebaseFirestore.instance

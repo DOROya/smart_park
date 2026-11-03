@@ -6,6 +6,7 @@ import '../theme/app_theme.dart';
 import '../theme/theme_controller.dart';
 import '../utils/friendly_error.dart';
 import 'smartpark_ui.dart';
+import 'sp_terms_view.dart';
 
 /// Profile tab shared by drivers and parking owners: identity card,
 /// editable name, and a password change hidden behind a button.
@@ -142,6 +143,8 @@ class _SpProfileViewState extends State<SpProfileView> {
                     _personalInfoCard(),
                     const SizedBox(height: 12),
                     const SpAppearanceCard(),
+                    const SizedBox(height: 12),
+                    SpTermsCard(role: widget.roleLabel),
                   ],
                 ),
               ),
@@ -167,6 +170,8 @@ class _SpProfileViewState extends State<SpProfileView> {
           const SizedBox(height: 12),
           card,
         ],
+        const SizedBox(height: 12),
+        SpTermsCard(role: widget.roleLabel),
         const SizedBox(height: 12),
         _signOutButton(),
       ],
