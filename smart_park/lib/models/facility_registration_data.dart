@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import '../services/operating_hours.dart';
+import '../services/parking_pricing.dart' show kDefaultGraceMinutes;
 
 class FacilityRegistrationData {
   FacilityRegistrationData({
@@ -14,6 +15,7 @@ class FacilityRegistrationData {
     required this.rates,
     required this.slots,
     required this.location,
+    this.gracePeriodMinutes = kDefaultGraceMinutes,
     this.keepPhotoUrls = const <String>[],
     this.newPhotoFiles = const <File>[],
     this.removedPhotoUrls = const <String>[],
@@ -29,6 +31,9 @@ class FacilityRegistrationData {
   final Map<String, dynamic> rates;
   final Map<String, int> slots;
   final LatLng location;
+
+  /// Minutes past the paid time a vehicle may leave without overtime.
+  final int gracePeriodMinutes;
   final List<String> keepPhotoUrls;
   final List<File> newPhotoFiles;
   final List<String> removedPhotoUrls;
@@ -118,6 +123,7 @@ class FacilityRegistrationData {
       'slots': <String, dynamic>{'car': 0, 'motorcycle': 0},
       'slotCounts': normalizedSlots,
       'policies': policies,
+      'gracePeriodMinutes': gracePeriodMinutes,
       'status': 'pending',
       'rejectionReason': null,
       'reviewedAt': null,

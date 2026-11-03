@@ -206,6 +206,7 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
                     final Widget overstayCard = SpOverstayCard(
                       facilityId: establishmentId,
                       rates: _ratesOf(details),
+                      graceMinutes: facilityGraceMinutes(details),
                     );
                     final SpOvertimeCash overtimeCash = SpOvertimeCash.from(
                       summary.dayLogs,
@@ -580,6 +581,11 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
             child: Row(
               children: [
                 Icon(Icons.tag_rounded, size: 16, color: AppTheme.textMuted),
+          _buildDetailRow(
+            Icons.more_time_rounded,
+            'Overtime Grace Period',
+            graceOptionLabel(facilityGraceMinutes(details)),
+          ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(

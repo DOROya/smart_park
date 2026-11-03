@@ -4,6 +4,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:smart_park/services/gate_scan_service.dart';
+import 'package:smart_park/services/parking_pricing.dart'
+    show kDefaultGraceMinutes;
 
 const String facilityId = 'fac-1';
 const GateStaff staff = GateStaff(
@@ -549,7 +551,7 @@ void main() {
       expect((await ticket('t1'))['remainingHours'], 1438);
     });
 
-    test('rounds every started hour up, with no grace', () async {
+    test('takes every started hour off the ticket', () async {
       // 2h15m counts as 3 hours: 22 - 3 = 19 left.
       await seedInside(const Duration(hours: 2, minutes: 15), <String, dynamic>{
         'plan': 'daily',
@@ -579,6 +581,79 @@ void main() {
       expect(r!.overtimeHours, 2);
       expect(r.overtimeAmount, 40);
       expect((await ticket('t1'))['remainingHours'], 0);
+    });
+
+    group('grace period', () {
+      Future<void> withRate([int? grace]) => db
+          .collection('establishment_details')
+          .doc(facilityId)
+          .set(<String, dynamic>{
+            'rates': <String, dynamic>{
+              'car': <String, dynamic>{'initial': 50, 'succeedingHour': 20},
+            },
+            'gracePeriodMinutes': ?grace,
+          });
+
+      test('leaving within the default 20 minutes is free', () async {
+        await withRate();
+        await seedInside(
+          const Duration(hours: 2, minutes: 20),
+          <String, dynamic>{},
+        );
+        final GateScanResult? r = await scan(qr('t1'), mode: 'exit');
+        expect(r!.hasOvertime, isFalse);
+        expect(r.graceMinutes, kDefaultGraceMinutes);
+        expect(
+          r.reason,
+          'Within the 20-minute grace period. No overtime. Release.',
+        );
+        final Map<String, dynamic> t = await ticket('t1');
+        expect(t['overtimeStatus'], kOvertimeNone);
+        expect(t['remainingHours'], 0);
+        final Map<String, dynamic> exit = (await activityLogs()).firstWhere(
+          (Map<String, dynamic> l) => l['scanType'] == 'exit',
+        );
+        expect(exit['gracePeriodMinutes'], 20);
+        expect(exit['decisionReason'], 'Within the 20-minute grace period.');
+      });
+
+      test('past it, overtime counts from the end of the paid time', () async {
+        await withRate();
+        await seedInside(
+          const Duration(hours: 2, minutes: 21),
+          <String, dynamic>{},
+        );
+        final GateScanResult? r = await scan(qr('t1'), mode: 'exit');
+        expect(r!.overtimeHours, 1);
+        expect(r.overtimeAmount, 20);
+      });
+
+      test('follows the grace the owner picked', () async {
+        await withRate(30);
+        await seedInside(
+          const Duration(hours: 2, minutes: 30),
+          <String, dynamic>{},
+        );
+        expect((await scan(qr('t1'), mode: 'exit'))!.hasOvertime, isFalse);
+      });
+
+      test('an owner can turn it off', () async {
+        await withRate(0);
+        await seedInside(
+          const Duration(hours: 2, minutes: 5),
+          <String, dynamic>{},
+        );
+        final GateScanResult? r = await scan(qr('t1'), mode: 'exit');
+        expect(r!.overtimeHours, 1);
+        expect(r.graceMinutes, 0);
+      });
+
+      test('does not apply within the paid time', () async {
+        await withRate();
+        await seedInside(const Duration(hours: 1), <String, dynamic>{});
+        final GateScanResult? r = await scan(qr('t1'), mode: 'exit');
+        expect(r!.reason, 'Within paid time. Ticket used up. Release.');
+      });
     });
 
     test('the minimum never bills overtime by itself', () async {

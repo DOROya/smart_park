@@ -10,6 +10,12 @@ import 'package:image_picker/image_picker.dart';
 import '../../../models/facility_registration_data.dart';
 import '../../../services/facility_status.dart' show facilityRestrictionReasons;
 import '../../../services/operating_hours.dart';
+import '../../../services/parking_pricing.dart'
+    show
+        facilityGraceMinutes,
+        graceOptionLabel,
+        kDefaultGraceMinutes,
+        kGracePeriodOptions;
 import '../../../services/parking_storage_service.dart';
 import '../../../theme/app_theme.dart';
 import 'facility_review_status_banner.dart';
@@ -71,6 +77,7 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
   final TextEditingController _slotMotorController = TextEditingController();
 
   bool _allowLongTermRates = false;
+  int _graceMinutes = kDefaultGraceMinutes;
 
   GoogleMapController? _mapController;
   LatLng _cameraCenter = _fallbackCenter;
@@ -142,6 +149,7 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
     _policiesController.text = (data['policies'] as String?)?.trim() ?? '';
 
     _allowLongTermRates = (data['allowLongTermRates'] as bool?) ?? false;
+    _graceMinutes = facilityGraceMinutes(data);
 
     final Map<String, dynamic> rates =
         (data['rates'] as Map<String, dynamic>?) ??
@@ -619,6 +627,7 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
         'motorcycle': int.parse(_slotMotorController.text.trim()),
       },
       location: _selectedLocation!,
+      gracePeriodMinutes: _graceMinutes,
       keepPhotoUrls: List<String>.from(_existingPhotoUrls),
       newPhotoFiles: List<File>.from(_newPhotoFiles),
       removedPhotoUrls: List<String>.from(_removedPhotoUrls),
@@ -1256,6 +1265,61 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
     );
   }
 
+  /// How long past the paid time a vehicle may leave before overtime is
+  /// charged. Shown to drivers with the rates.
+  Widget _buildGracePeriodField() {
+    // A stored value outside the list (set some other way) stays selectable.
+    final List<int> options = <int>{
+      ...kGracePeriodOptions,
+      _graceMinutes,
+    }.toList()..sort();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Overtime Grace Period',
+          style: TextStyle(
+            color: AppTheme.textDark,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          'Drivers who leave within this time after their paid hours pay no '
+          'overtime. Past it, overtime counts from the end of the paid time.',
+          style: TextStyle(color: AppTheme.textMuted, fontSize: 11),
+        ),
+        const SizedBox(height: 8),
+        DropdownButtonFormField<int>(
+          initialValue: _graceMinutes,
+          isExpanded: true,
+          decoration: InputDecoration(
+            filled: true,
+            fillColor: AppTheme.surface,
+            prefixIcon: const Icon(Icons.more_time_rounded),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(AppTheme.radius),
+            ),
+          ),
+          items: <DropdownMenuItem<int>>[
+            for (final int minutes in options)
+              DropdownMenuItem<int>(
+                value: minutes,
+                child: Text(
+                  minutes == kDefaultGraceMinutes
+                      ? '${graceOptionLabel(minutes)} (default)'
+                      : graceOptionLabel(minutes),
+                ),
+              ),
+          ],
+          onChanged: (int? minutes) {
+            if (minutes != null) setState(() => _graceMinutes = minutes);
+          },
+        ),
+      ],
+    );
+  }
+
   Widget _buildRatesAndSlots() {
     return _sectionCard(
       title: 'Rates and Capacity',
@@ -1352,6 +1416,8 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
               ),
             ),
           ],
+          const SizedBox(height: 16),
+          _buildGracePeriodField(),
           const SizedBox(height: 16),
           Divider(color: AppTheme.border),
           const SizedBox(height: 12),

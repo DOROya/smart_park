@@ -131,17 +131,47 @@ int includedStayHours({required String plan, required int duration}) {
   };
 }
 
-/// Hours a stay counts as: every started hour, by whole minutes, with no
-/// grace (2h05m and 2h15m are both 3 hours).
+/// Hours a stay counts as: every started hour, by whole minutes (2h05m and
+/// 2h15m are both 3 hours).
 int stayHours(Duration elapsed) =>
     elapsed.inMinutes <= 0 ? 0 : (elapsed.inMinutes / 60).ceil();
 
+/// Grace periods an owner can pick (`establishment_details
+/// .gracePeriodMinutes`): minutes past the paid time a vehicle may still
+/// leave without overtime.
+const List<int> kGracePeriodOptions = <int>[0, 10, 15, 20, 25, 30];
+
+/// For facilities whose owner hasn't picked one.
+const int kDefaultGraceMinutes = 20;
+
+/// The facility's grace period in minutes, from its `establishment_details`.
+int facilityGraceMinutes(Map<String, dynamic>? details) {
+  final Object? stored = details?['gracePeriodMinutes'];
+  if (stored is! num) return kDefaultGraceMinutes;
+  return stored.toInt().clamp(0, 60);
+}
+
+/// A grace period as an owner picks it: "20 minutes", or "None".
+String graceOptionLabel(int minutes) =>
+    minutes <= 0 ? 'None' : '$minutes minutes';
+
+/// "20-minute grace period", or "no grace period".
+String formatGracePeriod(int minutes) =>
+    minutes <= 0 ? 'no grace period' : '$minutes-minute grace period';
+
 /// Hours of a stay past the [paidHours] left on the ticket, billed as
-/// overtime.
-int overtimeHours(Duration elapsed, int paidHours) {
+/// overtime. Leaving within [graceMinutes] of the paid time is free; past
+/// it, overtime counts from the end of the paid time, every started hour.
+int overtimeHours(Duration elapsed, int paidHours, {int graceMinutes = 0}) {
+  if (elapsed.inMinutes <= paidHours * 60 + graceMinutes) return 0;
   final int over = stayHours(elapsed) - paidHours;
   return over > 0 ? over : 0;
 }
+
+/// Whether a stay ran past its [paidHours] but left within the grace period.
+bool withinGrace(Duration elapsed, int paidHours, {int graceMinutes = 0}) =>
+    elapsed.inMinutes > paidHours * 60 &&
+    overtimeHours(elapsed, paidHours, graceMinutes: graceMinutes) == 0;
 
 /// Hours an exit takes off a ticket with [paidHours] left: the hours
 /// stayed, at least the base stay, never more than what is left.
@@ -152,9 +182,12 @@ int hoursDeducted(Duration elapsed, int paidHours) {
 }
 
 /// When overtime starts for a stay that began at [entryAt]: the first
-/// minute past the [paidHours] left.
-DateTime overtimeStartsAt(DateTime entryAt, int paidHours) =>
-    entryAt.add(Duration(hours: paidHours, minutes: 1));
+/// minute past the [paidHours] left and the [graceMinutes] after them.
+DateTime overtimeStartsAt(
+  DateTime entryAt,
+  int paidHours, {
+  int graceMinutes = 0,
+}) => entryAt.add(Duration(hours: paidHours, minutes: graceMinutes + 1));
 
 /// Hours a ticket can still be parked on. Tickets are reusable until their
 /// hours run out; each exit stores what is left in `remainingHours`. Tickets

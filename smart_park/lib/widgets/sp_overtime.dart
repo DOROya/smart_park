@@ -127,6 +127,7 @@ class SpOvertimeBreakdown extends StatelessWidget {
     this.status = kOvertimeCashDue,
     this.statusDetail,
     this.forDriver = false,
+    this.graceMinutes,
   });
 
   /// Reads an exit log or a checked-out ticket. [status] overrides the
@@ -151,6 +152,7 @@ class SpOvertimeBreakdown extends StatelessWidget {
       status: status ?? spOvertimeStatus(data),
       statusDetail: statusDetail,
       forDriver: forDriver,
+      graceMinutes: (data['gracePeriodMinutes'] as num?)?.toInt(),
     );
   }
 
@@ -173,9 +175,14 @@ class SpOvertimeBreakdown extends StatelessWidget {
   /// staff and owners ("not yet confirmed collected").
   final bool forDriver;
 
+  /// The facility's grace period at the exit; null on records from before
+  /// it was stored (and on tickets, which don't keep it).
+  final int? graceMinutes;
+
   @override
   Widget build(BuildContext context) {
     final bool billed = amount > 0;
+    final int? grace = graceMinutes;
     final Duration? stay = elapsed;
     final int counted = stay == null ? 0 : stayHours(stay);
     final int paidUsed = counted - overtimeHours;
@@ -311,9 +318,20 @@ class SpOvertimeBreakdown extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            'Overtime is every started hour past the paid time on the '
-            'ticket, with no grace period (2h 05m counts as 3 hours). '
-            'It is paid in cash at the exit, not through the app.',
+            grace == null
+                ? 'Overtime is every started hour past the paid time on the '
+                      'ticket, once the facility\'s grace period is used up. '
+                      'It is paid in cash at the exit, not through the app.'
+                : grace <= 0
+                ? 'Overtime is every started hour past the paid time on the '
+                      'ticket; this facility has no grace period (2h 05m '
+                      'counts as 3 hours). It is paid in cash at the exit, '
+                      'not through the app.'
+                : 'Leaving within $grace minutes of the paid time is free. '
+                      'Past that, overtime is every started hour after the '
+                      'paid time (2h ${(grace + 1).toString().padLeft(2, '0')}m '
+                      'on a 2-hour ticket counts as 1 hour). It is paid in '
+                      'cash at the exit, not through the app.',
             style: TextStyle(
               fontSize: 11,
               height: 1.35,
@@ -375,14 +393,16 @@ class SpParkedStay {
     required this.entryAt,
     required this.includedHours,
     required this.rate,
+    required this.graceMinutes,
   });
 
   /// Null for walk-ins (no paid time) and tickets with no entry time yet.
   static SpParkedStay? fromTicket(
     String transactionId,
     Map<String, dynamic> ticket,
-    Map<String, dynamic>? rates,
-  ) {
+    Map<String, dynamic>? rates, {
+    int graceMinutes = kDefaultGraceMinutes,
+  }) {
     if (ticket['source'] == 'walk_in') return null;
     final DateTime? entryAt =
         spParseDateTime(ticket['entryAt']) ??
@@ -399,6 +419,7 @@ class SpParkedStay {
       // What was left on the ticket when this visit began.
       includedHours: ticketHoursLeft(ticket),
       rate: resolveOvertimeRate(rates, vehicleType),
+      graceMinutes: graceMinutes,
     );
   }
 
@@ -411,12 +432,19 @@ class SpParkedStay {
   /// Hourly overtime rate; null when the facility has none set.
   final double? rate;
 
+  /// The facility's grace period after the paid time.
+  final int graceMinutes;
+
   DateTime get paidUntil => entryAt.add(Duration(hours: includedHours));
-  DateTime get overtimeFrom => overtimeStartsAt(entryAt, includedHours);
+  DateTime get overtimeFrom =>
+      overtimeStartsAt(entryAt, includedHours, graceMinutes: graceMinutes);
 
   /// Whole overtime hours the gate would bill if the car left at [now].
-  int overtimeHoursAt(DateTime now) =>
-      overtimeHours(now.difference(entryAt), includedHours);
+  int overtimeHoursAt(DateTime now) => overtimeHours(
+    now.difference(entryAt),
+    includedHours,
+    graceMinutes: graceMinutes,
+  );
 
   bool isOverAt(DateTime now) => overtimeHoursAt(now) > 0;
 
@@ -436,12 +464,20 @@ const Duration spEndsSoonWindow = Duration(minutes: 15);
 /// the cash they will owe, and vehicles whose time is about to run out.
 /// Refreshes each minute, since overtime grows with the clock, not with data.
 class SpOverstayCard extends StatefulWidget {
-  const SpOverstayCard({super.key, required this.facilityId, this.rates});
+  const SpOverstayCard({
+    super.key,
+    required this.facilityId,
+    this.rates,
+    this.graceMinutes = kDefaultGraceMinutes,
+  });
 
   final String facilityId;
 
   /// The facility's `establishment_details.rates`.
   final Map<String, dynamic>? rates;
+
+  /// The facility's grace period after the paid time.
+  final int graceMinutes;
 
   @override
   State<SpOverstayCard> createState() => _SpOverstayCardState();
@@ -490,7 +526,12 @@ class _SpOverstayCardState extends State<SpOverstayCard> {
           for (final QueryDocumentSnapshot<Map<String, dynamic>> doc
               in snapshot.data?.docs ??
                   <QueryDocumentSnapshot<Map<String, dynamic>>>[])
-            ?SpParkedStay.fromTicket(doc.id, doc.data(), widget.rates),
+            ?SpParkedStay.fromTicket(
+              doc.id,
+              doc.data(),
+              widget.rates,
+              graceMinutes: widget.graceMinutes,
+            ),
         ];
         final List<SpParkedStay> over =
             stays.where((SpParkedStay s) => s.isOverAt(now)).toList()..sort(
@@ -642,10 +683,12 @@ class SpParkedStayRow extends StatelessWidget {
     final Duration delta = over
         ? now.difference(stay.paidUntil)
         : stay.paidUntil.difference(now);
+    // Past the paid time but not the grace period: no overtime yet.
+    final Duration graceLeft = stay.overtimeFrom.difference(now);
     final String timing = over
         ? '+${spFormatDuration(delta)} over'
         : delta.isNegative
-        ? 'ends now'
+        ? 'in grace · overtime in ${spFormatDuration(graceLeft)}'
         : 'ends in ${spFormatDuration(delta)}';
     final Color color = over ? spInsideColor : AppTheme.textMuted;
     return Container(
