@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 
+import '../../content/terms_content.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/auth_widgets.dart';
 import '../../widgets/smartpark_ui.dart';
+import '../../widgets/sp_terms_view.dart';
 import 'verify_email_screen.dart';
 
 class TermsScreen extends StatefulWidget {
@@ -26,9 +28,6 @@ class TermsScreen extends StatefulWidget {
 }
 
 class _TermsScreenState extends State<TermsScreen> {
-  static const String _driverRole = 'Driver';
-  static const String _parkingOwnerRole = 'Parking Owner';
-
   bool _agreed = false;
 
   void _showSnackBar(String message) {
@@ -45,7 +44,7 @@ class _TermsScreenState extends State<TermsScreen> {
       return;
     }
 
-    if (widget.role != _driverRole && widget.role != _parkingOwnerRole) {
+    if (widget.role != kDriverRole && widget.role != kParkingOwnerRole) {
       _showSnackBar('Invalid role selected. Please go back and choose again.');
       return;
     }
@@ -61,22 +60,6 @@ class _TermsScreenState extends State<TermsScreen> {
         ),
       ),
     );
-  }
-
-  String _getPlaceholderContent() {
-    if (widget.role == _driverRole) {
-      return "Driver Terms of Condition go here...\n\n"
-          "This is placeholder text for the Driver role. "
-          "Replace with actual terms and conditions later.";
-    }
-
-    if (widget.role == _parkingOwnerRole) {
-      return "Parking Owner Terms of Condition go here...\n\n"
-          "This is placeholder text for the Parking Owner role. "
-          "Replace with actual terms and conditions later.";
-    }
-
-    return 'Invalid role selected. Please go back and choose a valid role.';
   }
 
   @override
@@ -108,14 +91,17 @@ class _TermsScreenState extends State<TermsScreen> {
                   color: AppTheme.surfaceAlt,
                   borderRadius: BorderRadius.circular(AppTheme.radius),
                 ),
-                child: Text(
-                  _getPlaceholderContent(),
-                  style: TextStyle(
-                    fontSize: 13.5,
-                    color: AppTheme.textDark,
-                    height: 1.5,
-                  ),
-                ),
+                child: termsFor(widget.role).isEmpty
+                    ? Text(
+                        'Invalid role selected. Please go back and choose a '
+                        'valid role.',
+                        style: TextStyle(
+                          fontSize: 13.5,
+                          color: AppTheme.textDark,
+                          height: 1.5,
+                        ),
+                      )
+                    : SpTermsBody(role: widget.role),
               ),
             ],
           ),
@@ -136,7 +122,8 @@ class _TermsScreenState extends State<TermsScreen> {
               },
               activeColor: AppTheme.accentText,
               title: const Text(
-                'I have read and agree to the Terms and Conditions.',
+                'I have read and agree to the Terms and Conditions and the '
+                'Privacy Notice.',
                 style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600),
               ),
               controlAffinity: ListTileControlAffinity.leading,
