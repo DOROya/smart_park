@@ -904,13 +904,18 @@ class SpStatRow extends StatelessWidget {
   }
 }
 
-/// The daily gate metrics shown on both dashboards.
+/// The daily gate metrics. Activity and History show all three; the
+/// dashboards show only how many vehicles are inside now ([insideOnly]),
+/// with a link to the rest.
 class SpDailyActivityTiles extends StatelessWidget {
   const SpDailyActivityTiles({
     super.key,
     required this.summary,
     this.today = true,
     this.singleRow = false,
+    this.insideOnly = false,
+    this.onSeeEntriesAndExits,
+    this.entriesAndExitsLabel = 'Activity',
   });
 
   final SpActivitySummary summary;
@@ -920,6 +925,16 @@ class SpDailyActivityTiles extends StatelessWidget {
 
   /// Show all tiles in one row (wide layouts) instead of two rows.
   final bool singleRow;
+
+  /// Only the Inside Now tile, as on the dashboards.
+  final bool insideOnly;
+
+  /// Opens the screen with today's entries and exits; shown under the tile
+  /// when [insideOnly].
+  final VoidCallback? onSeeEntriesAndExits;
+
+  /// That screen's name, e.g. "Activity" or "History".
+  final String entriesAndExitsLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -945,6 +960,26 @@ class SpDailyActivityTiles extends StatelessWidget {
       value: '${summary.insideNow}',
     );
 
+    if (insideOnly) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          inside,
+          if (onSeeEntriesAndExits != null)
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton.icon(
+                onPressed: onSeeEntriesAndExits,
+                iconAlignment: IconAlignment.end,
+                icon: const Icon(Icons.chevron_right_rounded, size: 18),
+                label: Text(
+                  "Today's entries and exits in $entriesAndExitsLabel",
+                ),
+              ),
+            ),
+        ],
+      );
+    }
     if (singleRow) {
       return SpGrid(
         columns: 3,

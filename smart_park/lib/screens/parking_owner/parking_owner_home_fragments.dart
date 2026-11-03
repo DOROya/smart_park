@@ -276,9 +276,14 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
                         ],
                         SpStaffFlagsCard(facilityId: establishmentId),
                         const SizedBox(height: 16),
-                        const SpSectionLabel("Today's Activity"),
+                        const SpSectionLabel('Right Now'),
                         const SizedBox(height: 10),
-                        SpDailyActivityTiles(summary: summary),
+                        SpDailyActivityTiles(
+                          summary: summary,
+                          insideOnly: true,
+                          onSeeEntriesAndExits: () =>
+                              setState(() => _selectedIndex = 2),
+                        ),
                         const SizedBox(height: 16),
                         overstayCard,
                         if (!overtimeCash.isEmpty) ...[
@@ -377,9 +382,13 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
         ],
         SpStaffFlagsCard(facilityId: establishmentId),
         const SizedBox(height: 20),
-        const SpSectionLabel("Today's Activity"),
+        const SpSectionLabel('Right Now'),
         const SizedBox(height: 10),
-        SpDailyActivityTiles(summary: summary, singleRow: true),
+        SpDailyActivityTiles(
+          summary: summary,
+          insideOnly: true,
+          onSeeEntriesAndExits: () => setState(() => _selectedIndex = 2),
+        ),
         const SizedBox(height: 20),
         _ownerTabletColumns(
           leftFlex: 3,
@@ -572,6 +581,11 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
             'Motorcycle Rate',
             _formatRateLine(rates['motorcycle']),
           ),
+          _buildDetailRow(
+            Icons.more_time_rounded,
+            'Overtime Grace Period',
+            graceOptionLabel(facilityGraceMinutes(details)),
+          ),
           Container(
             padding: const EdgeInsets.fromLTRB(12, 4, 4, 4),
             decoration: BoxDecoration(
@@ -581,11 +595,6 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
             child: Row(
               children: [
                 Icon(Icons.tag_rounded, size: 16, color: AppTheme.textMuted),
-          _buildDetailRow(
-            Icons.more_time_rounded,
-            'Overtime Grace Period',
-            graceOptionLabel(facilityGraceMinutes(details)),
-          ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
