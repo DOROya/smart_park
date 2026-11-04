@@ -73,6 +73,9 @@ class _GateActivityContentState extends State<_GateActivityContent>
   /// Text in the search box: part of a plate, a staff name or a ticket #.
   String _query = '';
 
+  String get _reporterId =>
+      FirebaseAuth.instance.currentUser?.uid ?? widget.ownerId;
+
   Future<void> _pickDate() async {
     final DateTime now = DateTime.now();
     final DateTime? picked = await showDatePicker(
@@ -237,6 +240,31 @@ class _GateActivityContentState extends State<_GateActivityContent>
               onStaffFilterChanged: widget.onStaffFilterChanged,
             ),
             const SizedBox(height: 12),
+            StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+              stream: cachedStream(
+                'driver_reports_$_reporterId',
+                () => FirebaseFirestore.instance
+                    .collection('driver_reports')
+                    .where('reporterId', isEqualTo: _reporterId)
+                    .snapshots(),
+              ),
+              builder: (BuildContext context, reportSnapshot) {
+                final List<QueryDocumentSnapshot<Map<String, dynamic>>> docs =
+                    reportSnapshot.data?.docs ??
+                    <QueryDocumentSnapshot<Map<String, dynamic>>>[];
+                if (docs.isEmpty) return const SizedBox.shrink();
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: _MyReportsCard(
+                    reports: <Map<String, dynamic>>[
+                      for (final QueryDocumentSnapshot<Map<String, dynamic>> doc
+                          in docs)
+                        doc.data(),
+                    ],
+                  ),
+                );
+              },
+            ),
             if (day.error != null)
               const SpEmptyState(
                 icon: Icons.error_outline_rounded,
@@ -268,6 +296,110 @@ class _GateActivityContentState extends State<_GateActivityContent>
           ],
         );
       },
+    );
+  }
+}
+
+/// Every driver report this owner filed, newest first, with where each
+/// stands and the admin's note once reviewed.
+class _MyReportsCard extends StatefulWidget {
+  const _MyReportsCard({required this.reports});
+
+  final List<Map<String, dynamic>> reports;
+
+  @override
+  State<_MyReportsCard> createState() => _MyReportsCardState();
+}
+
+class _MyReportsCardState extends State<_MyReportsCard> {
+  bool _showAll = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final List<Map<String, dynamic>> reports =
+        List<Map<String, dynamic>>.of(widget.reports)..sort(
+          (a, b) => (_parseDateTime(b['createdAt']) ?? DateTime.now())
+              .compareTo(_parseDateTime(a['createdAt']) ?? DateTime.now()),
+        );
+    final List<Map<String, dynamic>> shown = _showAll
+        ? reports
+        : reports.take(5).toList();
+    return SpCollapsibleCard(
+      icon: Icons.flag_outlined,
+      title: 'Driver Reports',
+      summary: driverReportsSummary(reports),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (final Map<String, dynamic> report in shown) _reportRow(report),
+          if (reports.length > shown.length)
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton(
+                onPressed: () => setState(() => _showAll = true),
+                child: Text('Show all (${reports.length})'),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _reportRow(Map<String, dynamic> report) {
+    final String driver = ((report['driverName'] as String?) ?? '').trim();
+    final DateTime? at = _parseDateTime(report['createdAt']);
+    final String note = ((report['adminNote'] as String?) ?? '').trim();
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppTheme.surfaceAlt,
+        borderRadius: BorderRadius.circular(AppTheme.radius),
+        border: Border.all(color: AppTheme.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  driver.isEmpty ? 'Driver' : driver,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w800,
+                    color: AppTheme.textDark,
+                  ),
+                ),
+              ),
+              if (at != null)
+                Text(
+                  spFormatDate(at),
+                  style: TextStyle(fontSize: 11, color: AppTheme.textMuted),
+                ),
+            ],
+          ),
+          const SizedBox(height: 2),
+          Text(
+            (report['reason'] as String?) ?? '',
+            style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+          ),
+          const SizedBox(height: 6),
+          SpDriverReportChip(report: report),
+          if (note.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(
+              'Admin note: $note',
+              style: TextStyle(
+                fontSize: 12,
+                fontStyle: FontStyle.italic,
+                color: AppTheme.textSecondary,
+              ),
+            ),
+          ],
+        ],
+      ),
     );
   }
 }

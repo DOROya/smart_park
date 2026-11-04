@@ -237,6 +237,10 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
                           establishmentId: establishmentId,
                           facility: facility,
                           details: details ?? <String, dynamic>{},
+                          onEdit: () => _openFacilityDialog(
+                            ownerId: ownerId,
+                            ownerData: ownerData,
+                          ),
                         ),
                       );
                     }
@@ -301,12 +305,6 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
                         const SizedBox(height: 16),
                         ParkingTrendsCard(facilityId: establishmentId),
                         const SizedBox(height: 16),
-                        _buildFacilityDetailsCard(
-                          establishmentId: establishmentId,
-                          facility: facility,
-                          details: details ?? <String, dynamic>{},
-                        ),
-                        const SizedBox(height: 16),
                         SpSectionLabel(
                           'Recent Scans',
                           trailing: summary.dayLogs.isEmpty
@@ -324,6 +322,16 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
                           for (final Map<String, dynamic> data
                               in summary.dayLogs.take(3))
                             _recentScanCard(data),
+                        const SizedBox(height: 16),
+                        _buildFacilityDetailsCard(
+                          establishmentId: establishmentId,
+                          facility: facility,
+                          details: details ?? <String, dynamic>{},
+                          onEdit: () => _openFacilityDialog(
+                            ownerId: ownerId,
+                            ownerData: ownerData,
+                          ),
+                        ),
                       ],
                     );
                   },
@@ -390,7 +398,7 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
           onSeeEntriesAndExits: () => setState(() => _selectedIndex = 2),
         ),
         const SizedBox(height: 20),
-        _ownerTabletColumns(
+        SpTabletColumns(
           leftFlex: 3,
           rightFlex: 2,
           left: [
@@ -445,35 +453,6 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
         onSetOvertimeStatus: (Map<String, dynamic> log, String status) =>
             _ownerSetOvertimeStatus(context, log, status),
       ),
-    );
-  }
-
-  /// Two top-aligned columns for tablet layouts.
-  Widget _ownerTabletColumns({
-    required List<Widget> left,
-    required List<Widget> right,
-    int leftFlex = 1,
-    int rightFlex = 1,
-  }) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Expanded(
-          flex: leftFlex,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: left,
-          ),
-        ),
-        const SizedBox(width: 20),
-        Expanded(
-          flex: rightFlex,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: right,
-          ),
-        ),
-      ],
     );
   }
 
@@ -545,6 +524,7 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
     required String establishmentId,
     required Map<String, dynamic> facility,
     required Map<String, dynamic> details,
+    required VoidCallback onEdit,
   }) {
     final Map<dynamic, dynamic> rates =
         ((details['rates'] ?? details['ratesByType'])
@@ -555,9 +535,18 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
       return text.isEmpty ? 'Not provided' : text;
     }
 
-    return SpSectionCard(
+    final String hours = ((facility['operatingHours'] as String?) ?? '').trim();
+    final int graceMinutes = facilityGraceMinutes(details);
+    final String grace = formatGracePeriod(graceMinutes);
+
+    // Rarely changes, so it stays out of the way of the day's activity.
+    return SpCollapsibleCard(
       icon: Icons.storefront_outlined,
       title: 'Facility Details',
+      summary: <String>[
+        if (hours.isNotEmpty) hours,
+        '${grace[0].toUpperCase()}${grace.substring(1)}',
+      ].join(' · '),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -584,7 +573,7 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
           _buildDetailRow(
             Icons.more_time_rounded,
             'Overtime Grace Period',
-            graceOptionLabel(facilityGraceMinutes(details)),
+            graceOptionLabel(graceMinutes),
           ),
           Container(
             padding: const EdgeInsets.fromLTRB(12, 4, 4, 4),
@@ -619,6 +608,15 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
                   },
                 ),
               ],
+            ),
+          ),
+          const SizedBox(height: 4),
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton.icon(
+              onPressed: onEdit,
+              icon: const Icon(Icons.edit_outlined, size: 18),
+              label: const Text('Edit'),
             ),
           ),
         ],
@@ -841,7 +839,7 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
             children: [
               header,
               const SizedBox(height: 20),
-              _ownerTabletColumns(
+              SpTabletColumns(
                 leftFlex: 2,
                 rightFlex: 3,
                 left: [addStaffCard],

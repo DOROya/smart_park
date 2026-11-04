@@ -196,6 +196,32 @@ class SpActivitySummary {
 bool spIsTablet(BuildContext context) =>
     MediaQuery.sizeOf(context).shortestSide >= 600;
 
+/// Asks before signing out, so a stray tap can't end a session mid-shift.
+/// True only when the user confirms.
+Future<bool> spConfirmSignOut(BuildContext context) async {
+  final bool? confirmed = await showDialog<bool>(
+    context: context,
+    builder: (BuildContext dialogContext) {
+      return AlertDialog(
+        title: const Text('Sign out?'),
+        content: const Text('You will need your password to sign back in.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            style: TextButton.styleFrom(foregroundColor: AppTheme.danger),
+            child: const Text('Sign Out'),
+          ),
+        ],
+      );
+    },
+  );
+  return confirmed == true;
+}
+
 /// Tablet side navigation replacing a phone's bottom bar. Collapsed it is a
 /// compact icon rail; [extended] shows labels beside the icons. Each item is
 /// (icon, selected icon, label).
@@ -277,12 +303,58 @@ class SpRailLayout extends StatelessWidget {
         rail,
         VerticalDivider(width: 1, thickness: 1, color: spCardBorder),
         Expanded(
-          child: Align(
-            alignment: Alignment.topCenter,
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 1100),
-              child: child,
+          // Tablets have no bottom bar to absorb the system taskbar's inset.
+          child: SafeArea(
+            top: false,
+            left: false,
+            child: Align(
+              alignment: Alignment.topCenter,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 1100),
+                child: child,
+              ),
             ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Tablet page body split into two columns of stacked cards. [left] and
+/// [right] carry their own spacing.
+class SpTabletColumns extends StatelessWidget {
+  const SpTabletColumns({
+    super.key,
+    required this.left,
+    required this.right,
+    this.leftFlex = 1,
+    this.rightFlex = 1,
+  });
+
+  final List<Widget> left;
+  final List<Widget> right;
+  final int leftFlex;
+  final int rightFlex;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          flex: leftFlex,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: left,
+          ),
+        ),
+        const SizedBox(width: 20),
+        Expanded(
+          flex: rightFlex,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: right,
           ),
         ),
       ],
@@ -445,30 +517,38 @@ class SpGrid extends StatelessWidget {
     required this.children,
     this.columns = 2,
     this.spacing = 12,
+    this.equalHeight = false,
   });
 
   final List<Widget> children;
   final int columns;
   final double spacing;
 
+  /// Stretches the cards in each row to match the tallest one.
+  final bool equalHeight;
+
+  Widget _row(int start) {
+    return Row(
+      crossAxisAlignment: equalHeight
+          ? CrossAxisAlignment.stretch
+          : CrossAxisAlignment.start,
+      children: [
+        for (int i = start; i < start + columns; i++) ...[
+          if (i > start) SizedBox(width: spacing),
+          Expanded(
+            child: i < children.length ? children[i] : const SizedBox.shrink(),
+          ),
+        ],
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Column(
       children: [
         for (int start = 0; start < children.length; start += columns)
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              for (int i = start; i < start + columns; i++) ...[
-                if (i > start) SizedBox(width: spacing),
-                Expanded(
-                  child: i < children.length
-                      ? children[i]
-                      : const SizedBox.shrink(),
-                ),
-              ],
-            ],
-          ),
+          equalHeight ? IntrinsicHeight(child: _row(start)) : _row(start),
       ],
     );
   }
@@ -776,6 +856,108 @@ class SpSectionCard extends StatelessWidget {
           ],
           const SizedBox(height: 14),
           if (expandChild) Expanded(child: child) else child,
+        ],
+      ),
+    );
+  }
+}
+
+/// A section card that starts closed, showing just [title] and a one-line
+/// [summary]. Tapping the header opens it to show [child].
+class SpCollapsibleCard extends StatefulWidget {
+  const SpCollapsibleCard({
+    super.key,
+    required this.icon,
+    required this.title,
+    required this.summary,
+    required this.child,
+  });
+
+  final IconData icon;
+  final String title;
+  final String summary;
+  final Widget child;
+
+  @override
+  State<SpCollapsibleCard> createState() => _SpCollapsibleCardState();
+}
+
+class _SpCollapsibleCardState extends State<SpCollapsibleCard> {
+  bool _open = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: AppTheme.surface,
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppTheme.radiusLarge),
+        side: BorderSide(color: spCardBorder),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Semantics(
+            button: true,
+            expanded: _open,
+            child: InkWell(
+              onTap: () => setState(() => _open = !_open),
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  children: [
+                    Icon(widget.icon, size: 20, color: AppTheme.textDark),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            widget.title,
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                              color: AppTheme.textDark,
+                            ),
+                          ),
+                          if (!_open) ...[
+                            const SizedBox(height: 2),
+                            Text(
+                              widget.summary,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: AppTheme.textMuted,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Icon(
+                      _open
+                          ? Icons.expand_less_rounded
+                          : Icons.expand_more_rounded,
+                      color: AppTheme.textMuted,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          AnimatedSize(
+            duration: const Duration(milliseconds: 180),
+            curve: Curves.easeOut,
+            alignment: Alignment.topCenter,
+            child: _open
+                ? Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                    child: widget.child,
+                  )
+                : const SizedBox(width: double.infinity),
+          ),
         ],
       ),
     );
@@ -1401,6 +1583,7 @@ class SpActivityCard extends StatelessWidget {
     required this.data,
     this.showDate = false,
     this.staffNames,
+    this.hideStaffId,
     this.onTap,
   });
 
@@ -1408,6 +1591,10 @@ class SpActivityCard extends StatelessWidget {
 
   /// Prefix the scan time with its date (for lists spanning several days).
   final bool showDate;
+
+  /// Leaves the staff name off scans by this uid, so guards don't see their
+  /// own name on every card. Scans by other staff still show theirs.
+  final String? hideStaffId;
 
   /// Current staff uid-to-name map. When given, a staff member missing from
   /// it is marked as removed.
@@ -1431,8 +1618,6 @@ class SpActivityCard extends StatelessWidget {
         .toLowerCase();
     final bool overtimeCollected = overtimeStatus == 'collected';
     final bool overtimeWaived = overtimeStatus == 'waived';
-    final String transactionId = ((data['transactionId'] as String?) ?? '')
-        .trim();
     final String? staffName = spLogStaffName(data, staffNames);
     final String driverName = ((data['driverName'] as String?) ?? '').trim();
     final String staffId = ((data['staffId'] as String?) ?? '').trim();
@@ -1464,6 +1649,14 @@ class SpActivityCard extends StatelessWidget {
         : showDate
         ? ' · ${spFormatDate(time)}, ${spFormatClockTime(time)}'
         : ' · ${spFormatClockTime(time)}';
+    final List<String> details = <String>[
+      if (staffName != null && (staffId.isEmpty || staffId != hideStaffId))
+        'By $staffName${staffRemoved ? ' (removed)' : ''}',
+      if (isExit && allowed && elapsedSeconds != null) ...<String>[
+        'Stayed ${spFormatDuration(Duration(seconds: elapsedSeconds))}',
+        if (billableHours != null) 'Billed ${billableHours}h',
+      ],
+    ];
 
     final Widget content = Row(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1496,71 +1689,27 @@ class SpActivityCard extends StatelessWidget {
                   SpChip(label: chipLabel, color: chipColor),
                 ],
               ),
-              if (driverName.isNotEmpty) ...<Widget>[
-                const SizedBox(height: 4),
-                Row(
-                  children: <Widget>[
-                    Icon(
-                      Icons.person_rounded,
-                      size: 14,
-                      color: AppTheme.textDark,
-                    ),
-                    const SizedBox(width: 4),
-                    Flexible(
-                      child: Text(
-                        driverName,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w700,
-                          color: AppTheme.textDark,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
               const SizedBox(height: 6),
               Text(
-                '$typeLabel scan$timeText',
+                <String>[
+                  '$typeLabel$timeText',
+                  if (driverName.isNotEmpty) driverName,
+                ].join(' · '),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 style: TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
                   color: AppTheme.textDark,
                 ),
               ),
-              if (staffName != null) ...<Widget>[
-                const SizedBox(height: 2),
-                Row(
-                  children: <Widget>[
-                    Icon(
-                      Icons.badge_outlined,
-                      size: 13,
-                      color: AppTheme.textMuted,
-                    ),
-                    const SizedBox(width: 4),
-                    Flexible(
-                      child: Text(
-                        'By $staffName${staffRemoved ? ' (removed)' : ''}',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: AppTheme.textSecondary,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-              if (isExit && allowed && elapsedSeconds != null) ...<Widget>[
+              if (details.isNotEmpty) ...<Widget>[
                 const SizedBox(height: 2),
                 Text(
-                  'Stayed ${spFormatDuration(Duration(seconds: elapsedSeconds))}'
-                  '${billableHours == null ? '' : ' · Billed ${billableHours}h'}',
-                  style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
+                  details.join(' · '),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
                 ),
               ],
               if (overtimeHours > 0) ...<Widget>[
@@ -1605,13 +1754,6 @@ class SpActivityCard extends StatelessWidget {
                     fontSize: 12,
                     color: allowed ? AppTheme.textMuted : spDeniedColor,
                   ),
-                ),
-              ],
-              if (transactionId.isNotEmpty) ...<Widget>[
-                const SizedBox(height: 4),
-                Text(
-                  'Ticket #${spShortTicketId(transactionId)}',
-                  style: TextStyle(fontSize: 11, color: AppTheme.textMuted),
                 ),
               ],
             ],

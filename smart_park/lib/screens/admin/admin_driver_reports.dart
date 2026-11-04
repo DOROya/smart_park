@@ -134,7 +134,12 @@ class _AdminDriverReportsPageState extends State<AdminDriverReportsPage> {
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 900),
               child: ListView(
-                padding: const EdgeInsets.all(16),
+                padding: EdgeInsets.fromLTRB(
+                  16,
+                  16,
+                  16,
+                  16 + MediaQuery.paddingOf(context).bottom,
+                ),
                 children: [
                   SpSegmentedControl<String>(
                     options: const <(String, String)>[
