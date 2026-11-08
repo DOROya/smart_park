@@ -237,7 +237,15 @@ void main() {
     expect(find.text('October 2026'), findsOneWidget);
     expect(find.text('No sales in October 2026.'), findsOneWidget);
 
-    // Switching away from a past month stays around it.
+    // Switching from a past period lands on its latest part.
+    await tester.tap(find.text('Week'));
+    await tester.pump();
+    expect(find.text('Oct 26 - Nov 1, 2026'), findsOneWidget);
+    // That week ends on Nov 1, so its month is November.
+    await tester.tap(find.text('Month'));
+    await tester.pump();
+    expect(find.text('November 2026'), findsOneWidget);
+
     await tester.tap(find.text('Quarter'));
     await tester.pump();
     expect(find.text('Q4 2026'), findsOneWidget);
@@ -258,6 +266,104 @@ void main() {
     );
     expect(back.onPressed, isNull);
   });
+
+  testWidgets('tapping the period opens a picker with Q1 to Q4', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      const MaterialApp(home: Scaffold(body: _Harness())),
+    );
+    await tester.tap(find.text('Quarter'));
+    await tester.pump();
+    expect(find.text('Q4 2026'), findsOneWidget);
+
+    await tester.tap(find.text('Q4 2026'));
+    await tester.pumpAndSettle();
+    expect(find.text('Choose a quarter'), findsOneWidget);
+    // Every quarter from the first sale (Dec 2025) up to now.
+    expect(find.text('Q1 · Jan - Mar'), findsNWidgets(2));
+    final ChoiceChip q3of2025 = tester
+        .widgetList<ChoiceChip>(
+          find.widgetWithText(ChoiceChip, 'Q3 · Jul - Sep'),
+        )
+        .last;
+    expect(q3of2025.onSelected, isNull);
+
+    await tester.tap(find.widgetWithText(ChoiceChip, 'Q1 · Jan - Mar').first);
+    await tester.pumpAndSettle();
+    expect(find.text('Q1 2026'), findsOneWidget);
+    expect(find.text('Jan - Mar'), findsOneWidget);
+    expect(find.text('March'), findsOneWidget);
+  });
+
+  testWidgets('switching never lands before the first sale', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      const MaterialApp(home: Scaffold(body: _Harness())),
+    );
+    await tester.tap(find.text('Year'));
+    await tester.pump();
+    await tester.tap(find.byTooltip('Previous year'));
+    await tester.pump();
+    expect(find.text('2025'), findsOneWidget);
+    // 2025's only sale is on Dec 31, so its weeks and months start there.
+    await tester.tap(find.text('Month'));
+    await tester.pump();
+    expect(find.text('December 2025'), findsOneWidget);
+    await tester.tap(find.text('Week'));
+    await tester.pump();
+    expect(find.text('Dec 29, 2025 - Jan 4, 2026'), findsOneWidget);
+  });
+
+  testWidgets('the month picker skips months still to come', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      const MaterialApp(home: Scaffold(body: _Harness())),
+    );
+    await tester.tap(find.text('November 2026'));
+    await tester.pumpAndSettle();
+    final ChoiceChip dec2026 = tester
+        .widgetList<ChoiceChip>(find.widgetWithText(ChoiceChip, 'Dec'))
+        .first;
+    expect(dec2026.onSelected, isNull);
+    await tester.tap(find.widgetWithText(ChoiceChip, 'Mar').first);
+    await tester.pumpAndSettle();
+    expect(find.text('March 2026'), findsOneWidget);
+  });
+
+  for (final Size size in const <Size>[Size(1280, 800), Size(800, 1280)]) {
+    testWidgets('fits a ${size.width.toInt()}x${size.height.toInt()} tablet', (
+      WidgetTester tester,
+    ) async {
+      tester.view.physicalSize = size;
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        const MaterialApp(home: Scaffold(body: _Harness())),
+      );
+      for (final String p in <String>['Week', 'Month', 'Quarter', 'Year']) {
+        await tester.tap(find.text(p));
+        await tester.pump();
+      }
+      await tester.tap(find.text('2026'));
+      await tester.pumpAndSettle();
+      // The sheet stays phone-width instead of spanning the tablet.
+      expect(
+        tester
+            .getSize(
+              find.ancestor(
+                of: find.text('Choose a year'),
+                matching: find.byType(ListView),
+              ),
+            )
+            .width,
+        lessThanOrEqualTo(560),
+      );
+      expect(tester.takeException(), isNull);
+    });
+  }
 
   testWidgets('the admin card shows commission, never gross', (
     WidgetTester tester,
