@@ -101,4 +101,25 @@ void main() {
     );
     expect((await db.collection('driver_warnings').get()).docs, isEmpty);
   });
+
+  group('driverReportsSummary', () {
+    test('counts every report and flags the open ones', () {
+      expect(
+        driverReportsSummary(<Map<String, dynamic>>[
+          <String, dynamic>{'status': kReportOpen},
+          <String, dynamic>{'status': kReportDismissed},
+        ]),
+        '1 under review · 2 reports',
+      );
+    });
+
+    test('leaves out the review count when nothing is open', () {
+      expect(
+        driverReportsSummary(<Map<String, dynamic>>[
+          <String, dynamic>{'status': kReportDismissed},
+        ]),
+        '1 report',
+      );
+    });
+  });
 }

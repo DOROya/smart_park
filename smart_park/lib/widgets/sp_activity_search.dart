@@ -229,6 +229,8 @@ class _SpActivitySearchState extends State<SpActivitySearch> {
                       widget.onQueryChanged('');
                     },
                   )
+                : widget.staff.isEmpty
+                ? null
                 : IconButton(
                     tooltip: 'Show suggestions',
                     icon: const Icon(Icons.expand_more_rounded),

@@ -30,6 +30,14 @@ const List<String> kDriverReportReasons = <String>[
 String reportStatus(Map<String, dynamic> data) =>
     ((data['status'] as String?) ?? kReportOpen).trim().toLowerCase();
 
+/// One line for a closed reports card, e.g. "1 under review · 6 reports".
+String driverReportsSummary(Iterable<Map<String, dynamic>> reports) {
+  final int total = reports.length;
+  final int open = reports.where((r) => reportStatus(r) == kReportOpen).length;
+  final String count = '$total report${total == 1 ? '' : 's'}';
+  return open == 0 ? count : '$open under review · $count';
+}
+
 /// The reasons on a report, flag or warning (`reasons`), in the order they
 /// were picked. Ones from before several could be picked have a single
 /// `reason`.

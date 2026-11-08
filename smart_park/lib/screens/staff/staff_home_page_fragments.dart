@@ -3,6 +3,27 @@
 part of 'staff_home_page.dart';
 
 extension _StaffHomePageFragments on _StaffHomePageState {
+  bool get _isTablet => spIsTablet(context);
+
+  /// Two columns need landscape width; a portrait tablet stays single column.
+  bool get _useTabletColumns => MediaQuery.sizeOf(context).width >= 1000;
+
+  /// A gate scan that opens its details. [showDate] is for lists that can
+  /// span several days.
+  Widget _scanCard(Map<String, dynamic> data, {bool showDate = false}) {
+    return SpActivityCard(
+      data: data,
+      showDate: showDate,
+      hideStaffId: FirebaseAuth.instance.currentUser?.uid,
+      onTap: () => showSpActivityDetails(
+        context,
+        log: data,
+        onMarkOvertimeCollected: _markLogOvertimeCollected,
+        flaggingStaffName: _staffName,
+      ),
+    );
+  }
+
   Widget _buildDashboardTab(Map<String, dynamic> userData) {
     if (_assignedFacilityId == null || _assignedFacilityId!.isEmpty) {
       return Center(
@@ -84,88 +105,113 @@ extension _StaffHomePageFragments on _StaffHomePageState {
                             ? slotSum
                             : ((facility['availability'] as num?) ?? 0).toInt();
 
+                        final Widget hero = SpHeroBanner(
+                          title: firstName.isEmpty
+                              ? spGreeting(now)
+                              : '${spGreeting(now)}, $firstName',
+                          badge: roleLabel,
+                          details: <(IconData, String)>[
+                            (
+                              Icons.storefront_rounded,
+                              facilityName.isEmpty
+                                  ? 'Assigned facility'
+                                  : facilityName,
+                            ),
+                            (Icons.calendar_today_rounded, spFormatDate(now)),
+                          ],
+                          action: SpHeroButton(
+                            icon: Icons.qr_code_scanner_rounded,
+                            label: 'Open Gate Scanner',
+                            onPressed: () {
+                              setState(() {
+                                _selectedNavIndex = 1;
+                              });
+                            },
+                          ),
+                        );
+                        final List<Widget> rightNow = <Widget>[
+                          const SpSectionLabel('Right Now'),
+                          const SizedBox(height: 10),
+                          SpDailyActivityTiles(
+                            summary: summary,
+                            insideOnly: true,
+                            entriesAndExitsLabel: 'History',
+                            onSeeEntriesAndExits: () => setState(() {
+                              _selectedHistoryDate = DateTime.now();
+                              _selectedNavIndex = 2;
+                            }),
+                          ),
+                        ];
+                        final Widget cashCard = _ShiftCashCard(
+                          cash: SpOvertimeCash.from(
+                            today.logs.where(
+                              (Map<String, dynamic> log) =>
+                                  log['staffId'] ==
+                                  FirebaseAuth.instance.currentUser?.uid,
+                            ),
+                          ),
+                        );
+
+                        final Widget slotsCard = SpLiveSlotsCard(
+                          establishmentId: _assignedFacilityId ?? '',
+                          totalSlots: totalSlots,
+                          fallbackOccupied: summary.insideNow,
+                          carSlots: carSlots,
+                          motorcycleSlots: motorcycleSlots,
+                        );
+                        final List<Widget> recentScans = <Widget>[
+                          SpSectionLabel(
+                            'Recent Scans',
+                            trailing: summary.dayLogs.isEmpty
+                                ? null
+                                : TextButton(
+                                    onPressed: () {
+                                      setState(() {
+                                        _selectedHistoryDate = DateTime.now();
+                                        _selectedNavIndex = 2;
+                                      });
+                                    },
+                                    child: const Text('View all'),
+                                  ),
+                          ),
+                          const SizedBox(height: 6),
+                          if (summary.dayLogs.isEmpty)
+                            const SpEmptyState(message: 'No scans yet today.')
+                          else
+                            for (final Map<String, dynamic> data
+                                in summary.dayLogs.take(3))
+                              _scanCard(data),
+                        ];
+
                         return ListView(
                           padding: const EdgeInsets.all(16),
                           children: [
-                            SpHeroBanner(
-                              title: firstName.isEmpty
-                                  ? spGreeting(now)
-                                  : '${spGreeting(now)}, $firstName',
-                              badge: roleLabel,
-                              details: <(IconData, String)>[
-                                (
-                                  Icons.storefront_rounded,
-                                  facilityName.isEmpty
-                                      ? 'Assigned facility'
-                                      : facilityName,
-                                ),
-                                (
-                                  Icons.calendar_today_rounded,
-                                  spFormatDate(now),
-                                ),
-                              ],
-                              action: SpHeroButton(
-                                icon: Icons.qr_code_scanner_rounded,
-                                label: 'Open Gate Scanner',
-                                onPressed: () {
-                                  setState(() {
-                                    _selectedNavIndex = 1;
-                                  });
-                                },
-                              ),
-                            ),
+                            hero,
                             const SizedBox(height: 16),
-                            const SpSectionLabel('Right Now'),
-                            const SizedBox(height: 10),
-                            SpDailyActivityTiles(
-                              summary: summary,
-                              insideOnly: true,
-                              entriesAndExitsLabel: 'History',
-                              onSeeEntriesAndExits: () => setState(() {
-                                _selectedHistoryDate = DateTime.now();
-                                _selectedNavIndex = 2;
-                              }),
-                            ),
-                            const SizedBox(height: 12),
-                            _ShiftCashCard(
-                              cash: SpOvertimeCash.from(
-                                today.logs.where(
-                                  (Map<String, dynamic> log) =>
-                                      log['staffId'] ==
-                                      FirebaseAuth.instance.currentUser?.uid,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 16),
-                            SpLiveSlotsCard(
-                              establishmentId: _assignedFacilityId ?? '',
-                              totalSlots: totalSlots,
-                              fallbackOccupied: summary.insideNow,
-                              carSlots: carSlots,
-                              motorcycleSlots: motorcycleSlots,
-                            ),
-                            const SizedBox(height: 16),
-                            SpSectionLabel(
-                              'Recent Scans',
-                              trailing: summary.dayLogs.isEmpty
-                                  ? null
-                                  : TextButton(
-                                      onPressed: () {
-                                        setState(() {
-                                          _selectedHistoryDate = DateTime.now();
-                                          _selectedNavIndex = 2;
-                                        });
-                                      },
-                                      child: const Text('View all'),
-                                    ),
-                            ),
-                            const SizedBox(height: 6),
-                            if (summary.dayLogs.isEmpty)
-                              const SpEmptyState(message: 'No scans yet today.')
-                            else
-                              for (final Map<String, dynamic> data
-                                  in summary.dayLogs.take(3))
-                                SpActivityCard(data: data),
+                            if (_useTabletColumns)
+                              SpTabletColumns(
+                                leftFlex: 3,
+                                rightFlex: 2,
+                                left: <Widget>[
+                                  ...rightNow,
+                                  const SizedBox(height: 16),
+                                  ...recentScans,
+                                ],
+                                right: <Widget>[
+                                  slotsCard,
+                                  const SizedBox(height: 16),
+                                  cashCard,
+                                ],
+                              )
+                            else ...[
+                              ...rightNow,
+                              const SizedBox(height: 12),
+                              cashCard,
+                              const SizedBox(height: 16),
+                              slotsCard,
+                              const SizedBox(height: 16),
+                              ...recentScans,
+                            ],
                           ],
                         );
                       },
@@ -269,222 +315,241 @@ extension _StaffHomePageFragments on _StaffHomePageState {
   /// [restriction] is "suspended" or "deactivated" when an admin pulled the
   /// facility: entry is closed, exits still work.
   Widget _buildQrTabContent(String? facilityId, String? restriction) {
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        Text(
-          'Scan Customer QR Code',
-          style: TextStyle(
-            fontSize: 20,
-            fontWeight: FontWeight.w700,
-            color: AppTheme.textDark,
-          ),
+    final double scannerHeight = _isTablet ? 360 : 280;
+    final List<Widget> header = <Widget>[
+      Text(
+        'Scan Customer QR Code',
+        style: TextStyle(
+          fontSize: 20,
+          fontWeight: FontWeight.w700,
+          color: AppTheme.textDark,
         ),
-        const SizedBox(height: 8),
-        Text(
-          'Set Entry or Exit first, then place the QR code in the frame.',
-          style: TextStyle(color: AppTheme.textMuted),
-        ),
-        if (restriction != null) ...[
-          const SizedBox(height: 12),
-          _EntryClosedBanner(restriction: restriction),
-        ],
+      ),
+      const SizedBox(height: 8),
+      Text(
+        'Set Entry or Exit first, then place the QR code in the frame.',
+        style: TextStyle(color: AppTheme.textMuted),
+      ),
+      if (restriction != null) ...[
         const SizedBox(height: 12),
-        _gateModeSelector(),
-        const SizedBox(height: 8),
-        Text(
-          _gateMode == 'entry'
-              ? restriction == null
-                    ? 'Entry mode: tickets are verified and checked in.'
-                    : 'Entry mode: every scan is denied while the facility '
-                          'is $restriction.'
-              : 'Exit mode: stay time is checked, overtime is billed.',
-          style: TextStyle(
-            color: AppTheme.textMuted,
-            fontSize: 12,
-            fontWeight: FontWeight.w600,
-          ),
+        _EntryClosedBanner(restriction: restriction),
+      ],
+    ];
+    final List<Widget> scanner = <Widget>[
+      _gateModeSelector(),
+      const SizedBox(height: 8),
+      Text(
+        _gateMode == 'entry'
+            ? restriction == null
+                  ? 'Entry mode: tickets are verified and checked in.'
+                  : 'Entry mode: every scan is denied while the facility '
+                        'is $restriction.'
+            : 'Exit mode: stay time is checked, overtime is billed.',
+        style: TextStyle(
+          color: AppTheme.textMuted,
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
         ),
-        const SizedBox(height: 12),
-        FutureBuilder<bool>(
-          future: _permissionService.ensureCameraPermissionForQr(context),
-          builder:
-              (BuildContext context, AsyncSnapshot<bool> permissionSnapshot) {
-                if (permissionSnapshot.connectionState ==
-                    ConnectionState.waiting) {
-                  return const SizedBox(
-                    height: 280,
-                    child: Center(child: CircularProgressIndicator()),
-                  );
-                }
-
-                if (permissionSnapshot.data != true) {
-                  return SizedBox(
-                    height: 280,
-                    child: Center(
-                      child: Text(
-                        'Camera permission is required for scanning.',
-                        style: TextStyle(color: AppTheme.textMuted),
-                      ),
-                    ),
-                  );
-                }
-
+      ),
+      const SizedBox(height: 12),
+      FutureBuilder<bool>(
+        future: _permissionService.ensureCameraPermissionForQr(context),
+        builder:
+            (BuildContext context, AsyncSnapshot<bool> permissionSnapshot) {
+              if (permissionSnapshot.connectionState ==
+                  ConnectionState.waiting) {
                 return SizedBox(
-                  height: 280,
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(AppTheme.radiusLarge),
-                    child: Stack(
-                      fit: StackFit.expand,
-                      children: [
-                        MobileScanner(
-                          controller: _scannerController,
-                          onDetect: _onBarcodeDetect,
-                        ),
-                        Positioned(
-                          top: 8,
-                          right: 8,
-                          child: ValueListenableBuilder<MobileScannerState>(
-                            valueListenable: _scannerController,
-                            builder:
-                                (
-                                  BuildContext context,
-                                  MobileScannerState state,
-                                  Widget? child,
-                                ) {
-                                  if (state.torchState ==
-                                      TorchState.unavailable) {
-                                    return const SizedBox.shrink();
-                                  }
-                                  final bool on =
-                                      state.torchState == TorchState.on;
-                                  return IconButton.filled(
-                                    tooltip: on
-                                        ? 'Turn off flashlight'
-                                        : 'Turn on flashlight',
-                                    style: IconButton.styleFrom(
-                                      backgroundColor: on
-                                          ? AppTheme.accent
-                                          : Colors.black54,
-                                      foregroundColor: on
-                                          ? AppTheme.onAccent
-                                          : Colors.white,
-                                    ),
-                                    onPressed: _scannerController.toggleTorch,
-                                    icon: Icon(
-                                      on
-                                          ? Icons.flash_on_rounded
-                                          : Icons.flash_off_rounded,
-                                    ),
-                                  );
-                                },
-                          ),
-                        ),
-                        Center(
-                          child: Container(
-                            width: 220,
-                            height: 220,
-                            decoration: BoxDecoration(
-                              border: Border.all(
-                                color: AppTheme.accent,
-                                width: 4,
-                              ),
-                              borderRadius: BorderRadius.circular(
-                                AppTheme.radiusSmall,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
+                  height: scannerHeight,
+                  child: const Center(child: CircularProgressIndicator()),
+                );
+              }
+
+              if (permissionSnapshot.data != true) {
+                return SizedBox(
+                  height: scannerHeight,
+                  child: Center(
+                    child: Text(
+                      'Camera permission is required for scanning.',
+                      style: TextStyle(color: AppTheme.textMuted),
                     ),
                   ),
                 );
-              },
-        ),
-        if (_lastScanResult != null) ...[
-          const SizedBox(height: 12),
-          GateResultCard(
+              }
+
+              return SizedBox(
+                height: scannerHeight,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(AppTheme.radiusLarge),
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      MobileScanner(
+                        controller: _scannerController,
+                        onDetect: _onBarcodeDetect,
+                      ),
+                      Positioned(
+                        top: 8,
+                        right: 8,
+                        child: ValueListenableBuilder<MobileScannerState>(
+                          valueListenable: _scannerController,
+                          builder:
+                              (
+                                BuildContext context,
+                                MobileScannerState state,
+                                Widget? child,
+                              ) {
+                                if (state.torchState ==
+                                    TorchState.unavailable) {
+                                  return const SizedBox.shrink();
+                                }
+                                final bool on =
+                                    state.torchState == TorchState.on;
+                                return IconButton.filled(
+                                  tooltip: on
+                                      ? 'Turn off flashlight'
+                                      : 'Turn on flashlight',
+                                  style: IconButton.styleFrom(
+                                    backgroundColor: on
+                                        ? AppTheme.accent
+                                        : Colors.black54,
+                                    foregroundColor: on
+                                        ? AppTheme.onAccent
+                                        : Colors.white,
+                                  ),
+                                  onPressed: _scannerController.toggleTorch,
+                                  icon: Icon(
+                                    on
+                                        ? Icons.flash_on_rounded
+                                        : Icons.flash_off_rounded,
+                                  ),
+                                );
+                              },
+                        ),
+                      ),
+                      Center(
+                        child: Container(
+                          width: 220,
+                          height: 220,
+                          decoration: BoxDecoration(
+                            border: Border.all(
+                              color: AppTheme.accent,
+                              width: 4,
+                            ),
+                            borderRadius: BorderRadius.circular(
+                              AppTheme.radiusSmall,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+      ),
+    ];
+    final Widget? result = _lastScanResult == null
+        ? null
+        : GateResultCard(
             result: _lastScanResult!,
             marking: _markingOvertime,
             onMarkCollected: _markLastOvertimeCollected,
             refusing: _refusingEntry,
             onWrongVehicle: _refuseLastEntry,
-          ),
-        ],
+          );
+    final List<Widget> lookup = <Widget>[
+      _ManualPlateLookup(onLookup: _lookupByPlate),
+      if (facilityId != null) ...[
         const SizedBox(height: 12),
-        _ManualPlateLookup(onLookup: _lookupByPlate),
-        if (facilityId != null) ...[
-          const SizedBox(height: 12),
-          WalkInPanel(
-            facilityId: facilityId,
-            ownerId: _ownerId,
-            staffName: _staffName,
-            entryClosed: restriction != null,
-          ),
-        ],
-        const SizedBox(height: 12),
-        Row(
-          children: [
-            Expanded(
-              child: Text(
-                'Recent Scans',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w700,
-                  color: AppTheme.textDark,
-                ),
+        WalkInPanel(
+          facilityId: facilityId,
+          ownerId: _ownerId,
+          staffName: _staffName,
+          entryClosed: restriction != null,
+        ),
+      ],
+    ];
+    final List<Widget> recent = <Widget>[
+      Row(
+        children: [
+          Expanded(
+            child: Text(
+              'Recent Scans',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+                color: AppTheme.textDark,
               ),
             ),
-            TextButton(
-              onPressed: () {
-                setState(() {
-                  _selectedNavIndex = 2;
-                });
-              },
-              child: const Text('View All'),
-            ),
-          ],
-        ),
-        if (facilityId == null)
-          const Text('Assign staff to a facility first.')
-        else
-          StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-            stream: cachedStream(
-              'recent_$facilityId',
-              () => FirebaseFirestore.instance
-                  .collection('activity_logs')
-                  .where('establishmentID', isEqualTo: facilityId)
-                  .orderBy('timestamp', descending: true)
-                  .limit(5)
-                  .snapshots(),
-            ),
-            builder:
-                (
-                  BuildContext context,
-                  AsyncSnapshot<QuerySnapshot<Map<String, dynamic>>> snapshot,
-                ) {
-                  if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-                    return const Text('No scans yet.');
-                  }
-
-                  return Column(
-                    children: snapshot.data!.docs.map((
-                      QueryDocumentSnapshot<Map<String, dynamic>> doc,
-                    ) {
-                      final Map<String, dynamic> data = doc.data();
-                      return SpActivityCard(
-                        data: data,
-                        onTap: () => showSpActivityDetails(
-                          context,
-                          log: data,
-                          onMarkOvertimeCollected: _markLogOvertimeCollected,
-                          flaggingStaffName: _staffName,
-                        ),
-                      );
-                    }).toList(),
-                  );
-                },
           ),
+          TextButton(
+            onPressed: () {
+              setState(() {
+                _selectedNavIndex = 2;
+              });
+            },
+            child: const Text('View All'),
+          ),
+        ],
+      ),
+      if (facilityId == null)
+        const Text('Assign staff to a facility first.')
+      else
+        StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+          stream: cachedStream(
+            'recent_$facilityId',
+            () => FirebaseFirestore.instance
+                .collection('activity_logs')
+                .where('establishmentID', isEqualTo: facilityId)
+                .orderBy('timestamp', descending: true)
+                .limit(5)
+                .snapshots(),
+          ),
+          builder:
+              (
+                BuildContext context,
+                AsyncSnapshot<QuerySnapshot<Map<String, dynamic>>> snapshot,
+              ) {
+                if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                  return const Text('No scans yet.');
+                }
+
+                // The latest scans can be from earlier days.
+                return Column(
+                  children: <Widget>[
+                    for (final QueryDocumentSnapshot<Map<String, dynamic>> doc
+                        in snapshot.data!.docs)
+                      _scanCard(doc.data(), showDate: true),
+                  ],
+                );
+              },
+        ),
+    ];
+
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        ...header,
+        const SizedBox(height: 12),
+        if (_useTabletColumns)
+          // The result sits beside the camera so it is never below the fold.
+          SpTabletColumns(
+            leftFlex: 3,
+            rightFlex: 2,
+            left: <Widget>[...scanner, const SizedBox(height: 12), ...recent],
+            right: <Widget>[
+              if (result != null) ...[result, const SizedBox(height: 12)],
+              ...lookup,
+            ],
+          )
+        else ...[
+          ...scanner,
+          if (result != null) ...[const SizedBox(height: 12), result],
+          const SizedBox(height: 12),
+          ...lookup,
+          const SizedBox(height: 12),
+          ...recent,
+        ],
       ],
     );
   }
@@ -495,162 +560,95 @@ extension _StaffHomePageFragments on _StaffHomePageState {
       return const Center(child: Text('No facility assignment found.'));
     }
 
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
-          child: SpPageHeader(
-            title: 'History',
-            subtitle: 'Gate scans at your facility.',
-            trailing: SpDateButton(
-              date: _selectedHistoryDate,
-              onTap: _pickHistoryDate,
-            ),
-          ),
-        ),
-        TabBar(
-          controller: _historyTabController,
-          labelColor: AppTheme.textDark,
-          unselectedLabelColor: AppTheme.textMuted,
-          labelStyle: const TextStyle(fontWeight: FontWeight.w700),
-          indicatorColor: AppTheme.accent,
-          indicatorWeight: 3,
-          tabs: const [
-            Tab(text: 'All'),
-            Tab(text: 'Entries'),
-            Tab(text: 'Exits'),
-            Tab(text: 'Inside'),
-          ],
-        ),
-        Expanded(
-          // Only the picked day is loaded, not the facility's whole history.
-          child: withDayLogs(
-            facilityId,
-            _selectedHistoryDate,
-            builder: (BuildContext context, SpDayLogs day) {
-              if (day.error != null) {
-                return Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Text(
-                      'Could not load history.\n'
-                      '${friendlyError(day.error!, fallback: 'Please try again.')}',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(color: AppTheme.textMuted),
-                    ),
-                  ),
-                );
-              }
+    // Only the picked day is loaded, not the facility's whole history.
+    return withDayLogs(
+      facilityId,
+      _selectedHistoryDate,
+      builder: (BuildContext context, SpDayLogs day) {
+        final SpActivitySummary summary = SpActivitySummary.fromLogs(
+          day.logs,
+          _selectedHistoryDate,
+          insideLogs: day.insideLogs,
+        );
+        // Denied scans stay logged but are hidden from the history; staff
+        // refusals are listed. Inside lists every vehicle still parked,
+        // whatever day it came in, like the owner's Activity tab.
+        final bool insideTab = _historyFilter == 'active';
+        final Iterable<Map<String, dynamic>> scans = insideTab
+            ? day.insideLogs.where(spIsInsideLog)
+            : day.logs.where(spIsListedLog).where(_matchesHistoryFilter);
+        final List<Widget> cards = <Widget>[
+          for (final Map<String, dynamic> data in scans)
+            if (spActivityMatchesQuery(data, _historyQuery))
+              _scanCard(data, showDate: insideTab),
+        ];
 
-              if (!day.loaded) {
-                return const SpSkeletonList();
-              }
-
-              // Denied scans stay logged but are hidden from the history;
-              // staff refusals are listed but not counted.
-              final List<Map<String, dynamic>> dayLogs = day.logs
-                  .where(spIsAllowedLog)
-                  .toList();
-              // Inside lists every vehicle still parked, whatever day it
-              // came in, like the owner's Activity tab.
-              final bool insideTab = _historyFilter == 'active';
-              final List<Map<String, dynamic>> filtered = insideTab
-                  ? day.insideLogs.where(spIsInsideLog).toList()
-                  : day.logs
-                        .where(spIsListedLog)
-                        .where(_matchesHistoryFilter)
-                        .toList();
-
-              final int entries = dayLogs
-                  .where(
-                    (Map<String, dynamic> d) => spLogScanType(d) == 'entry',
-                  )
-                  .length;
-              final int exits = dayLogs
-                  .where((Map<String, dynamic> d) => spLogScanType(d) == 'exit')
-                  .length;
-
-              return ListView(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-                children: [
-                  Row(
-                    children: [
-                      _historyStat('Entries', entries, AppTheme.success),
-                      const SizedBox(width: 8),
-                      _historyStat('Exits', exits, AppTheme.info),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  if (filtered.isEmpty)
-                    Padding(
-                      padding: EdgeInsets.symmetric(vertical: 40),
-                      child: Column(
-                        children: [
-                          Icon(
-                            Icons.receipt_long_rounded,
-                            size: 44,
-                            color: AppTheme.borderStrong,
-                          ),
-                          SizedBox(height: 8),
-                          Text(
-                            'No scans for this filter and date.',
-                            style: TextStyle(color: AppTheme.textMuted),
-                          ),
-                        ],
-                      ),
-                    )
-                  else
-                    for (final Map<String, dynamic> data in filtered)
-                      SpActivityCard(
-                        data: data,
-                        showDate: insideTab,
-                        onTap: () => showSpActivityDetails(
-                          context,
-                          log: data,
-                          onMarkOvertimeCollected: _markLogOvertimeCollected,
-                          flaggingStaffName: _staffName,
-                        ),
-                      ),
-                ],
-              );
-            },
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _historyStat(String label, int value, Color color) {
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
-        decoration: BoxDecoration(
-          color: AppTheme.surface,
-          borderRadius: BorderRadius.circular(AppTheme.radius),
-          border: Border.all(color: AppTheme.border),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        return ListView(
+          padding: const EdgeInsets.all(16),
           children: [
-            Text(
-              '$value',
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.w800,
-                color: color,
+            SpPageHeader(
+              title: 'History',
+              subtitle: 'Gate scans at your facility.',
+              trailing: SpDateButton(
+                date: _selectedHistoryDate,
+                onTap: _pickHistoryDate,
               ),
             ),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-                color: AppTheme.textMuted,
-              ),
+            const SizedBox(height: 16),
+            SpDailyActivityTiles(
+              summary: summary,
+              today: spSameDate(_selectedHistoryDate, DateTime.now()),
+              singleRow: _isTablet,
             ),
+            const SizedBox(height: 16),
+            SpSegmentedControl<String>(
+              options: const <(String, String)>[
+                ('all', 'All'),
+                ('entry', 'Entries'),
+                ('exit', 'Exits'),
+                ('active', 'Inside'),
+              ],
+              selected: _historyFilter,
+              onChanged: (String value) =>
+                  setState(() => _historyFilter = value),
+            ),
+            const SizedBox(height: 8),
+            SpActivitySearch(
+              logs: insideTab ? day.insideLogs : day.logs,
+              staff: const <(String, String)>[],
+              query: _historyQuery,
+              onQueryChanged: (String value) =>
+                  setState(() => _historyQuery = value),
+              staffFilter: null,
+              onStaffFilterChanged: (_) {},
+            ),
+            const SizedBox(height: 12),
+            if (day.error != null)
+              SpEmptyState(
+                icon: Icons.error_outline_rounded,
+                message:
+                    'Could not load history. '
+                    '${friendlyError(day.error!, fallback: 'Please try again.')}',
+              )
+            else if (!day.loaded)
+              const SpSkeletonList()
+            else if (cards.isEmpty)
+              SpEmptyState(
+                icon: _historyQuery.trim().isEmpty
+                    ? Icons.receipt_long_rounded
+                    : Icons.search_off_rounded,
+                message: _historyQuery.trim().isEmpty
+                    ? 'No scans for this filter and date.'
+                    : 'No scans match "${_historyQuery.trim()}" for this '
+                          'filter and date.',
+              )
+            else if (_isTablet)
+              SpGrid(children: cards)
+            else
+              ...cards,
           ],
-        ),
-      ),
+        );
+      },
     );
   }
 

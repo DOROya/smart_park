@@ -132,6 +132,8 @@ class _SpProfileViewState extends State<SpProfileView> {
                     _identityCard(),
                     const SizedBox(height: 12),
                     const SpChangePasswordCard(),
+                    const SizedBox(height: 12),
+                    const SpAppearanceCard(),
                   ],
                 ),
               ),
@@ -141,8 +143,6 @@ class _SpProfileViewState extends State<SpProfileView> {
                 child: Column(
                   children: [
                     _personalInfoCard(),
-                    const SizedBox(height: 12),
-                    const SpAppearanceCard(),
                     const SizedBox(height: 12),
                     SpTermsCard(role: widget.roleLabel),
                   ],
@@ -263,7 +263,7 @@ class _SpProfileViewState extends State<SpProfileView> {
     return SpSectionCard(
       icon: Icons.manage_accounts_rounded,
       title: 'Personal Information',
-      subtitle: 'Keep your name accurate for bookings and receipts.',
+      subtitle: 'Keep your name accurate for tickets and receipts.',
       child: Column(
         children: [
           TextField(

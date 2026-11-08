@@ -15,6 +15,7 @@ import '../../theme/theme_controller.dart';
 import '../../utils/friendly_error.dart';
 import '../../widgets/smartpark_ui.dart';
 import '../../widgets/sp_activity_details.dart';
+import '../../widgets/sp_activity_search.dart';
 import '../../widgets/sp_driver_report.dart' show showFlagIncidentDialog;
 import '../../widgets/sp_loading.dart';
 import '../../widgets/sp_overtime.dart';
@@ -32,14 +33,28 @@ class StaffHomePage extends StatefulWidget {
 }
 
 class _StaffHomePageState extends State<StaffHomePage>
-    with SingleTickerProviderStateMixin, SpStreamCache<StaffHomePage> {
+    with SpStreamCache<StaffHomePage> {
   final PermissionService _permissionService = const PermissionService();
 
   late Future<DocumentSnapshot<Map<String, dynamic>>> _userFuture;
-  late TabController _historyTabController;
+
+  static const List<(IconData, IconData, String)> _navItems =
+      <(IconData, IconData, String)>[
+        (Icons.dashboard_outlined, Icons.dashboard_rounded, 'Dashboard'),
+        (
+          Icons.qr_code_scanner_rounded,
+          Icons.qr_code_scanner_rounded,
+          'Scanner',
+        ),
+        (Icons.history_rounded, Icons.history_rounded, 'History'),
+      ];
 
   int _selectedNavIndex = 0;
+  bool _railExtended = false;
   String _historyFilter = 'all';
+
+  /// Text in the History search box: a plate, a name or a ticket #.
+  String _historyQuery = '';
   DateTime _selectedHistoryDate = DateTime.now();
 
   String? _assignedFacilityId;
@@ -77,22 +92,6 @@ class _StaffHomePageState extends State<StaffHomePage>
     final String? uid = FirebaseAuth.instance.currentUser?.uid;
     _userFuture = FirebaseFirestore.instance.collection('users').doc(uid).get();
 
-    _historyTabController = TabController(length: 4, vsync: this);
-    _historyTabController.addListener(() {
-      if (_historyTabController.indexIsChanging) {
-        return;
-      }
-
-      setState(() {
-        _historyFilter = switch (_historyTabController.index) {
-          0 => 'all',
-          1 => 'entry',
-          2 => 'exit',
-          _ => 'active',
-        };
-      });
-    });
-
     unawaited(_resolveAssignedFacility());
     _watchStaffRecord();
   }
@@ -122,7 +121,6 @@ class _StaffHomePageState extends State<StaffHomePage>
   void dispose() {
     unawaited(_staffRecordSub?.cancel());
     _scannerController.dispose();
-    _historyTabController.dispose();
     super.dispose();
   }
 
@@ -149,6 +147,7 @@ class _StaffHomePageState extends State<StaffHomePage>
   }
 
   Future<void> _signOut() async {
+    if (!await spConfirmSignOut(context)) return;
     await FirebaseAuth.instance.signOut();
     if (!mounted) {
       return;
@@ -445,10 +444,19 @@ class _StaffHomePageState extends State<StaffHomePage>
             final Map<String, dynamic> userData =
                 snapshot.data?.data() ?? <String, dynamic>{'role': 'Guard'};
 
+            final bool isTablet = spIsTablet(context);
             return Scaffold(
               appBar: AppBar(
                 backgroundColor: AppTheme.surface,
                 elevation: 0,
+                leading: isTablet
+                    ? SpMenuToggleButton(
+                        extended: _railExtended,
+                        onPressed: () =>
+                            setState(() => _railExtended = !_railExtended),
+                      )
+                    : null,
+                titleSpacing: isTablet ? 0 : null,
                 title: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -480,44 +488,62 @@ class _StaffHomePageState extends State<StaffHomePage>
                     icon: const Icon(Icons.settings_rounded),
                     tooltip: 'Change Password',
                   ),
-                  IconButton(
-                    onPressed: _signOut,
-                    icon: const Icon(Icons.logout_rounded),
-                    tooltip: 'Sign Out',
-                  ),
+                  if (!isTablet)
+                    IconButton(
+                      onPressed: _signOut,
+                      icon: const Icon(Icons.logout_rounded),
+                      tooltip: 'Sign Out',
+                    ),
                 ],
               ),
-              body: _buildBody(userData),
-              bottomNavigationBar: BottomNavigationBar(
-                currentIndex: _selectedNavIndex,
-                selectedItemColor: AppTheme.textDark,
-                unselectedItemColor: AppTheme.textMuted,
-                showSelectedLabels: true,
-                showUnselectedLabels: true,
-                type: BottomNavigationBarType.fixed,
-                selectedLabelStyle: const TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                ),
-                unselectedLabelStyle: const TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w500,
-                ),
-                onTap: (int index) {
-                  setState(() {
-                    _selectedNavIndex = index;
-                  });
-                },
-                items: [
-                  _navItem(icon: Icons.dashboard_rounded, label: 'Dashboard'),
-                  _navItem(
-                    icon: Icons.qr_code_scanner_rounded,
-                    label: 'QR Scanning',
-                    emphasized: true,
-                  ),
-                  _navItem(icon: Icons.history_rounded, label: 'History'),
-                ],
-              ),
+              body: isTablet
+                  ? SpRailLayout(
+                      rail: SpNavRail(
+                        items: _navItems,
+                        selectedIndex: _selectedNavIndex,
+                        onSelected: (int index) =>
+                            setState(() => _selectedNavIndex = index),
+                        extended: _railExtended,
+                        onSignOut: _signOut,
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        child: _buildBody(userData),
+                      ),
+                    )
+                  : _buildBody(userData),
+              bottomNavigationBar: isTablet
+                  ? null
+                  : BottomNavigationBar(
+                      currentIndex: _selectedNavIndex,
+                      selectedItemColor: AppTheme.textDark,
+                      unselectedItemColor: AppTheme.textMuted,
+                      showSelectedLabels: true,
+                      showUnselectedLabels: true,
+                      type: BottomNavigationBarType.fixed,
+                      selectedLabelStyle: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                      unselectedLabelStyle: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                      ),
+                      onTap: (int index) {
+                        setState(() {
+                          _selectedNavIndex = index;
+                        });
+                      },
+                      items: [
+                        for (final (int index, (_, IconData icon, String label))
+                            in _navItems.indexed)
+                          _navItem(
+                            icon: icon,
+                            label: label,
+                            emphasized: index == 1,
+                          ),
+                      ],
+                    ),
             );
           },
     );

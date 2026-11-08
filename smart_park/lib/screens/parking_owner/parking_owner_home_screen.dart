@@ -22,9 +22,13 @@ import '../../services/gate_scan_service.dart'
         kOvertimeWaived,
         setOvertimeStatusAsOwner;
 import '../../services/establishment_repository.dart';
-import '../../services/driver_reports.dart' show kReportOpen, reportStatus;
+import '../../services/driver_reports.dart' show driverReportsSummary;
 import '../../services/parking_pricing.dart'
-    show facilityGraceMinutes, formatParkingHours, graceOptionLabel;
+    show
+        facilityGraceMinutes,
+        formatGracePeriod,
+        formatParkingHours,
+        graceOptionLabel;
 import '../../services/platform_fees.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/friendly_error.dart';
@@ -250,6 +254,7 @@ class _ParkingOwnerHomePageState extends State<ParkingOwnerHomePage>
   }
 
   Future<void> _signOut() async {
+    if (!await spConfirmSignOut(context)) return;
     await FirebaseAuth.instance.signOut();
     if (!mounted) return;
     unawaited(

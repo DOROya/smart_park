@@ -22,7 +22,6 @@ class _CommissionRecord {
     this.overtimeAmount = 0,
     this.overtimeStatus = '',
     this.overtimeSettledAt,
-    this.ticket,
   });
 
   final String id;
@@ -50,11 +49,6 @@ class _CommissionRecord {
 
   /// The `transactions` doc; null for records known only from a payment
   /// split. Carries the driver, so the owner can report them.
-  final Map<String, dynamic>? ticket;
-
-  bool get canReportDriver =>
-      ((ticket?['driverId'] as String?) ?? '').trim().isNotEmpty;
-
   bool get hasOvertime => overtimeHours > 0 && overtimeAmount > 0;
 
   /// Latest money event on the ticket, so settling overtime brings the
@@ -118,36 +112,17 @@ class _CommissionsListContentState extends State<_CommissionsListContent>
                     AsyncSnapshot<QuerySnapshot<Map<String, dynamic>>>
                     splitSnapshot,
                   ) {
-                    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                      // The owner's own reports, one stream for every card.
-                      stream: cachedStream(
-                        'driver_reports_$_reporterId',
-                        () => FirebaseFirestore.instance
-                            .collection('driver_reports')
-                            .where('reporterId', isEqualTo: _reporterId)
-                            .snapshots(),
-                      ),
-                      builder: (BuildContext context, reportSnapshot) =>
-                          _buildRecords(
-                            context,
-                            txSnapshot,
-                            splitSnapshot,
-                            reportSnapshot,
-                          ),
-                    );
+                    return _buildRecords(context, txSnapshot, splitSnapshot);
                   },
             );
           },
     );
   }
 
-  String get _reporterId => FirebaseAuth.instance.currentUser?.uid ?? ownerId;
-
   Widget _buildRecords(
     BuildContext context,
     AsyncSnapshot<QuerySnapshot<Map<String, dynamic>>> txSnapshot,
     AsyncSnapshot<QuerySnapshot<Map<String, dynamic>>> splitSnapshot,
-    AsyncSnapshot<QuerySnapshot<Map<String, dynamic>>> reportSnapshot,
   ) {
     if (txSnapshot.hasError && splitSnapshot.hasError) {
       return const SpEmptyState(
@@ -286,7 +261,6 @@ class _CommissionsListContentState extends State<_CommissionsListContent>
             (spOvertimeStatus(data) == kOvertimeWaived
                 ? _parseDateTime(data['overtimeStatusAt'])
                 : null),
-        ticket: data,
       );
     }
 
@@ -342,13 +316,6 @@ class _CommissionsListContentState extends State<_CommissionsListContent>
     });
 
     final bool isTablet = spIsTablet(context);
-    final Map<String, Map<String, dynamic>> reportsByTicket =
-        <String, Map<String, dynamic>>{
-          for (final QueryDocumentSnapshot<Map<String, dynamic>> doc
-              in reportSnapshot.data?.docs ??
-                  <QueryDocumentSnapshot<Map<String, dynamic>>>[])
-            ((doc.data()['transactionId'] as String?) ?? ''): doc.data(),
-        };
     final List<Widget> transactionCards = <Widget>[
       for (final _CommissionRecord record in records.take(isTablet ? 24 : 12))
         _TransactionCard(
@@ -356,7 +323,6 @@ class _CommissionsListContentState extends State<_CommissionsListContent>
           dateText: record.createdAt == null
               ? 'Date unavailable'
               : formatShortDate(record.createdAt!),
-          report: reportsByTicket[record.id],
         ),
     ];
 
@@ -427,140 +393,19 @@ class _CommissionsListContentState extends State<_CommissionsListContent>
                   message: 'No transactions yet.',
                 )
               : isTablet
-              ? SpGrid(children: transactionCards)
+              ? SpGrid(equalHeight: true, children: transactionCards)
               : Column(children: transactionCards),
         ),
-        if (reportsByTicket.isNotEmpty) ...[
-          const SizedBox(height: 12),
-          _MyReportsCard(reports: reportsByTicket.values.toList()),
-        ],
       ],
     );
   }
 }
 
-/// Every driver report this owner filed, newest first, with where each
-/// stands and the admin's note once reviewed.
-class _MyReportsCard extends StatefulWidget {
-  const _MyReportsCard({required this.reports});
-
-  final List<Map<String, dynamic>> reports;
-
-  @override
-  State<_MyReportsCard> createState() => _MyReportsCardState();
-}
-
-class _MyReportsCardState extends State<_MyReportsCard> {
-  bool _showAll = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final List<Map<String, dynamic>> reports =
-        List<Map<String, dynamic>>.of(widget.reports)..sort(
-          (a, b) => (_parseDateTime(b['createdAt']) ?? DateTime.now())
-              .compareTo(_parseDateTime(a['createdAt']) ?? DateTime.now()),
-        );
-    final int open = reports
-        .where((r) => reportStatus(r) == kReportOpen)
-        .length;
-    final List<Map<String, dynamic>> shown = _showAll
-        ? reports
-        : reports.take(5).toList();
-    return SpSectionCard(
-      icon: Icons.flag_outlined,
-      title: 'My Driver Reports',
-      subtitle: 'Reports you sent to the SmartPark admin.',
-      trailing: open == 0
-          ? null
-          : SpChip(label: '$open under review', color: spInsideColor),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          for (final Map<String, dynamic> report in shown) _reportRow(report),
-          if (reports.length > shown.length)
-            Align(
-              alignment: Alignment.centerRight,
-              child: TextButton(
-                onPressed: () => setState(() => _showAll = true),
-                child: Text('Show all (${reports.length})'),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
-  Widget _reportRow(Map<String, dynamic> report) {
-    final String driver = ((report['driverName'] as String?) ?? '').trim();
-    final DateTime? at = _parseDateTime(report['createdAt']);
-    final String note = ((report['adminNote'] as String?) ?? '').trim();
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: AppTheme.surfaceAlt,
-        borderRadius: BorderRadius.circular(AppTheme.radius),
-        border: Border.all(color: AppTheme.border),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  driver.isEmpty ? 'Driver' : driver,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontWeight: FontWeight.w800,
-                    color: AppTheme.textDark,
-                  ),
-                ),
-              ),
-              if (at != null)
-                Text(
-                  spFormatDate(at),
-                  style: TextStyle(fontSize: 11, color: AppTheme.textMuted),
-                ),
-            ],
-          ),
-          const SizedBox(height: 2),
-          Text(
-            (report['reason'] as String?) ?? '',
-            style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
-          ),
-          const SizedBox(height: 6),
-          SpDriverReportChip(report: report),
-          if (note.isNotEmpty) ...[
-            const SizedBox(height: 4),
-            Text(
-              'Admin note: $note',
-              style: TextStyle(
-                fontSize: 12,
-                fontStyle: FontStyle.italic,
-                color: AppTheme.textSecondary,
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
 class _TransactionCard extends StatelessWidget {
-  const _TransactionCard({
-    required this.record,
-    required this.dateText,
-    this.report,
-  });
+  const _TransactionCard({required this.record, required this.dateText});
 
   final _CommissionRecord record;
   final String dateText;
-
-  /// The owner's report on this ticket's driver, if they filed one.
-  final Map<String, dynamic>? report;
 
   Widget _line(String label, double amount, {bool strong = false}) {
     final TextStyle style = TextStyle(
@@ -676,37 +521,6 @@ class _TransactionCard extends StatelessWidget {
     );
   }
 
-  /// Report the driver of this ticket, or where the owner's report stands.
-  Widget _reportLine(BuildContext context) {
-    final Map<String, dynamic>? existing = report;
-    return Padding(
-      padding: const EdgeInsets.only(top: 8),
-      child: existing != null
-          ? SpDriverReportChip(report: existing)
-          : Align(
-              alignment: Alignment.centerLeft,
-              child: TextButton.icon(
-                onPressed: () => showReportDriverDialog(
-                  context,
-                  ownerId: FirebaseAuth.instance.currentUser?.uid ?? '',
-                  ticketId: record.id,
-                  ticket: record.ticket!,
-                ),
-                icon: const Icon(Icons.flag_outlined, size: 16),
-                label: const Text(
-                  'Report driver',
-                  style: TextStyle(fontWeight: FontWeight.w700),
-                ),
-                style: TextButton.styleFrom(
-                  foregroundColor: AppTheme.danger,
-                  visualDensity: VisualDensity.compact,
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                ),
-              ),
-            ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final bool paid = record.status == 'PAID';
@@ -769,7 +583,6 @@ class _TransactionCard extends StatelessWidget {
                 _line('Processing', record.processingFee),
                 _line('Payout', record.netToOwner, strong: true),
                 if (record.hasOvertime) _overtimeLine(),
-                if (record.canReportDriver) _reportLine(context),
               ],
             ),
           ),

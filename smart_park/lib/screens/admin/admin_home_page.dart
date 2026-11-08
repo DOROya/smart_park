@@ -373,6 +373,7 @@ class _AdminHomePageState extends State<AdminHomePage>
   }
 
   Future<void> _signOut() async {
+    if (!await spConfirmSignOut(context)) return;
     await FirebaseAuth.instance.signOut();
     if (!mounted) {
       return;
