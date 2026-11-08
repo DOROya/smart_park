@@ -82,6 +82,15 @@ class _CommissionsListContentState extends State<_CommissionsListContent>
   String get ownerId => widget.ownerId;
   String Function(DateTime) get formatShortDate => widget.formatShortDate;
 
+  /// The week, month, quarter or year every figure on the tab covers.
+  FinanceRange _range = FinanceRange.containing(
+    FinancePeriod.month,
+    DateTime.now(),
+  );
+
+  /// Whether the transaction list shows past its first page.
+  bool _showAll = false;
+
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
@@ -315,9 +324,37 @@ class _CommissionsListContentState extends State<_CommissionsListContent>
       return bDate.compareTo(aDate);
     });
 
+    final List<SalesEntry> entries = _salesEntries(records, txDocs);
+    DateTime? earliest;
+    for (final SalesEntry e in entries) {
+      if (earliest == null || e.at.isBefore(earliest)) earliest = e.at;
+    }
+    final FinanceRange range = _range;
+    final SalesReport report = SalesReport.forRange(entries, range);
+    final SalesRow totals = report.totals;
+    final int cashCollections = entries
+        .where((SalesEntry e) => e.cashCentavos > 0 && range.contains(e.at))
+        .length;
+
+    // Cash still owed is a to-do, not a period figure: it counts every
+    // unconfirmed exit, whenever it happened.
+    final SpOvertimeCash owed = SpOvertimeCash.from(
+      txDocs.map((QueryDocumentSnapshot<Map<String, dynamic>> d) => d.data()),
+    );
+
+    // Tickets paid in the period, or whose overtime cash was settled in it.
+    final List<_CommissionRecord> periodRecords = <_CommissionRecord>[
+      for (final _CommissionRecord r in records)
+        if ((r.createdAt != null && range.contains(r.createdAt!)) ||
+            (r.overtimeSettledAt != null &&
+                range.contains(r.overtimeSettledAt!)))
+          r,
+    ];
     final bool isTablet = spIsTablet(context);
+    final int limit = isTablet ? 24 : 12;
     final List<Widget> transactionCards = <Widget>[
-      for (final _CommissionRecord record in records.take(isTablet ? 24 : 12))
+      for (final _CommissionRecord record
+          in _showAll ? periodRecords : periodRecords.take(limit))
         _TransactionCard(
           record: record,
           dateText: record.createdAt == null
@@ -326,28 +363,25 @@ class _CommissionsListContentState extends State<_CommissionsListContent>
         ),
     ];
 
-    double totalCommission = 0;
-    double totalPayout = 0;
-    // Overtime is paid in cash at the gate, outside PayMongo,
-    // so it has no commission and is tracked on the ticket.
-    final SpOvertimeCash overtimeCash = SpOvertimeCash.from(
-      txDocs.map((QueryDocumentSnapshot<Map<String, dynamic>> d) => d.data()),
-    );
-
-    for (final _CommissionRecord record in records) {
-      totalCommission += record.platformFee;
-      totalPayout += record.netToOwner;
-    }
-
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        SpFinancePeriodBar(
+          range: range,
+          earliest: earliest,
+          onChanged: (FinanceRange r) => setState(() {
+            _range = r;
+            _showAll = false;
+          }),
+        ),
+        const SizedBox(height: 12),
         SpStatRow(
           left: SpStatTile(
             icon: Icons.account_balance_wallet_rounded,
             color: spEntryColor,
             label: 'Revenue',
             caption: 'Your payout',
-            value: 'PHP ${totalPayout.toStringAsFixed(2)}',
+            value: formatSalesPeso(totals.payoutCentavos),
           ),
           right: SpStatTile(
             icon: Icons.percent_rounded,
@@ -355,48 +389,61 @@ class _CommissionsListContentState extends State<_CommissionsListContent>
             label: 'Commission',
             caption:
                 '${(kPlatformFeeRate * 100).toStringAsFixed(0)}% SmartPark fee',
-            value: 'PHP ${totalCommission.toStringAsFixed(2)}',
+            value: formatSalesPeso(totals.commissionCentavos),
           ),
         ),
-        if (!overtimeCash.isEmpty) ...[
+        if (totals.cashCentavos > 0 || owed.dueCount > 0) ...[
           const SizedBox(height: 10),
           SpStatRow(
             left: SpStatTile(
               icon: Icons.payments_rounded,
               color: spEntryColor,
               label: 'Overtime Cash',
-              caption: '${overtimeCash.collectedCount} collected at the gate',
-              value: spPeso(overtimeCash.collectedAmount),
+              caption: '$cashCollections collected at the gate',
+              value: formatSalesPeso(totals.cashCentavos),
             ),
             right: SpStatTile(
               icon: Icons.pending_actions_rounded,
-              color: overtimeCash.dueCount > 0
-                  ? spInsideColor
-                  : AppTheme.textMuted,
+              color: owed.dueCount > 0 ? spInsideColor : AppTheme.textMuted,
               label: 'Uncollected',
               caption:
-                  '${overtimeCash.dueCount} exit${overtimeCash.dueCount == 1 ? '' : 's'} not confirmed',
-              value: spPeso(overtimeCash.dueAmount),
+                  '${owed.dueCount} exit${owed.dueCount == 1 ? '' : 's'}, '
+                  'any date',
+              value: spPeso(owed.dueAmount),
             ),
           ),
         ],
         const SizedBox(height: 12),
-        _buildSalesReport(records, txDocs),
+        _buildSalesReport(report),
         const SizedBox(height: 12),
         SpSectionCard(
           icon: Icons.receipt_long_rounded,
-          title: 'Recent Transactions',
-          trailing: records.isEmpty
+          title: 'Transactions',
+          subtitle: salesReportPeriod(report),
+          trailing: periodRecords.isEmpty
               ? null
-              : SpChip(label: '${records.length}', color: spExitColor),
-          child: records.isEmpty
-              ? const SpEmptyState(
+              : SpChip(label: '${periodRecords.length}', color: spExitColor),
+          child: periodRecords.isEmpty
+              ? SpEmptyState(
                   boxed: false,
-                  message: 'No transactions yet.',
+                  message: 'No transactions in ${range.label}.',
                 )
-              : isTablet
-              ? SpGrid(equalHeight: true, children: transactionCards)
-              : Column(children: transactionCards),
+              : Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (isTablet)
+                      SpGrid(equalHeight: true, children: transactionCards)
+                    else
+                      ...transactionCards,
+                    if (!_showAll && periodRecords.length > limit)
+                      TextButton(
+                        onPressed: () => setState(() => _showAll = true),
+                        child: Text(
+                          'Show all ${periodRecords.length} transactions',
+                        ),
+                      ),
+                  ],
+                ),
         ),
       ],
     );
@@ -404,14 +451,14 @@ class _CommissionsListContentState extends State<_CommissionsListContent>
 }
 
 extension on _CommissionsListContentState {
-  /// Daily and monthly sales from the paid tickets, plus overtime cash on
-  /// the day it was collected at the gate.
-  Widget _buildSalesReport(
+  /// One entry per paid ticket, plus overtime cash on the day it was
+  /// collected at the gate.
+  List<SalesEntry> _salesEntries(
     List<_CommissionRecord> records,
     List<QueryDocumentSnapshot<Map<String, dynamic>>> txDocs,
   ) {
     int centavos(double amount) => (amount * 100).round();
-    final List<SalesEntry> entries = <SalesEntry>[
+    return <SalesEntry>[
       for (final _CommissionRecord r in records)
         if (r.status == 'PAID' && r.createdAt != null)
           SalesEntry(
@@ -425,7 +472,7 @@ extension on _CommissionsListContentState {
         if (spOvertimeStatus(doc.data()) == kOvertimeCollected)
           // Older tickets were marked collected before the collection time
           // was saved; date those by the exit (or last update) instead, so
-          // the report still adds up to the Overtime Cash tile.
+          // the report still adds up.
           if (_parseDateTime(doc.data()['overtimeCollectedAt']) ??
                   _parseDateTime(doc.data()['overtimeStatusAt']) ??
                   _parseDateTime(doc.data()['exitAt']) ??
@@ -440,7 +487,9 @@ extension on _CommissionsListContentState {
               ),
             ),
     ];
+  }
 
+  Widget _buildSalesReport(SalesReport report) {
     // Sign-up stores the display name as "First|Last".
     final User? user = FirebaseAuth.instance.currentUser;
     final String displayName = (user?.displayName ?? '')
@@ -466,7 +515,7 @@ extension on _CommissionsListContentState {
             final String name =
                 ((snapshot.data?.data()?['name'] as String?) ?? '').trim();
             return SpSalesReportCard(
-              entries: entries,
+              report: report,
               audience: SalesReportAudience.owner,
               scopeLabel: name.isEmpty ? 'Your facility' : name,
               preparedBy: preparedBy,

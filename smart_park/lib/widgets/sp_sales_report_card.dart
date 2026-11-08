@@ -6,19 +6,110 @@ import '../services/sales_report_pdf.dart';
 import '../theme/app_theme.dart';
 import 'smartpark_ui.dart';
 
-/// Finance card with daily (one month) and monthly (one year) sales, which
-/// can be printed or shared as a PDF report.
-class SpSalesReportCard extends StatefulWidget {
-  const SpSalesReportCard({
+/// Week / Month / Quarter / Year selector with arrows to step through
+/// periods. Everything under it on a Finance tab follows the chosen range.
+class SpFinancePeriodBar extends StatelessWidget {
+  const SpFinancePeriodBar({
     super.key,
-    required this.entries,
-    required this.audience,
-    required this.scopeLabel,
-    required this.preparedBy,
+    required this.range,
+    required this.onChanged,
+    this.earliest,
     this.now,
   });
 
-  final List<SalesEntry> entries;
+  final FinanceRange range;
+  final ValueChanged<FinanceRange> onChanged;
+
+  /// Oldest date with data; the back arrow stops at its period.
+  final DateTime? earliest;
+
+  /// Overrides the clock, for tests.
+  final DateTime? now;
+
+  @override
+  Widget build(BuildContext context) {
+    final DateTime today = now ?? DateTime.now();
+    final FinanceRange first = FinanceRange.containing(
+      range.period,
+      earliest != null && earliest!.isBefore(today) ? earliest! : today,
+    );
+    final bool canGoBack = range.start.isAfter(first.start);
+    final bool canGoForward = !range.end.isAfter(
+      DateTime(today.year, today.month, today.day),
+    );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SpSegmentedControl<FinancePeriod>(
+          options: const <(FinancePeriod, String)>[
+            (FinancePeriod.week, 'Week'),
+            (FinancePeriod.month, 'Month'),
+            (FinancePeriod.quarter, 'Quarter'),
+            (FinancePeriod.year, 'Year'),
+          ],
+          selected: range.period,
+          // Keep today in view when the current period is showing,
+          // otherwise stay around the period being browsed.
+          onChanged: (FinancePeriod p) => onChanged(
+            FinanceRange.containing(
+              p,
+              range.contains(today) ? today : range.start,
+            ),
+          ),
+        ),
+        const SizedBox(height: 6),
+        Row(
+          children: [
+            IconButton(
+              tooltip: 'Previous ${range.period.name}',
+              onPressed: canGoBack ? () => onChanged(range.step(-1)) : null,
+              icon: const Icon(Icons.chevron_left_rounded),
+            ),
+            Expanded(
+              child: Column(
+                children: [
+                  Text(
+                    range.label,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                      color: AppTheme.textDark,
+                    ),
+                  ),
+                  if (range.months.isNotEmpty)
+                    Text(
+                      range.months,
+                      style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
+                    ),
+                ],
+              ),
+            ),
+            IconButton(
+              tooltip: 'Next ${range.period.name}',
+              onPressed: canGoForward ? () => onChanged(range.step(1)) : null,
+              icon: const Icon(Icons.chevron_right_rounded),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+/// The selected period per day (week, month) or per month (quarter,
+/// year), which can be printed or shared as a PDF report.
+class SpSalesReportCard extends StatefulWidget {
+  const SpSalesReportCard({
+    super.key,
+    required this.report,
+    required this.audience,
+    required this.scopeLabel,
+    required this.preparedBy,
+  });
+
+  final SalesReport report;
   final SalesReportAudience audience;
 
   /// What the figures cover, e.g. the facility name.
@@ -27,75 +118,29 @@ class SpSalesReportCard extends StatefulWidget {
   /// Printed as "Prepared by" on the report.
   final String preparedBy;
 
-  /// Overrides the clock, for tests.
-  final DateTime? now;
-
   @override
   State<SpSalesReportCard> createState() => _SpSalesReportCardState();
 }
 
 class _SpSalesReportCardState extends State<SpSalesReportCard> {
-  SalesPeriod _period = SalesPeriod.daily;
-  late DateTime _month;
-  late int _year;
   bool _busy = false;
 
-  DateTime get _now => widget.now ?? DateTime.now();
-
   bool get _owner => widget.audience == SalesReportAudience.owner;
-
-  @override
-  void initState() {
-    super.initState();
-    _month = DateTime(_now.year, _now.month);
-    _year = _now.year;
-  }
-
-  /// Oldest month with any sales, so the back arrow stops there.
-  DateTime get _earliest {
-    DateTime earliest = DateTime(_now.year, _now.month);
-    for (final SalesEntry e in widget.entries) {
-      final DateTime m = DateTime(e.at.year, e.at.month);
-      if (m.isBefore(earliest)) earliest = m;
-    }
-    return earliest;
-  }
-
-  SalesReport get _report => _period == SalesPeriod.daily
-      ? SalesReport.daily(widget.entries, _month, now: _now)
-      : SalesReport.monthly(widget.entries, _year, now: _now);
-
-  bool get _canGoBack => _period == SalesPeriod.daily
-      ? _month.isAfter(_earliest)
-      : _year > _earliest.year;
-
-  bool get _canGoForward => _period == SalesPeriod.daily
-      ? _month.isBefore(DateTime(_now.year, _now.month))
-      : _year < _now.year;
-
-  void _step(int delta) => setState(() {
-    if (_period == SalesPeriod.daily) {
-      _month = DateTime(_month.year, _month.month + delta);
-    } else {
-      _year += delta;
-    }
-  });
 
   Future<void> _export({required bool share}) async {
     if (_busy) return;
     setState(() => _busy = true);
     try {
-      final SalesReport report = _report;
       if (share) {
         await shareSalesReport(
-          report: report,
+          report: widget.report,
           audience: widget.audience,
           scopeLabel: widget.scopeLabel,
           preparedBy: widget.preparedBy,
         );
       } else {
         await printSalesReport(
-          report: report,
+          report: widget.report,
           audience: widget.audience,
           scopeLabel: widget.scopeLabel,
           preparedBy: widget.preparedBy,
@@ -117,85 +162,34 @@ class _SpSalesReportCardState extends State<SpSalesReportCard> {
 
   @override
   Widget build(BuildContext context) {
-    final SalesReport report = _report;
-    final bool daily = _period == SalesPeriod.daily;
-    // Newest first on screen. Days without sales are left out; months are
-    // all shown, since twelve rows stay short.
+    final SalesReport report = widget.report;
+    final bool daily = report.breakdown == SalesBreakdown.daily;
+    // Newest first. Days without activity are left out; months are all
+    // shown, since at most twelve rows stay short.
     final List<SalesRow> rows = <SalesRow>[
       for (final SalesRow row in report.rows.reversed)
         if (!daily || !row.isEmpty) row,
     ];
+    final String what = _owner ? 'Sales' : 'Commission';
 
     return SpSectionCard(
       icon: Icons.summarize_rounded,
-      title: 'Sales Report',
-      subtitle: daily
-          ? 'Sales per day for the month. Print it or save it as a PDF.'
-          : 'Sales per month for the year. Print it or save it as a PDF.',
+      title: daily ? 'Daily $what' : 'Monthly $what',
+      subtitle:
+          '${daily ? 'Per day' : 'Per month'} for '
+          '${salesReportPeriod(report)}. Print it or save it as a PDF.',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          SpSegmentedControl<SalesPeriod>(
-            options: const <(SalesPeriod, String)>[
-              (SalesPeriod.daily, 'Daily'),
-              (SalesPeriod.monthly, 'Monthly'),
-            ],
-            selected: _period,
-            onChanged: (SalesPeriod p) => setState(() => _period = p),
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              IconButton(
-                tooltip: daily ? 'Previous month' : 'Previous year',
-                onPressed: _canGoBack ? () => _step(-1) : null,
-                icon: const Icon(Icons.chevron_left_rounded),
-              ),
-              Expanded(
-                child: Text(
-                  report.periodLabel,
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w800,
-                    color: AppTheme.textDark,
-                  ),
-                ),
-              ),
-              IconButton(
-                tooltip: daily ? 'Next month' : 'Next year',
-                onPressed: _canGoForward ? () => _step(1) : null,
-                icon: const Icon(Icons.chevron_right_rounded),
-              ),
-            ],
-          ),
-          const SizedBox(height: 4),
-          Row(
-            children: [
-              _figure(
-                'Gross sales',
-                formatSalesPeso(report.totals.grossCentavos),
-              ),
-              _figure('Transactions', '${report.totals.count}'),
-              _owner
-                  ? _figure(
-                      'Your payout',
-                      formatSalesPeso(report.totals.payoutCentavos),
-                    )
-                  : _figure(
-                      'Commission',
-                      formatSalesPeso(report.totals.commissionCentavos),
-                    ),
-            ],
-          ),
-          const SizedBox(height: 12),
           Divider(height: 1, color: AppTheme.border),
           if (rows.isEmpty)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 12),
               child: SpEmptyState(
                 boxed: false,
-                message: 'No sales in ${report.periodLabel}.',
+                message: _owner
+                    ? 'No sales in ${report.range.label}.'
+                    : 'No commission in ${report.range.label}.',
               ),
             )
           else
@@ -234,28 +228,6 @@ class _SpSalesReportCardState extends State<SpSalesReportCard> {
     );
   }
 
-  Widget _figure(String label, String value) => Expanded(
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(label, style: TextStyle(fontSize: 11, color: AppTheme.textMuted)),
-        const SizedBox(height: 2),
-        FittedBox(
-          fit: BoxFit.scaleDown,
-          alignment: Alignment.centerLeft,
-          child: Text(
-            value,
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w800,
-              color: AppTheme.textDark,
-            ),
-          ),
-        ),
-      ],
-    ),
-  );
-
   Widget _row(SalesReport report, SalesRow row) {
     final bool empty = row.isEmpty;
     final Color main = empty ? AppTheme.textMuted : AppTheme.textDark;
@@ -276,8 +248,8 @@ class _SpSalesReportCardState extends State<SpSalesReportCard> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  report.period == SalesPeriod.daily
-                      ? '${report.rowLabel(row)}, ${_weekday(row.start)}'
+                  report.breakdown == SalesBreakdown.daily
+                      ? '${report.rowLabel(row)}, ${salesWeekday(row.start)}'
                       : report.rowLabel(row),
                   style: TextStyle(fontWeight: FontWeight.w700, color: main),
                 ),
@@ -292,29 +264,20 @@ class _SpSalesReportCardState extends State<SpSalesReportCard> {
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               Text(
-                formatSalesPeso(row.grossCentavos),
+                formatSalesPeso(
+                  _owner ? row.grossCentavos : row.commissionCentavos,
+                ),
                 style: TextStyle(fontWeight: FontWeight.w800, color: main),
               ),
-              Text(
-                _owner
-                    ? 'Payout ${formatSalesPeso(row.payoutCentavos)}'
-                    : 'Commission ${formatSalesPeso(row.commissionCentavos)}',
-                style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
-              ),
+              if (_owner)
+                Text(
+                  'Payout ${formatSalesPeso(row.payoutCentavos)}',
+                  style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
+                ),
             ],
           ),
         ],
       ),
     );
   }
-
-  static String _weekday(DateTime d) => const <String>[
-    'Mon',
-    'Tue',
-    'Wed',
-    'Thu',
-    'Fri',
-    'Sat',
-    'Sun',
-  ][d.weekday - 1];
 }

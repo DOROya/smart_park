@@ -6,8 +6,9 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../../services/facility_status.dart';
-import '../../services/sales_report.dart' show SalesEntry;
-import '../../services/sales_report_pdf.dart' show SalesReportAudience;
+import '../../services/sales_report.dart';
+import '../../services/sales_report_pdf.dart'
+    show SalesReportAudience, salesReportPeriod;
 import '../../theme/app_theme.dart';
 import '../../utils/friendly_error.dart';
 import '../../widgets/smartpark_ui.dart';
@@ -27,8 +28,6 @@ enum _AdminTab { dashboard, facility, users, finance, settings }
 enum _FacilitySortOption { pendingFirst, newest, oldest }
 
 enum _UserRoleFilter { all, driver, parkingOwner }
-
-enum _FinanceRangeFilter { all, month, quarter, year }
 
 /// A status change offered in the establishment review dialog.
 typedef _StatusAction = ({
@@ -51,7 +50,10 @@ class _AdminHomePageState extends State<AdminHomePage>
   _AdminTab _selectedTab = _AdminTab.dashboard;
   _FacilitySortOption _facilitySort = _FacilitySortOption.pendingFirst;
   _UserRoleFilter _userRoleFilter = _UserRoleFilter.all;
-  _FinanceRangeFilter _financeRange = _FinanceRangeFilter.month;
+  FinanceRange _financeRange = FinanceRange.containing(
+    FinancePeriod.month,
+    DateTime.now(),
+  );
 
   bool _railExtended = false;
   bool _rebuildingStats = false;
@@ -274,34 +276,6 @@ class _AdminHomePageState extends State<AdminHomePage>
               .toLowerCase();
       return status == 'approved';
     }).toList();
-  }
-
-  DateTime? _financeCutoff() {
-    final DateTime now = DateTime.now();
-    return switch (_financeRange) {
-      _FinanceRangeFilter.all => null,
-      _FinanceRangeFilter.month => DateTime(now.year, now.month - 1, now.day),
-      _FinanceRangeFilter.quarter => DateTime(now.year, now.month - 3, now.day),
-      _FinanceRangeFilter.year => DateTime(now.year - 1, now.month, now.day),
-    };
-  }
-
-  List<_DayStat> _filteredPayments(List<_DayStat> days) {
-    final DateTime? cutoff = _financeCutoff();
-    if (cutoff == null) {
-      return List<_DayStat>.from(days);
-    }
-    final DateTime cutoffDay = DateTime(cutoff.year, cutoff.month, cutoff.day);
-    return days.where((_DayStat d) => !d.day.isBefore(cutoffDay)).toList();
-  }
-
-  String _financeRangeLabel() {
-    return switch (_financeRange) {
-      _FinanceRangeFilter.all => 'All Time',
-      _FinanceRangeFilter.month => 'Last 30 Days',
-      _FinanceRangeFilter.quarter => 'Last 90 Days',
-      _FinanceRangeFilter.year => 'Last 12 Months',
-    };
   }
 
   String _formatSingleRateVal(dynamic val) {
@@ -1730,9 +1704,6 @@ class _AdminHomePageState extends State<AdminHomePage>
                                       >
                                       filteredUsers = _filteredUsers(users);
 
-                                      final List<_DayStat> financePayments =
-                                          _filteredPayments(payments);
-
                                       final int totalUsers = users.length;
                                       final int driverCount = users.where((
                                         QueryDocumentSnapshot<
@@ -1782,27 +1753,15 @@ class _AdminHomePageState extends State<AdminHomePage>
                                             return status == 'pending';
                                           }).length;
 
-                                      final double totalRevenue = _sumGross(
-                                        payments,
-                                      );
                                       final double commission = _sumCommission(
                                         payments,
                                       );
-                                      final double financeRevenue = _sumGross(
-                                        financePayments,
-                                      );
-                                      final double financeCommission =
-                                          _sumCommission(financePayments);
 
                                       final _RevenueSeries dashboardCommission =
                                           _dailyRevenue(
                                             payments,
                                             7,
                                             amountOf: _paymentCommission,
-                                          );
-                                      final _RevenueSeries financeSeries =
-                                          _financeRevenueSeries(
-                                            financePayments,
                                           );
 
                                       return ListView(
@@ -1828,17 +1787,11 @@ class _AdminHomePageState extends State<AdminHomePage>
                                           establishmentCount:
                                               establishmentCount,
                                           pendingCount: pendingCount,
-                                          totalRevenue: totalRevenue,
                                           commission: commission,
-                                          paymentCount: _sumPayments(payments),
                                           dashboardCommission:
                                               dashboardCommission,
-                                          financeSeries: financeSeries,
-                                          financeRevenue: financeRevenue,
-                                          financeCommission: financeCommission,
                                           users: users,
                                           establishments: establishments,
-                                          financePayments: financePayments,
                                           allPayments: payments,
                                         ),
                                       );
