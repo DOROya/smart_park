@@ -250,7 +250,7 @@ extension _AdminHomePageFragments on _AdminHomePageState {
       color: spInsideColor,
       label: 'Commission',
       caption: 'All time',
-      value: spCompactPeso(commission),
+      value: spPeso(commission),
     );
     final Widget commissionChart = _buildRevenueChartCard(
       series: dashboardCommission,
@@ -423,7 +423,7 @@ extension _AdminHomePageFragments on _AdminHomePageState {
       color: spInsideColor,
       label: 'Commission',
       caption: period,
-      value: spCompactPeso(totals.commissionCentavos / 100),
+      value: spPeso(totals.commissionCentavos / 100),
     );
     final Widget transactionsTile = SpStatTile(
       icon: Icons.receipt_long_rounded,
@@ -438,8 +438,8 @@ extension _AdminHomePageFragments on _AdminHomePageState {
       label: 'Per Transaction',
       caption: 'Average commission',
       value: totals.count == 0
-          ? 'PHP 0'
-          : spCompactPeso(totals.commissionCentavos / 100 / totals.count),
+          ? spPeso(0)
+          : spPeso(totals.commissionCentavos / 100 / totals.count),
     );
     final Widget chart = _buildRevenueChartCard(
       series: series,

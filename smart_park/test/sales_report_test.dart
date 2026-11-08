@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:smart_park/services/sales_report.dart';
 import 'package:smart_park/services/sales_report_pdf.dart';
+import 'package:smart_park/widgets/smartpark_ui.dart' show spPeso;
 import 'package:smart_park/widgets/sp_sales_report_card.dart';
 
 // Sunday, November 8, 2026.
@@ -165,6 +166,12 @@ void main() {
     expect(formatSalesPeso(-25050), '-PHP 250.50');
   });
 
+  test('spPeso matches the report format everywhere in the app', () {
+    expect(spPeso(3630), 'PHP 3,630.00');
+    expect(spPeso(27.9), 'PHP 27.90');
+    expect(spPeso(0.1 + 0.2), 'PHP 0.30');
+  });
+
   test('pdfSafeText keeps Latin-1 and plainifies the rest', () {
     expect(pdfSafeText('Peña’s Lot – Main 🚗'), "Peña's Lot - Main");
   });
@@ -218,7 +225,7 @@ void main() {
     expect(find.text('Nov 7, Sat'), findsOneWidget);
     expect(find.text('Nov 3, Tue'), findsNothing);
     expect(find.text('1 txn · + PHP 30.00 cash'), findsOneWidget);
-    expect(find.text('Payout PHP 186.00'), findsOneWidget);
+    expect(find.text('Est. payout PHP 186.00'), findsOneWidget);
     // Can't step into the future.
     final IconButton next = tester.widget(
       find.widgetWithIcon(IconButton, Icons.chevron_right_rounded),

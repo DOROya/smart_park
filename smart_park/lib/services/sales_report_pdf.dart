@@ -57,7 +57,11 @@ Future<Uint8List> buildSalesReportPdf({
     'Txns',
     if (owner) 'Gross sales',
     'Commission',
-    if (owner) ...<String>['Processing', 'Your payout', 'Overtime cash'],
+    if (owner) ...<String>[
+      'Processing (est.)',
+      'Payout (est.)',
+      'Overtime cash',
+    ],
   ];
 
   List<String> cells(String label, SalesRow r) => <String>[
@@ -218,7 +222,7 @@ Future<Uint8List> buildSalesReportPdf({
             pw.SizedBox(width: 8),
             owner
                 ? summaryBox(
-                    'Your payout',
+                    'Payout (estimate)',
                     formatSalesPeso(report.totals.payoutCentavos),
                   )
                 : summaryBox(
@@ -281,8 +285,9 @@ Future<Uint8List> buildSalesReportPdf({
         pw.Text(
           owner
               ? 'Gross sales are in-app payments for paid tickets. Commission '
-                    'is SmartPark\'s fee; processing is PayMongo\'s estimated '
-                    'fee; payout is what remains for you. Overtime cash is '
+                    'is SmartPark\'s fee; processing is an estimate of '
+                    'PayMongo\'s fee, so the payout is an estimate too; '
+                    'PayMongo\'s settlement report has the exact amounts. Overtime cash is '
                     'collected at the gate and counted on the day it was '
                     'collected.'
               : 'Commission is SmartPark\'s platform fee on in-app parking '

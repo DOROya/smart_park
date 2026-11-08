@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../services/gate_scan_service.dart' show kRefusalWrongVehicle;
 import '../services/parking_pricing.dart';
+import '../services/sales_report.dart' show formatSalesPeso;
 import '../theme/app_theme.dart';
 import '../utils/staff_credentials.dart';
 
@@ -1731,10 +1732,10 @@ class SpActivityCard extends StatelessWidget {
                     overtimeAmount <= 0
                         ? 'Overtime ${overtimeHours}h · rate missing'
                         : overtimeCollected
-                        ? 'Overtime ${overtimeHours}h · PHP ${overtimeAmount.toStringAsFixed(2)} cash collected'
+                        ? 'Overtime ${overtimeHours}h · ${spPeso(overtimeAmount)} cash collected'
                         : overtimeWaived
-                        ? 'Overtime ${overtimeHours}h · PHP ${overtimeAmount.toStringAsFixed(2)} waived'
-                        : 'Overtime ${overtimeHours}h · collect PHP ${overtimeAmount.toStringAsFixed(2)} cash',
+                        ? 'Overtime ${overtimeHours}h · ${spPeso(overtimeAmount)} waived'
+                        : 'Overtime ${overtimeHours}h · collect ${spPeso(overtimeAmount)} cash',
                     style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w700,
@@ -1967,7 +1968,10 @@ class SpBarChart extends StatelessWidget {
   }
 }
 
-/// Short money label for chart peaks and tiles, e.g. "PHP 1.2k".
+/// Money as shown everywhere in the app, e.g. "PHP 1,234.50".
+String spPeso(double value) => formatSalesPeso((value * 100).round());
+
+/// Short money label for chart peaks, e.g. "PHP 1.2k".
 String spCompactPeso(double value) {
   if (value >= 1000000) return 'PHP ${(value / 1000000).toStringAsFixed(1)}M';
   if (value >= 1000) return 'PHP ${(value / 1000).toStringAsFixed(1)}k';

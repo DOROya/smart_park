@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../theme/app_theme.dart';
+import '../../widgets/smartpark_ui.dart' show spPeso;
 
 enum DriverPaymentMethod { card, gcash, maya, shopeepay, qrph }
 
@@ -417,7 +418,7 @@ class _PaymentSummary extends StatelessWidget {
             ),
           ),
           Text(
-            amount > 0 ? 'PHP ${amount.toStringAsFixed(2)}' : 'Not set',
+            amount > 0 ? spPeso(amount) : 'Not set',
             style: TextStyle(
               color: AppTheme.onInk,
               fontSize: 18,
@@ -602,12 +603,7 @@ class _PaymentCheckoutPageState extends State<PaymentCheckoutPage> {
         children: [
           Row(
             children: [
-              Expanded(
-                child: _detail(
-                  'Amount due',
-                  'PHP ${widget.amount.toStringAsFixed(2)}',
-                ),
-              ),
+              Expanded(child: _detail('Amount due', spPeso(widget.amount))),
               Expanded(child: _detail('Method', widget.method.label)),
             ],
           ),

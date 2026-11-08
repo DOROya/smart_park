@@ -524,7 +524,7 @@ class _ActiveTicketCard extends StatelessWidget {
                     ),
                     const Spacer(),
                     Text(
-                      'PHP ${amount.toStringAsFixed(2)}',
+                      spPeso(amount),
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w800,
@@ -1202,7 +1202,7 @@ class _PastTicketRow extends StatelessWidget {
                     ),
                     const SizedBox(width: 8),
                     Text(
-                      'PHP ${amount.toStringAsFixed(2)}',
+                      spPeso(amount),
                       style: TextStyle(
                         fontWeight: FontWeight.w800,
                         color: AppTheme.textDark,

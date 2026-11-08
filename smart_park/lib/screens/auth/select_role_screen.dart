@@ -215,7 +215,7 @@ class _SelectRoleScreenState extends State<SelectRoleScreen> {
             'Register and manage your parking establishment',
             'Configure rates, policies, and staff accounts',
             'Track vehicle activity and transaction records',
-            'Monitor commission payables per transaction',
+            'Track your earnings and the commission deducted per payment',
           ]),
           const SizedBox(height: 12),
           PrimaryAuthButton(

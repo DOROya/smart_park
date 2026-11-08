@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
 import '../../theme/app_theme.dart';
+import '../../widgets/smartpark_ui.dart' show spPeso;
 import '../../widgets/sp_vehicle_type.dart';
 
 class DriverPaidTicketPage extends StatelessWidget {
@@ -110,7 +111,7 @@ class DriverPaidTicketPage extends StatelessWidget {
                         ),
                         const SizedBox(height: 14),
                         Text(
-                          'PHP ${amount.toStringAsFixed(2)} paid',
+                          '${spPeso(amount)} paid',
                           style: TextStyle(
                             color: AppTheme.textDark,
                             fontWeight: FontWeight.w800,
