@@ -6,11 +6,14 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../../services/facility_status.dart';
+import '../../services/sales_report.dart' show SalesEntry;
+import '../../services/sales_report_pdf.dart' show SalesReportAudience;
 import '../../theme/app_theme.dart';
 import '../../utils/friendly_error.dart';
 import '../../widgets/smartpark_ui.dart';
 import '../../widgets/sp_profile_view.dart';
 import '../../widgets/sp_reason_dropdowns.dart';
+import '../../widgets/sp_sales_report_card.dart';
 import '../auth/sign_in_screen.dart';
 import 'admin_driver_reports.dart';
 
@@ -1836,6 +1839,7 @@ class _AdminHomePageState extends State<AdminHomePage>
                                           users: users,
                                           establishments: establishments,
                                           financePayments: financePayments,
+                                          allPayments: payments,
                                         ),
                                       );
                                     },

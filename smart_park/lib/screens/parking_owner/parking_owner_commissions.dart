@@ -381,6 +381,8 @@ class _CommissionsListContentState extends State<_CommissionsListContent>
           ),
         ],
         const SizedBox(height: 12),
+        _buildSalesReport(records, txDocs),
+        const SizedBox(height: 12),
         SpSectionCard(
           icon: Icons.receipt_long_rounded,
           title: 'Recent Transactions',
@@ -397,6 +399,79 @@ class _CommissionsListContentState extends State<_CommissionsListContent>
               : Column(children: transactionCards),
         ),
       ],
+    );
+  }
+}
+
+extension on _CommissionsListContentState {
+  /// Daily and monthly sales from the paid tickets, plus overtime cash on
+  /// the day it was collected at the gate.
+  Widget _buildSalesReport(
+    List<_CommissionRecord> records,
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> txDocs,
+  ) {
+    int centavos(double amount) => (amount * 100).round();
+    final List<SalesEntry> entries = <SalesEntry>[
+      for (final _CommissionRecord r in records)
+        if (r.status == 'PAID' && r.createdAt != null)
+          SalesEntry(
+            at: r.createdAt!,
+            grossCentavos: centavos(r.grossAmount),
+            commissionCentavos: centavos(r.platformFee),
+            processingCentavos: centavos(r.processingFee),
+            payoutCentavos: centavos(r.netToOwner),
+          ),
+      for (final QueryDocumentSnapshot<Map<String, dynamic>> doc in txDocs)
+        if (spOvertimeStatus(doc.data()) == kOvertimeCollected)
+          // Older tickets were marked collected before the collection time
+          // was saved; date those by the exit (or last update) instead, so
+          // the report still adds up to the Overtime Cash tile.
+          if (_parseDateTime(doc.data()['overtimeCollectedAt']) ??
+                  _parseDateTime(doc.data()['overtimeStatusAt']) ??
+                  _parseDateTime(doc.data()['exitAt']) ??
+                  _parseDateTime(doc.data()['updatedAt']) ??
+                  _parseDateTime(doc.data()['createdAt'])
+              case final DateTime collectedAt)
+            SalesEntry(
+              at: collectedAt,
+              count: 0,
+              cashCentavos: centavos(
+                ((doc.data()['overtimeAmount'] as num?) ?? 0).toDouble(),
+              ),
+            ),
+    ];
+
+    // Sign-up stores the display name as "First|Last".
+    final User? user = FirebaseAuth.instance.currentUser;
+    final String displayName = (user?.displayName ?? '')
+        .replaceAll('|', ' ')
+        .trim();
+    final String preparedBy = displayName.isNotEmpty
+        ? displayName
+        : (user?.email ?? '');
+
+    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+      stream: cachedStream(
+        'facility_doc_$facilityId',
+        () => FirebaseFirestore.instance
+            .collection('establishments')
+            .doc(facilityId)
+            .snapshots(),
+      ),
+      builder:
+          (
+            BuildContext context,
+            AsyncSnapshot<DocumentSnapshot<Map<String, dynamic>>> snapshot,
+          ) {
+            final String name =
+                ((snapshot.data?.data()?['name'] as String?) ?? '').trim();
+            return SpSalesReportCard(
+              entries: entries,
+              audience: SalesReportAudience.owner,
+              scopeLabel: name.isEmpty ? 'Your facility' : name,
+              preparedBy: preparedBy,
+            );
+          },
     );
   }
 }

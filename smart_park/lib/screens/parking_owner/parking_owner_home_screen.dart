@@ -30,6 +30,8 @@ import '../../services/parking_pricing.dart'
         formatParkingHours,
         graceOptionLabel;
 import '../../services/platform_fees.dart';
+import '../../services/sales_report.dart' show SalesEntry;
+import '../../services/sales_report_pdf.dart' show SalesReportAudience;
 import '../../theme/app_theme.dart';
 import '../../utils/friendly_error.dart';
 import '../../utils/staff_credentials.dart';
@@ -38,6 +40,7 @@ import '../../widgets/sp_activity_details.dart';
 import '../../widgets/sp_activity_search.dart';
 import '../../widgets/sp_driver_report.dart';
 import '../../widgets/sp_loading.dart';
+import '../../widgets/sp_sales_report_card.dart';
 import '../../widgets/sp_overtime.dart';
 import '../../widgets/sp_profile_view.dart';
 import '../auth/sign_in_screen.dart';
