@@ -79,10 +79,8 @@ void main() {
         plate: ' new 22 ',
         firestore: db,
       );
-      final Map<String, dynamic> t = (await db
-          .collection('transactions')
-          .doc('t1')
-          .get()).data()!;
+      final Map<String, dynamic> t =
+          (await db.collection('transactions').doc('t1').get()).data()!;
       expect(t['vehiclePlate'], 'NEW 22');
       expect(t['vehicleType'], 'motorcycle');
       expect(t['updatedAt'], isNotNull);
@@ -97,7 +95,8 @@ void main() {
     test('change refuses an empty or too-long plate', () {
       final FakeFirebaseFirestore db = FakeFirebaseFirestore();
       expect(
-        () => changeTicketPlate(transactionId: 't1', plate: '  ', firestore: db),
+        () =>
+            changeTicketPlate(transactionId: 't1', plate: '  ', firestore: db),
         throwsArgumentError,
       );
       expect(

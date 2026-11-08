@@ -391,8 +391,24 @@ extension _AdminHomePageFragments on _AdminHomePageState {
     required double commission,
     required int paymentCount,
     required _RevenueSeries financeSeries,
+    required List<_DayStat> allDays,
   }) {
     final String rangeLabel = _financeRangeLabel();
+    final User? admin = FirebaseAuth.instance.currentUser;
+    final Widget salesReport = SpSalesReportCard(
+      entries: <SalesEntry>[
+        for (final _DayStat d in allDays)
+          SalesEntry(
+            at: d.day,
+            count: d.paymentCount,
+            grossCentavos: (d.gross * 100).round(),
+            commissionCentavos: (d.commission * 100).round(),
+          ),
+      ],
+      audience: SalesReportAudience.platform,
+      scopeLabel: 'All facilities',
+      preparedBy: (admin?.email ?? '').trim(),
+    );
     final Widget rangeControl = SpSegmentedControl<_FinanceRangeFilter>(
       options: const <(_FinanceRangeFilter, String)>[
         (_FinanceRangeFilter.month, '30D'),
@@ -457,6 +473,8 @@ extension _AdminHomePageFragments on _AdminHomePageState {
           title: 'Revenue · $rangeLabel',
           subtitle: 'Gross parking payments per ${financeSeries.bucketLabel}.',
         ),
+        const SizedBox(height: 20),
+        salesReport,
       ];
     }
 
@@ -478,6 +496,8 @@ extension _AdminHomePageFragments on _AdminHomePageState {
         title: 'Revenue · $rangeLabel',
         subtitle: 'Gross parking payments per ${financeSeries.bucketLabel}.',
       ),
+      const SizedBox(height: 16),
+      salesReport,
     ];
   }
 
@@ -624,6 +644,7 @@ extension _AdminHomePageFragments on _AdminHomePageState {
     required List<QueryDocumentSnapshot<Map<String, dynamic>>> users,
     required List<QueryDocumentSnapshot<Map<String, dynamic>>> establishments,
     required List<_DayStat> financePayments,
+    required List<_DayStat> allPayments,
   }) {
     switch (_selectedTab) {
       case _AdminTab.dashboard:
@@ -654,6 +675,7 @@ extension _AdminHomePageFragments on _AdminHomePageState {
           commission: financeCommission,
           paymentCount: _sumPayments(financePayments),
           financeSeries: financeSeries,
+          allDays: allPayments,
         );
       case _AdminTab.settings:
         return _buildSettingsTab();

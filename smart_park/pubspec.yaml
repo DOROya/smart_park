@@ -55,6 +55,8 @@ dependencies:
   firebase_crashlytics: ^5.4.0
   cached_network_image: ^4.0.2
   shared_preferences: ^2.5.5
+  pdf: ^3.13.1
+  printing: ^5.15.1
 dev_dependencies:
   flutter_test:
     sdk: flutter
