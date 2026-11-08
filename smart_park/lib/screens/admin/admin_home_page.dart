@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 
 import '../../services/facility_status.dart';
 import '../../services/sales_report.dart';
@@ -29,6 +30,8 @@ enum _FacilitySortOption { pendingFirst, newest, oldest }
 
 enum _UserRoleFilter { all, driver, parkingOwner }
 
+enum _UserSortOption { newest, name }
+
 /// A status change offered in the establishment review dialog.
 typedef _StatusAction = ({
   String status,
@@ -37,6 +40,9 @@ typedef _StatusAction = ({
   Color color,
   bool primary,
 });
+
+/// Directory rows shown per page.
+const int _kUsersPage = 20;
 
 class AdminHomePage extends StatefulWidget {
   const AdminHomePage({super.key});
@@ -50,6 +56,10 @@ class _AdminHomePageState extends State<AdminHomePage>
   _AdminTab _selectedTab = _AdminTab.dashboard;
   _FacilitySortOption _facilitySort = _FacilitySortOption.pendingFirst;
   _UserRoleFilter _userRoleFilter = _UserRoleFilter.all;
+  _UserSortOption _userSort = _UserSortOption.newest;
+
+  /// How many directory rows show before "Show more".
+  int _usersShown = _kUsersPage;
   FinanceRange _financeRange = FinanceRange.containing(
     FinancePeriod.month,
     DateTime.now(),
@@ -117,6 +127,13 @@ class _AdminHomePageState extends State<AdminHomePage>
     };
   }
 
+  /// When the account was made. User docs have no creation time, so this
+  /// falls back to when the Terms were accepted, which sign-up records.
+  DateTime? _userJoinedAt(Map<String, dynamic> data) =>
+      _parseDateTime(data['createdAt']) ??
+      _parseDateTime(data['createdAtClient']) ??
+      _parseDateTime(data['termsAcceptedAt']);
+
   bool _isPriorityUserRole(String role) {
     final String normalizedRole = _normalize(role);
     return normalizedRole == 'driver' || normalizedRole == 'parking owner';
@@ -162,19 +179,20 @@ class _AdminHomePageState extends State<AdminHomePage>
         })
         .toList();
 
+    String nameOf(Map<String, dynamic> d) => _normalize(
+      '${(d['firstName'] as String?) ?? ''} ${(d['lastName'] as String?) ?? ''}',
+    );
+    final DateTime epoch = DateTime.fromMillisecondsSinceEpoch(0);
     filtered.sort((
       QueryDocumentSnapshot<Map<String, dynamic>> a,
       QueryDocumentSnapshot<Map<String, dynamic>> b,
     ) {
-      final DateTime aDate =
-          _parseDateTime(a.data()['createdAt']) ??
-          _parseDateTime(a.data()['createdAtClient']) ??
-          DateTime.fromMillisecondsSinceEpoch(0);
-      final DateTime bDate =
-          _parseDateTime(b.data()['createdAt']) ??
-          _parseDateTime(b.data()['createdAtClient']) ??
-          DateTime.fromMillisecondsSinceEpoch(0);
-      return bDate.compareTo(aDate);
+      if (_userSort == _UserSortOption.name) {
+        return nameOf(a.data()).compareTo(nameOf(b.data()));
+      }
+      return (_userJoinedAt(b.data()) ?? epoch).compareTo(
+        _userJoinedAt(a.data()) ?? epoch,
+      );
     });
 
     return filtered;

@@ -18,8 +18,7 @@ import 'sp_overtime.dart';
 ///
 /// Pass [onMarkOvertimeCollected] (staff only) to offer confirming the
 /// overtime cash on an exit still flagged "collect cash", or
-/// [onSetOvertimeStatus] (owners) to switch it between owed, collected and
-/// waived.
+/// [onSetOvertimeStatus] (owners) to switch it between owed and collected.
 Future<void> showSpActivityDetails(
   BuildContext context, {
   required Map<String, dynamic> log,
@@ -361,9 +360,7 @@ class _ActivityDetailsSheetState extends State<_ActivityDetailsSheet> {
 
   Widget _overtimeRow() {
     final double amount = ((log['overtimeAmount'] as num?) ?? 0).toDouble();
-    final String status =
-        _statusOverride ??
-        ((log['overtimeStatus'] as String?) ?? '').toLowerCase();
+    final String status = _statusOverride ?? spOvertimeStatus(log);
     final String collectorId = ((log['overtimeCollectedBy'] as String?) ?? '')
         .trim();
     final DateTime? collectedAt = spParseDateTime(log['overtimeCollectedAt']);
@@ -386,7 +383,7 @@ class _ActivityDetailsSheetState extends State<_ActivityDetailsSheet> {
     final bool ownerCanSet =
         onSet != null &&
         amount > 0 &&
-        <String>['cash_due', 'collected', 'waived'].contains(status);
+        <String>['cash_due', 'collected'].contains(status);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
@@ -414,28 +411,16 @@ class _ActivityDetailsSheetState extends State<_ActivityDetailsSheet> {
         if (ownerCanSet)
           Padding(
             padding: const EdgeInsets.only(bottom: 12),
-            child: SegmentedButton<String>(
-              showSelectedIcon: false,
-              segments: const <ButtonSegment<String>>[
-                ButtonSegment<String>(
-                  value: 'cash_due',
-                  label: Text('Not collected'),
-                ),
-                ButtonSegment<String>(
-                  value: 'collected',
-                  label: Text('Collected'),
-                ),
-                ButtonSegment<String>(value: 'waived', label: Text('Waived')),
+            child: SpSegmentedControl<String>(
+              options: const <(String, String)>[
+                ('cash_due', 'Not collected'),
+                ('collected', 'Collected'),
               ],
-              selected: <String>{status},
-              onSelectionChanged: _marking
-                  ? null
-                  : (Set<String> picked) {
-                      final String next = picked.first;
-                      if (next != status) {
-                        unawaited(_save(() => onSet(log, next), next));
-                      }
-                    },
+              selected: status,
+              onChanged: (String next) {
+                if (_marking) return;
+                unawaited(_save(() => onSet(log, next), next));
+              },
             ),
           ),
       ],

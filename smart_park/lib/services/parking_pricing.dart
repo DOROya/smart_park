@@ -203,16 +203,18 @@ int ticketHoursLeft(Map<String, dynamic> ticket) {
   );
 }
 
-/// Parking hours in words, split into days once there is at least one:
-/// 166 -> "6 days, 22 hours", 48 -> "2 days", 5 -> "5 hours".
+/// Parking hours in words, always as hours so stays and tickets are easy to
+/// compare and track (the capstone adviser's recommendation): 166 ->
+/// "166 hours", 1 -> "1 hour", 1500 -> "1,500 hours".
 String formatParkingHours(int hours) {
-  if (hours <= 0) return '0 hours';
-  final int days = hours ~/ 24;
-  final int rest = hours % 24;
-  final String dayText = '$days day${days == 1 ? '' : 's'}';
-  final String hourText = '$rest hour${rest == 1 ? '' : 's'}';
-  if (days == 0) return hourText;
-  return rest == 0 ? dayText : '$dayText, $hourText';
+  final int h = hours < 0 ? 0 : hours;
+  final String digits = '$h';
+  final StringBuffer grouped = StringBuffer();
+  for (int i = 0; i < digits.length; i++) {
+    if (i > 0 && (digits.length - i) % 3 == 0) grouped.write(',');
+    grouped.write(digits[i]);
+  }
+  return '$grouped hour${h == 1 ? '' : 's'}';
 }
 
 /// A ticket's package duration. Newer tickets store it on the document;

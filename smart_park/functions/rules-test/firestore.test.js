@@ -382,8 +382,7 @@ test("owners change overtime status on their own exits only", async () => {
   const set = (status) => ({
     overtimeStatus: status, overtimeStatusBy: "owner1", overtimeStatusAt: serverTimestamp(),
   });
-  await assertSucceeds(setDoc(doc(owner(), "transactions/tx1"), set("waived"), { merge: true }));
-  await assertSucceeds(setDoc(doc(owner(), "activity_logs/exit1"), set("waived"), { merge: true }));
+  await assertSucceeds(setDoc(doc(owner(), "activity_logs/exit1"), set("collected"), { merge: true }));
   await assertSucceeds(
     setDoc(doc(owner(), "transactions/tx1"),
       { ...set("collected"), overtimeCollectedBy: "owner1", overtimeCollectedAt: serverTimestamp() }, { merge: true }),
@@ -391,8 +390,10 @@ test("owners change overtime status on their own exits only", async () => {
   // Nothing else, no other statuses, no exits without overtime, no other owners.
   await assertFails(setDoc(doc(owner(), "transactions/tx1"), { ...set("cash_due"), amount: 0 }, { merge: true }));
   await assertFails(setDoc(doc(owner(), "transactions/tx1"), set("none"), { merge: true }));
-  await assertFails(setDoc(doc(owner(), "transactions/tx3"), set("waived"), { merge: true }));
-  await assertFails(setDoc(doc(owner(), "transactions/tx2"), set("waived"), { merge: true }));
+  // Overtime can't be waived any more, by anyone.
+  await assertFails(setDoc(doc(owner(), "transactions/tx1"), set("waived"), { merge: true }));
+  await assertFails(setDoc(doc(owner(), "activity_logs/exit1"), set("waived"), { merge: true }));
+  await assertFails(setDoc(doc(owner(), "transactions/tx3"), set("cash_due"), { merge: true }));
   await assertFails(setDoc(doc(otherOwner(), "activity_logs/exit1"), set("cash_due"), { merge: true }));
 });
 

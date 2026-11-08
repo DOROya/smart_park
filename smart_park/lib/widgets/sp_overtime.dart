@@ -4,7 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
 import '../services/gate_scan_service.dart'
-    show kOvertimeCashDue, kOvertimeCollected, kOvertimeWaived;
+    show kOvertimeCashDue, kOvertimeCollected, overtimeStatusOf;
 import '../services/parking_pricing.dart';
 import '../theme/app_theme.dart';
 import 'smartpark_ui.dart';
@@ -15,8 +15,7 @@ export 'smartpark_ui.dart' show spPeso;
 /// Overtime tracking for the owner: vehicles past their paid time right now,
 /// and overtime cash still owed versus handed over at the gate.
 
-String spOvertimeStatus(Map<String, dynamic> data) =>
-    ((data['overtimeStatus'] as String?) ?? '').toLowerCase();
+String spOvertimeStatus(Map<String, dynamic> data) => overtimeStatusOf(data);
 
 /// Overtime cash across exit logs or tickets: flagged at the gate but not
 /// yet collected, and collected.
@@ -203,14 +202,6 @@ class SpOvertimeBreakdown extends StatelessWidget {
               forDriver
                   ? 'Paid in cash at the gate.'
                   : 'Cash collected${statusDetail ?? ''}.',
-            ),
-            kOvertimeWaived => (
-              AppTheme.textMuted,
-              AppTheme.surfaceAlt,
-              Icons.money_off_rounded,
-              forDriver
-                  ? 'Waived by the parking owner. Nothing to pay.'
-                  : 'Waived by the owner. No cash is owed.',
             ),
             _ => (
               spInsideColor,

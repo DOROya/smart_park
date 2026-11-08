@@ -48,17 +48,29 @@ void main() {
         'staySeconds': const Duration(hours: 26).inSeconds,
         'overtimeHours': 2,
         'overtimeAmount': 50,
-        'overtimeStatus': 'waived',
+        'overtimeStatus': 'cash_due',
       }, forDriver: true),
     );
     expect(tester.takeException(), isNull);
-    expect(find.text('counts as 1 day, 2 hours'), findsOneWidget);
-    expect(find.text('1 day'), findsOneWidget); // covered by the ticket
+    expect(find.text('counts as 26 hours'), findsOneWidget);
+    expect(find.text('24 hours'), findsOneWidget); // covered by the ticket
     // No stored rate: derived from the amount.
     expect(find.text('× PHP 25.00 per hour'), findsOneWidget);
-    expect(
-      find.text('Waived by the parking owner. Nothing to pay.'),
-      findsOneWidget,
+    expect(find.text('Pay this in cash to the gate staff.'), findsOneWidget);
+  });
+
+  testWidgets('an exit waived before waiving was removed is owed', (
+    WidgetTester tester,
+  ) async {
+    await pump(
+      tester,
+      SpOvertimeBreakdown.fromRecord(<String, dynamic>{
+        'overtimeHours': 2,
+        'overtimeAmount': 50,
+        'overtimeStatus': 'waived',
+      }, forDriver: true),
     );
+    expect(find.textContaining('Waived'), findsNothing);
+    expect(find.text('Pay this in cash to the gate staff.'), findsOneWidget);
   });
 }

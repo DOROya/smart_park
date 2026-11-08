@@ -286,7 +286,7 @@ void main() {
       });
       final GateScanResult? r = await scan(qr('t1'));
       expect(r!.isAllowed, isTrue);
-      expect(r.reason, 'Paid ticket verified. 7 days left. Admit.');
+      expect(r.reason, 'Paid ticket verified. 168 hours left. Admit.');
     });
 
     test('copies the driver from the ticket onto the entry log', () async {
@@ -439,42 +439,61 @@ void main() {
       expect(exitLog['overtimeStatus'], 'collected');
     });
 
-    test(
-      'owner switches overtime between owed, collected and waived',
-      () async {
-        await db.collection('activity_logs').doc('exit-1').set(
-          <String, dynamic>{
-            'establishmentID': facilityId,
-            'overtimeStatus': 'cash_due',
-          },
-        );
-        await seedTicket('t1', <String, dynamic>{
-          'overtimeStatus': 'cash_due',
-          'exitLogId': 'exit-1',
-        });
-        Future<Map<String, dynamic>> exitLog() async =>
-            (await db.collection('activity_logs').doc('exit-1').get()).data()!;
+    test('owner switches overtime between owed and collected', () async {
+      await db.collection('activity_logs').doc('exit-1').set(<String, dynamic>{
+        'establishmentID': facilityId,
+        'overtimeStatus': 'cash_due',
+      });
+      await seedTicket('t1', <String, dynamic>{
+        'overtimeStatus': 'cash_due',
+        'exitLogId': 'exit-1',
+      });
+      Future<Map<String, dynamic>> exitLog() async =>
+          (await db.collection('activity_logs').doc('exit-1').get()).data()!;
 
-        await setOvertimeStatusAsOwner(
-          firestore: db,
-          ownerId: 'owner-1',
-          transactionId: 't1',
-          status: 'collected',
-        );
-        expect((await ticket('t1'))['overtimeCollectedBy'], 'owner-1');
-        expect((await exitLog())['overtimeStatus'], 'collected');
+      await setOvertimeStatusAsOwner(
+        firestore: db,
+        ownerId: 'owner-1',
+        transactionId: 't1',
+        status: 'collected',
+      );
+      expect((await ticket('t1'))['overtimeCollectedBy'], 'owner-1');
+      expect((await exitLog())['overtimeStatus'], 'collected');
 
-        await setOvertimeStatusAsOwner(
+      await setOvertimeStatusAsOwner(
+        firestore: db,
+        ownerId: 'owner-1',
+        transactionId: 't1',
+        status: 'cash_due',
+      );
+      final Map<String, dynamic> t = await ticket('t1');
+      expect(t['overtimeStatus'], 'cash_due');
+      expect(t['overtimeStatusBy'], 'owner-1');
+      expect(t.containsKey('overtimeCollectedBy'), isFalse);
+      expect((await exitLog())['overtimeStatus'], 'cash_due');
+    });
+
+    test('overtime can no longer be waived', () async {
+      await seedTicket('t1', <String, dynamic>{'overtimeStatus': 'cash_due'});
+      expect(
+        () => setOvertimeStatusAsOwner(
           firestore: db,
           ownerId: 'owner-1',
           transactionId: 't1',
           status: 'waived',
-        );
-        final Map<String, dynamic> t = await ticket('t1');
-        expect(t['overtimeStatus'], 'waived');
-        expect(t['overtimeStatusBy'], 'owner-1');
-        expect(t.containsKey('overtimeCollectedBy'), isFalse);
-        expect((await exitLog())['overtimeStatus'], 'waived');
+        ),
+        throwsArgumentError,
+      );
+      expect((await ticket('t1'))['overtimeStatus'], 'cash_due');
+    });
+
+    test(
+      'an exit waived before the change is owed and can be collected',
+      () async {
+        await seedTicket('t1', <String, dynamic>{'overtimeStatus': 'waived'});
+        expect(overtimeStatusOf(await ticket('t1')), 'cash_due');
+        await service.markOvertimeCollected(staff: staff, transactionId: 't1');
+        expect((await ticket('t1'))['overtimeStatus'], 'collected');
       },
     );
 

@@ -41,10 +41,10 @@ class _CommissionRecord {
   final int overtimeHours;
   final double overtimeAmount;
 
-  /// The ticket's `overtimeStatus`: cash_due, collected or waived.
+  /// The ticket's `overtimeStatus`: cash_due or collected.
   final String overtimeStatus;
 
-  /// When the overtime cash was collected or waived.
+  /// When the overtime cash was collected.
   final DateTime? overtimeSettledAt;
 
   /// The `transactions` doc; null for records known only from a payment
@@ -265,11 +265,9 @@ class _CommissionsListContentState extends State<_CommissionsListContent>
         overtimeHours: ((data['overtimeHours'] as num?) ?? 0).toInt(),
         overtimeAmount: ((data['overtimeAmount'] as num?) ?? 0).toDouble(),
         overtimeStatus: spOvertimeStatus(data),
-        overtimeSettledAt:
-            _parseDateTime(data['overtimeCollectedAt']) ??
-            (spOvertimeStatus(data) == kOvertimeWaived
-                ? _parseDateTime(data['overtimeStatusAt'])
-                : null),
+        overtimeSettledAt: spOvertimeStatus(data) == kOvertimeCollected
+            ? _parseDateTime(data['overtimeCollectedAt'])
+            : null,
       );
     }
 
@@ -566,7 +564,7 @@ class _TransactionCard extends StatelessWidget {
   }
 
   /// Overtime cash for the stay, which follows the ticket live: owed until
-  /// staff (or the owner) confirm it, then collected or waived.
+  /// staff (or the owner) confirm it as collected.
   Widget _overtimeLine() {
     final DateTime? settled = record.overtimeSettledAt;
     final (
@@ -580,12 +578,6 @@ class _TransactionCard extends StatelessWidget {
         spEntryColor,
         AppTheme.successSoft,
         Icons.check_circle_rounded,
-      ),
-      kOvertimeWaived => (
-        'Waived',
-        AppTheme.textMuted,
-        AppTheme.surface,
-        Icons.money_off_rounded,
       ),
       _ => (
         'Not collected',
@@ -625,12 +617,7 @@ class _TransactionCard extends StatelessWidget {
                 style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w800,
-                  color: record.overtimeStatus == kOvertimeWaived
-                      ? AppTheme.textMuted
-                      : AppTheme.textDark,
-                  decoration: record.overtimeStatus == kOvertimeWaived
-                      ? TextDecoration.lineThrough
-                      : null,
+                  color: AppTheme.textDark,
                 ),
               ),
             ],
