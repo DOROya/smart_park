@@ -26,6 +26,42 @@ class SpFinancePeriodBar extends StatelessWidget {
   /// Overrides the clock, for tests.
   final DateTime? now;
 
+  /// A calendar for weeks; for months, quarters and years, a sheet of every
+  /// period from the first one with data up to now.
+  Future<void> _pick(
+    BuildContext context,
+    DateTime today,
+    FinanceRange first,
+  ) async {
+    if (range.period == FinancePeriod.week) {
+      final DateTime? day = await showDatePicker(
+        context: context,
+        initialDate: range.contains(today) ? today : range.start,
+        firstDate: first.start,
+        lastDate: today,
+        helpText: 'Pick any day of the week',
+      );
+      if (day != null) {
+        onChanged(FinanceRange.containing(FinancePeriod.week, day));
+      }
+      return;
+    }
+    final FinanceRange? picked = await showModalBottomSheet<FinanceRange>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      // A phone-width sheet, centered on tablets.
+      constraints: BoxConstraints(
+        maxWidth: 560,
+        maxHeight: MediaQuery.sizeOf(context).height * 0.7,
+      ),
+      backgroundColor: AppTheme.surface,
+      builder: (BuildContext context) =>
+          _PeriodPickerSheet(selected: range, first: first, today: today),
+    );
+    if (picked != null && picked != range) onChanged(picked);
+  }
+
   @override
   Widget build(BuildContext context) {
     final DateTime today = now ?? DateTime.now();
@@ -49,14 +85,15 @@ class SpFinancePeriodBar extends StatelessWidget {
             (FinancePeriod.year, 'Year'),
           ],
           selected: range.period,
-          // Keep today in view when the current period is showing,
-          // otherwise stay around the period being browsed.
-          onChanged: (FinancePeriod p) => onChanged(
-            FinanceRange.containing(
-              p,
-              range.contains(today) ? today : range.start,
-            ),
-          ),
+          // Land on the latest part of what is showing (today, if it is
+          // in view), but never before the first sale.
+          onChanged: (FinancePeriod p) {
+            DateTime anchor = range.contains(today) ? today : range.lastDay;
+            if (earliest != null && anchor.isBefore(earliest!)) {
+              anchor = earliest!;
+            }
+            onChanged(FinanceRange.containing(p, anchor));
+          },
         ),
         const SizedBox(height: 6),
         Row(
@@ -67,23 +104,48 @@ class SpFinancePeriodBar extends StatelessWidget {
               icon: const Icon(Icons.chevron_left_rounded),
             ),
             Expanded(
-              child: Column(
-                children: [
-                  Text(
-                    range.label,
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w800,
-                      color: AppTheme.textDark,
+              // Tap the period to jump straight to another one.
+              child: Tooltip(
+                message: 'Choose a ${range.period.name}',
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
+                  onTap: () => _pick(context, today, first),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: Column(
+                      children: [
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Flexible(
+                              child: Text(
+                                range.label,
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w800,
+                                  color: AppTheme.textDark,
+                                ),
+                              ),
+                            ),
+                            Icon(
+                              Icons.arrow_drop_down_rounded,
+                              color: AppTheme.textMuted,
+                            ),
+                          ],
+                        ),
+                        if (range.months.isNotEmpty)
+                          Text(
+                            range.months,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: AppTheme.textMuted,
+                            ),
+                          ),
+                      ],
                     ),
                   ),
-                  if (range.months.isNotEmpty)
-                    Text(
-                      range.months,
-                      style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
-                    ),
-                ],
+                ),
               ),
             ),
             IconButton(
@@ -94,6 +156,115 @@ class SpFinancePeriodBar extends StatelessWidget {
           ],
         ),
       ],
+    );
+  }
+}
+
+/// Every month, quarter or year from [first] to [today], newest year first,
+/// as chips. Tapping one closes the sheet with that range.
+class _PeriodPickerSheet extends StatelessWidget {
+  const _PeriodPickerSheet({
+    required this.selected,
+    required this.first,
+    required this.today,
+  });
+
+  final FinanceRange selected;
+  final FinanceRange first;
+  final DateTime today;
+
+  static const List<String> _quarterNames = <String>[
+    'Q1 · Jan - Mar',
+    'Q2 · Apr - Jun',
+    'Q3 · Jul - Sep',
+    'Q4 · Oct - Dec',
+  ];
+
+  Widget _chip(BuildContext context, FinanceRange r, String label) {
+    final bool enabled =
+        !r.start.isBefore(first.start) && !r.start.isAfter(today);
+    return ChoiceChip(
+      label: Text(label),
+      selected: r == selected,
+      onSelected: enabled ? (_) => Navigator.of(context).pop(r) : null,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final FinancePeriod period = selected.period;
+    final List<int> years = <int>[
+      for (int y = today.year; y >= first.start.year; y--) y,
+    ];
+    final String title = switch (period) {
+      FinancePeriod.month => 'Choose a month',
+      FinancePeriod.quarter => 'Choose a quarter',
+      _ => 'Choose a year',
+    };
+
+    return SafeArea(
+      child: ListView(
+        shrinkWrap: true,
+        padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+        children: [
+          Text(
+            title,
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w800,
+              color: AppTheme.textDark,
+            ),
+          ),
+          const SizedBox(height: 12),
+          if (period == FinancePeriod.year)
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: <Widget>[
+                for (final int y in years)
+                  _chip(
+                    context,
+                    FinanceRange.containing(period, DateTime(y)),
+                    '$y',
+                  ),
+              ],
+            )
+          else
+            for (final int y in years) ...[
+              Padding(
+                padding: const EdgeInsets.only(top: 4, bottom: 8),
+                child: Text(
+                  '$y',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    color: AppTheme.textMuted,
+                  ),
+                ),
+              ),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: <Widget>[
+                  if (period == FinancePeriod.quarter)
+                    for (int q = 0; q < 4; q++)
+                      _chip(
+                        context,
+                        FinanceRange.containing(period, DateTime(y, q * 3 + 1)),
+                        _quarterNames[q],
+                      )
+                  else
+                    for (int m = 1; m <= 12; m++)
+                      _chip(
+                        context,
+                        FinanceRange.containing(period, DateTime(y, m)),
+                        kSalesMonthNames[m - 1].substring(0, 3),
+                      ),
+                ],
+              ),
+              const SizedBox(height: 12),
+            ],
+        ],
+      ),
     );
   }
 }

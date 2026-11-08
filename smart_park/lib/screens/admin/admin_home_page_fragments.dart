@@ -422,7 +422,7 @@ extension _AdminHomePageFragments on _AdminHomePageState {
       icon: Icons.payments_rounded,
       color: spInsideColor,
       label: 'Commission',
-      caption: period,
+      caption: "SmartPark's earnings",
       value: spPeso(totals.commissionCentavos / 100),
     );
     final Widget transactionsTile = SpStatTile(
@@ -443,8 +443,10 @@ extension _AdminHomePageFragments on _AdminHomePageState {
     );
     final Widget chart = _buildRevenueChartCard(
       series: series,
-      title: 'Commission · $period',
-      subtitle: 'Platform commission earned per ${series.bucketLabel}.',
+      // The period can be long ("Q4 2026 (Oct - Dec)"), so it goes in the
+      // subtitle, which wraps, instead of the one-line title.
+      title: 'Commission',
+      subtitle: 'Earned per ${series.bucketLabel}, $period.',
       color: spInsideColor,
     );
 
