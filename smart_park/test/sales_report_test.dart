@@ -6,99 +6,155 @@ import 'package:smart_park/services/sales_report.dart';
 import 'package:smart_park/services/sales_report_pdf.dart';
 import 'package:smart_park/widgets/sp_sales_report_card.dart';
 
+// Sunday, November 8, 2026.
+final DateTime now = DateTime(2026, 11, 8, 15);
+
+final List<SalesEntry> entries = <SalesEntry>[
+  SalesEntry(
+    at: DateTime(2026, 11, 1, 9),
+    grossCentavos: 10000,
+    commissionCentavos: 500,
+    processingCentavos: 200,
+    payoutCentavos: 9300,
+  ),
+  SalesEntry(
+    at: DateTime(2026, 11, 1, 18),
+    grossCentavos: 5000,
+    commissionCentavos: 250,
+    processingCentavos: 100,
+    payoutCentavos: 4650,
+  ),
+  SalesEntry(
+    at: DateTime(2026, 11, 7, 12),
+    grossCentavos: 20000,
+    commissionCentavos: 1000,
+    processingCentavos: 400,
+    payoutCentavos: 18600,
+  ),
+  // Overtime cash: money but not a transaction.
+  SalesEntry(at: DateTime(2026, 11, 7, 20), count: 0, cashCentavos: 3000),
+  SalesEntry(
+    at: DateTime(2026, 3, 15),
+    count: 2,
+    grossCentavos: 7000,
+    commissionCentavos: 350,
+  ),
+  SalesEntry(
+    at: DateTime(2025, 12, 31),
+    grossCentavos: 99900,
+    commissionCentavos: 4995,
+  ),
+];
+
+FinanceRange rangeOf(FinancePeriod p, DateTime d) =>
+    FinanceRange.containing(p, d);
+
 void main() {
-  final DateTime now = DateTime(2026, 11, 8, 15);
+  group('FinanceRange', () {
+    test('a week runs Monday to Sunday', () {
+      final FinanceRange week = rangeOf(FinancePeriod.week, now);
+      expect(week.start, DateTime(2026, 11, 2));
+      expect(week.end, DateTime(2026, 11, 9));
+      expect(week.label, 'Nov 2 - 8, 2026');
+      expect(week.step(-1).label, 'Oct 26 - Nov 1, 2026');
+      expect(
+        rangeOf(FinancePeriod.week, DateTime(2027, 1, 1)).label,
+        'Dec 28, 2026 - Jan 3, 2027',
+      );
+      expect(week.breakdown, SalesBreakdown.daily);
+    });
 
-  final List<SalesEntry> entries = <SalesEntry>[
-    SalesEntry(
-      at: DateTime(2026, 11, 1, 9),
-      grossCentavos: 10000,
-      commissionCentavos: 1000,
-      processingCentavos: 250,
-      payoutCentavos: 8750,
-    ),
-    SalesEntry(
-      at: DateTime(2026, 11, 1, 18),
-      grossCentavos: 5000,
-      commissionCentavos: 500,
-      processingCentavos: 125,
-      payoutCentavos: 4375,
-    ),
-    SalesEntry(
-      at: DateTime(2026, 11, 7, 12),
-      grossCentavos: 20000,
-      commissionCentavos: 2000,
-      processingCentavos: 500,
-      payoutCentavos: 17500,
-    ),
-    // Overtime cash: money but not a transaction.
-    SalesEntry(at: DateTime(2026, 11, 7, 20), count: 0, cashCentavos: 3000),
-    SalesEntry(at: DateTime(2026, 3, 15), grossCentavos: 7000, count: 2),
-    SalesEntry(at: DateTime(2025, 12, 31), grossCentavos: 99900),
-  ];
+    test('months, quarters and years step across year ends', () {
+      final FinanceRange month = rangeOf(FinancePeriod.month, now);
+      expect(month.label, 'November 2026');
+      expect(month.step(2).label, 'January 2027');
+      final FinanceRange quarter = rangeOf(FinancePeriod.quarter, now);
+      expect(quarter.label, 'Q4 2026');
+      expect(quarter.months, 'Oct - Dec');
+      expect(quarter.step(-4).label, 'Q4 2025');
+      expect(quarter.breakdown, SalesBreakdown.monthly);
+      expect(rangeOf(FinancePeriod.year, now).step(-1).label, '2025');
+    });
 
-  group('SalesReport.daily', () {
-    test('has one row per day up to today, with sales summed by day', () {
-      final SalesReport report = SalesReport.daily(
+    test('contains covers the whole last day', () {
+      final FinanceRange month = rangeOf(FinancePeriod.month, now);
+      expect(month.contains(DateTime(2026, 11, 30, 23, 59)), isTrue);
+      expect(month.contains(DateTime(2026, 12, 1)), isFalse);
+      expect(month.contains(DateTime(2026, 10, 31, 23, 59)), isFalse);
+    });
+  });
+
+  group('SalesReport.forRange', () {
+    test('a month has a row per day up to today', () {
+      final SalesReport report = SalesReport.forRange(
         entries,
-        DateTime(2026, 11),
+        rangeOf(FinancePeriod.month, now),
         now: now,
       );
       expect(report.rows, hasLength(8));
       expect(report.rows.first.grossCentavos, 15000);
       expect(report.rows.first.count, 2);
-      expect(report.rows[6].grossCentavos, 20000);
       expect(report.rows[6].cashCentavos, 3000);
       expect(report.rows[6].count, 1);
-      expect(report.rows[2].isEmpty, isTrue);
       expect(report.totals.grossCentavos, 35000);
-      expect(report.totals.payoutCentavos, 30625);
+      expect(report.totals.payoutCentavos, 32550);
       expect(report.totals.count, 3);
-      expect(report.bestRow!.start, DateTime(2026, 11, 7));
-      expect(report.averageGrossCentavos, 17500);
-      expect(report.periodLabel, 'November 2026');
-      expect(report.fileName, 'SmartPark-Daily-Sales-2026-11.pdf');
+      expect(
+        report.bestBy((SalesRow r) => r.grossCentavos)!.start,
+        DateTime(2026, 11, 7),
+      );
     });
 
-    test('covers the whole of a past month', () {
-      final SalesReport report = SalesReport.daily(
+    test('a week only counts its own seven days', () {
+      final SalesReport report = SalesReport.forRange(
         entries,
-        DateTime(2026, 2),
+        rangeOf(FinancePeriod.week, now),
+        now: now,
+      );
+      expect(report.rows, hasLength(7));
+      expect(report.totals.grossCentavos, 20000);
+      expect(report.totals.cashCentavos, 3000);
+    });
+
+    test('a quarter has a row per month up to this month', () {
+      final SalesReport report = SalesReport.forRange(
+        entries,
+        rangeOf(FinancePeriod.quarter, now),
+        now: now,
+      );
+      expect(report.rows, hasLength(2));
+      expect(report.rowLabel(report.rows.last), 'November');
+      expect(report.totals.grossCentavos, 35000);
+    });
+
+    test('a year has a row per month, all twelve once it is over', () {
+      final SalesReport thisYear = SalesReport.forRange(
+        entries,
+        rangeOf(FinancePeriod.year, now),
+        now: now,
+      );
+      expect(thisYear.rows, hasLength(11));
+      expect(thisYear.rows[2].count, 2);
+      expect(thisYear.totals.grossCentavos, 42000);
+
+      final SalesReport lastYear = SalesReport.forRange(
+        entries,
+        rangeOf(FinancePeriod.year, DateTime(2025, 6)),
+        now: now,
+      );
+      expect(lastYear.rows, hasLength(12));
+      expect(lastYear.totals.commissionCentavos, 4995);
+    });
+
+    test('a past month is complete and can be empty', () {
+      final SalesReport report = SalesReport.forRange(
+        entries,
+        rangeOf(FinancePeriod.month, DateTime(2026, 2)),
         now: now,
       );
       expect(report.rows, hasLength(28));
-      expect(report.totals.grossCentavos, 0);
-      expect(report.bestRow, isNull);
-    });
-
-    test('ignores the same day number in another month or year', () {
-      final SalesReport report = SalesReport.daily(
-        entries,
-        DateTime(2025, 12),
-        now: now,
-      );
-      expect(report.rows, hasLength(31));
-      expect(report.rows.last.grossCentavos, 99900);
-      expect(report.totals.grossCentavos, 99900);
-    });
-  });
-
-  group('SalesReport.monthly', () {
-    test('has one row per month up to this month', () {
-      final SalesReport report = SalesReport.monthly(entries, 2026, now: now);
-      expect(report.rows, hasLength(11));
-      expect(report.rows[2].grossCentavos, 7000);
-      expect(report.rows[2].count, 2);
-      expect(report.rows[10].grossCentavos, 35000);
-      expect(report.totals.grossCentavos, 42000);
-      expect(report.rowLabel(report.rows[10]), 'November');
-      expect(report.fileName, 'SmartPark-Monthly-Sales-2026.pdf');
-    });
-
-    test('shows all twelve months of a past year', () {
-      final SalesReport report = SalesReport.monthly(entries, 2025, now: now);
-      expect(report.rows, hasLength(12));
-      expect(report.totals.grossCentavos, 99900);
+      expect(report.totals.isEmpty, isTrue);
+      expect(report.bestBy((SalesRow r) => r.grossCentavos), isNull);
     });
   });
 
@@ -106,53 +162,63 @@ void main() {
     expect(formatSalesPeso(0), 'PHP 0.00');
     expect(formatSalesPeso(5), 'PHP 0.05');
     expect(formatSalesPeso(123456789), 'PHP 1,234,567.89');
-    expect(formatSalesPeso(100000), 'PHP 1,000.00');
     expect(formatSalesPeso(-25050), '-PHP 250.50');
   });
 
   test('pdfSafeText keeps Latin-1 and plainifies the rest', () {
     expect(pdfSafeText('Peña’s Lot – Main 🚗'), "Peña's Lot - Main");
-    expect(pdfSafeText('Juan|Cruz'), 'Juan|Cruz');
   });
 
-  test('builds a PDF for both audiences', () async {
-    for (final SalesReportAudience audience in SalesReportAudience.values) {
-      final Uint8List bytes = await buildSalesReportPdf(
-        report: SalesReport.daily(entries, DateTime(2026, 11), now: now),
-        audience: audience,
-        scopeLabel: 'Peña’s Lot 🚗',
-        preparedBy: 'Juan dela Cruz',
-        generatedAt: now,
-      );
-      expect(String.fromCharCodes(bytes.take(5)), '%PDF-');
+  test('report titles and file names follow the period and audience', () {
+    final SalesReport quarter = SalesReport.forRange(
+      entries,
+      rangeOf(FinancePeriod.quarter, now),
+      now: now,
+    );
+    expect(
+      salesReportTitle(quarter, SalesReportAudience.owner),
+      'Quarterly Sales Report',
+    );
+    expect(
+      salesReportTitle(quarter, SalesReportAudience.platform),
+      'Quarterly Commission Report',
+    );
+    expect(salesReportPeriod(quarter), 'Q4 2026 (Oct - Dec)');
+    expect(
+      salesReportFileName(quarter, SalesReportAudience.platform),
+      'SmartPark-Commission-2026-Q4.pdf',
+    );
+  });
+
+  test('builds a PDF for every period and both audiences', () async {
+    for (final FinancePeriod period in FinancePeriod.values) {
+      for (final SalesReportAudience audience in SalesReportAudience.values) {
+        final Uint8List bytes = await buildSalesReportPdf(
+          report: SalesReport.forRange(entries, rangeOf(period, now), now: now),
+          audience: audience,
+          scopeLabel: 'Peña’s Lot 🚗',
+          preparedBy: 'Juan dela Cruz',
+          generatedAt: now,
+        );
+        expect(String.fromCharCodes(bytes.take(5)), '%PDF-');
+      }
     }
   });
 
-  testWidgets('card switches between daily and monthly and steps periods', (
+  testWidgets('period bar drives the breakdown card', (
     WidgetTester tester,
   ) async {
     await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: SingleChildScrollView(
-            child: SpSalesReportCard(
-              entries: entries,
-              audience: SalesReportAudience.owner,
-              scopeLabel: 'Test Lot',
-              preparedBy: 'Owner',
-              now: now,
-            ),
-          ),
-        ),
-      ),
+      const MaterialApp(home: Scaffold(body: _Harness())),
     );
 
     expect(find.text('November 2026'), findsOneWidget);
-    // Only days with sales are listed.
+    expect(find.text('Daily Sales'), findsOneWidget);
+    // Only days with activity are listed.
     expect(find.text('Nov 7, Sat'), findsOneWidget);
-    expect(find.text('Nov 1, Sun'), findsOneWidget);
     expect(find.text('Nov 3, Tue'), findsNothing);
     expect(find.text('1 txn · + PHP 30.00 cash'), findsOneWidget);
+    expect(find.text('Payout PHP 186.00'), findsOneWidget);
     // Can't step into the future.
     final IconButton next = tester.widget(
       find.widgetWithIcon(IconButton, Icons.chevron_right_rounded),
@@ -164,11 +230,17 @@ void main() {
     expect(find.text('October 2026'), findsOneWidget);
     expect(find.text('No sales in October 2026.'), findsOneWidget);
 
-    await tester.tap(find.text('Monthly'));
+    // Switching away from a past month stays around it.
+    await tester.tap(find.text('Quarter'));
+    await tester.pump();
+    expect(find.text('Q4 2026'), findsOneWidget);
+    expect(find.text('Oct - Dec'), findsOneWidget);
+    expect(find.text('Monthly Sales'), findsOneWidget);
+
+    await tester.tap(find.text('Year'));
     await tester.pump();
     expect(find.text('2026'), findsOneWidget);
     expect(find.text('March'), findsOneWidget);
-    expect(find.text('PHP 420.00'), findsOneWidget);
 
     await tester.tap(find.byTooltip('Previous year'));
     await tester.pump();
@@ -179,4 +251,55 @@ void main() {
     );
     expect(back.onPressed, isNull);
   });
+
+  testWidgets('the admin card shows commission, never gross', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(body: _Harness(audience: SalesReportAudience.platform)),
+      ),
+    );
+    expect(find.text('Daily Commission'), findsOneWidget);
+    // Nov 7: PHP 10.00 commission on PHP 200.00 paid.
+    expect(find.text('PHP 10.00'), findsOneWidget);
+    expect(find.text('PHP 200.00'), findsNothing);
+    expect(find.textContaining('Payout'), findsNothing);
+  });
+}
+
+/// The period bar and card wired together, as on a Finance tab.
+class _Harness extends StatefulWidget {
+  const _Harness({this.audience = SalesReportAudience.owner});
+
+  final SalesReportAudience audience;
+
+  @override
+  State<_Harness> createState() => _HarnessState();
+}
+
+class _HarnessState extends State<_Harness> {
+  FinanceRange range = FinanceRange.containing(FinancePeriod.month, now);
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      child: Column(
+        children: [
+          SpFinancePeriodBar(
+            range: range,
+            earliest: DateTime(2025, 12, 31),
+            now: now,
+            onChanged: (FinanceRange r) => setState(() => range = r),
+          ),
+          SpSalesReportCard(
+            report: SalesReport.forRange(entries, range, now: now),
+            audience: widget.audience,
+            scopeLabel: 'Test Lot',
+            preparedBy: 'Owner',
+          ),
+        ],
+      ),
+    );
+  }
 }

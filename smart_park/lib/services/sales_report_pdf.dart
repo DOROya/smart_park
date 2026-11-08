@@ -11,9 +11,26 @@ enum SalesReportAudience {
   /// A parking owner: their facility's gross, fees, payout and cash.
   owner,
 
-  /// The admin: every facility's gross and SmartPark's commission.
+  /// The admin: SmartPark's commission across all facilities. Gross sales
+  /// are the owners' business, so the admin's report leaves them out.
   platform,
 }
+
+/// e.g. "Monthly Sales Report" or "Quarterly Commission Report".
+String salesReportTitle(SalesReport report, SalesReportAudience audience) =>
+    '${report.range.adjective} '
+    '${audience == SalesReportAudience.owner ? 'Sales' : 'Commission'} Report';
+
+/// e.g. "November 2026", or "Q4 2026 (Oct - Dec)" for a quarter.
+String salesReportPeriod(SalesReport report) => report.range.months.isEmpty
+    ? report.range.label
+    : '${report.range.label} (${report.range.months})';
+
+/// e.g. "SmartPark-Sales-2026-11.pdf".
+String salesReportFileName(SalesReport report, SalesReportAudience audience) =>
+    'SmartPark-'
+    '${audience == SalesReportAudience.owner ? 'Sales' : 'Commission'}-'
+    '${report.range.slug}.pdf';
 
 /// Builds the printable sales report as PDF bytes.
 ///
@@ -31,12 +48,14 @@ Future<Uint8List> buildSalesReportPdf({
   scopeLabel = pdfSafeText(scopeLabel);
   preparedBy = pdfSafeText(preparedBy);
   final bool owner = audience == SalesReportAudience.owner;
-  final bool daily = report.period == SalesPeriod.daily;
+  final bool daily = report.breakdown == SalesBreakdown.daily;
+  final String title = salesReportTitle(report, audience);
+  final String period = salesReportPeriod(report);
 
   final List<String> headers = <String>[
     daily ? 'Date' : 'Month',
     'Txns',
-    'Gross sales',
+    if (owner) 'Gross sales',
     'Commission',
     if (owner) ...<String>['Processing', 'Your payout', 'Overtime cash'],
   ];
@@ -44,7 +63,7 @@ Future<Uint8List> buildSalesReportPdf({
   List<String> cells(String label, SalesRow r) => <String>[
     label,
     '${r.count}',
-    formatSalesPeso(r.grossCentavos),
+    if (owner) formatSalesPeso(r.grossCentavos),
     formatSalesPeso(r.commissionCentavos),
     if (owner) ...<String>[
       formatSalesPeso(r.processingCentavos),
@@ -57,7 +76,7 @@ Future<Uint8List> buildSalesReportPdf({
     for (final SalesRow row in report.rows)
       cells(
         daily
-            ? '${report.rowLabel(row)} (${_weekday(row.start)})'
+            ? '${report.rowLabel(row)} (${salesWeekday(row.start)})'
             : report.rowLabel(row),
         row,
       ),
@@ -69,7 +88,9 @@ Future<Uint8List> buildSalesReportPdf({
   const PdfColor band = PdfColor.fromInt(0xFFF3F4F6);
 
   final pw.TextStyle small = const pw.TextStyle(fontSize: 8, color: muted);
-  final SalesRow? best = report.bestRow;
+  // Owners rank by sales, the admin by commission.
+  int headline(SalesRow r) => owner ? r.grossCentavos : r.commissionCentavos;
+  final SalesRow? best = report.bestBy(headline);
 
   pw.Widget summaryBox(String label, String value) => pw.Expanded(
     child: pw.Container(
@@ -97,7 +118,7 @@ Future<Uint8List> buildSalesReportPdf({
   );
 
   final pw.Document doc = pw.Document(
-    title: '${report.title} - ${report.periodLabel}',
+    title: '$title - $period',
     author: 'SmartPark',
     creator: 'SmartPark',
   );
@@ -114,10 +135,7 @@ Future<Uint8List> buildSalesReportPdf({
           ? pw.SizedBox()
           : pw.Padding(
               padding: const pw.EdgeInsets.only(bottom: 8),
-              child: pw.Text(
-                '${report.title} - ${report.periodLabel} - $scopeLabel',
-                style: small,
-              ),
+              child: pw.Text('$title - $period - $scopeLabel', style: small),
             ),
       footer: (pw.Context context) => pw.Container(
         padding: const pw.EdgeInsets.only(top: 8),
@@ -158,7 +176,7 @@ Future<Uint8List> buildSalesReportPdf({
                   ),
                   pw.SizedBox(height: 2),
                   pw.Text(
-                    report.title,
+                    title,
                     style: pw.TextStyle(
                       fontSize: 20,
                       fontWeight: pw.FontWeight.bold,
@@ -167,7 +185,7 @@ Future<Uint8List> buildSalesReportPdf({
                   ),
                   pw.SizedBox(height: 2),
                   pw.Text(
-                    '$scopeLabel  |  ${report.periodLabel}',
+                    '$scopeLabel  |  $period',
                     style: const pw.TextStyle(fontSize: 11, color: ink),
                   ),
                 ],
@@ -186,10 +204,15 @@ Future<Uint8List> buildSalesReportPdf({
         pw.SizedBox(height: 16),
         pw.Row(
           children: <pw.Widget>[
-            summaryBox(
-              'Gross sales',
-              formatSalesPeso(report.totals.grossCentavos),
-            ),
+            owner
+                ? summaryBox(
+                    'Gross sales',
+                    formatSalesPeso(report.totals.grossCentavos),
+                  )
+                : summaryBox(
+                    'SmartPark commission',
+                    formatSalesPeso(report.totals.commissionCentavos),
+                  ),
             pw.SizedBox(width: 8),
             summaryBox('Transactions', '${report.totals.count}'),
             pw.SizedBox(width: 8),
@@ -199,14 +222,20 @@ Future<Uint8List> buildSalesReportPdf({
                     formatSalesPeso(report.totals.payoutCentavos),
                   )
                 : summaryBox(
-                    'SmartPark commission',
-                    formatSalesPeso(report.totals.commissionCentavos),
+                    'Per transaction',
+                    report.totals.count == 0
+                        ? '-'
+                        : formatSalesPeso(
+                            (report.totals.commissionCentavos /
+                                    report.totals.count)
+                                .round(),
+                          ),
                   ),
             pw.SizedBox(width: 8),
             summaryBox(
               '${daily ? 'Best day' : 'Best month'}'
               '${best == null ? '' : ': ${report.rowLabel(best)}'}',
-              best == null ? '-' : formatSalesPeso(best.grossCentavos),
+              best == null ? '-' : formatSalesPeso(headline(best)),
             ),
           ],
         ),
@@ -256,8 +285,8 @@ Future<Uint8List> buildSalesReportPdf({
                     'fee; payout is what remains for you. Overtime cash is '
                     'collected at the gate and counted on the day it was '
                     'collected.'
-              : 'Gross sales are in-app payments across all facilities. '
-                    'Commission is SmartPark\'s platform fee on those sales.',
+              : 'Commission is SmartPark\'s platform fee on in-app parking '
+                    'payments, across all facilities.',
           style: small,
         ),
         pw.SizedBox(height: 36),
@@ -283,7 +312,7 @@ Future<void> printSalesReport({
   required String preparedBy,
 }) {
   return Printing.layoutPdf(
-    name: report.fileName,
+    name: salesReportFileName(report, audience),
     onLayout: (PdfPageFormat format) => buildSalesReportPdf(
       report: report,
       audience: audience,
@@ -307,7 +336,10 @@ Future<void> shareSalesReport({
     scopeLabel: scopeLabel,
     preparedBy: preparedBy,
   );
-  await Printing.sharePdf(bytes: bytes, filename: report.fileName);
+  await Printing.sharePdf(
+    bytes: bytes,
+    filename: salesReportFileName(report, audience),
+  );
 }
 
 pw.Widget _signatureLine(String label, pw.TextStyle style, PdfColor rule) =>
@@ -324,16 +356,6 @@ pw.Widget _signatureLine(String label, pw.TextStyle style, PdfColor rule) =>
         ],
       ),
     );
-
-String _weekday(DateTime d) => const <String>[
-  'Mon',
-  'Tue',
-  'Wed',
-  'Thu',
-  'Fri',
-  'Sat',
-  'Sun',
-][d.weekday - 1];
 
 String _stamp(DateTime t) {
   final int hour = t.hour % 12 == 0 ? 12 : t.hour % 12;

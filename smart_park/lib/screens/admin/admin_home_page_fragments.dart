@@ -386,93 +386,94 @@ extension _AdminHomePageFragments on _AdminHomePageState {
     ];
   }
 
-  List<Widget> _buildFinanceTab({
-    required double totalRevenue,
-    required double commission,
-    required int paymentCount,
-    required _RevenueSeries financeSeries,
-    required List<_DayStat> allDays,
-  }) {
-    final String rangeLabel = _financeRangeLabel();
+  List<Widget> _buildFinanceTab({required List<_DayStat> allDays}) {
+    // Commission is SmartPark's income; what drivers paid the lots is the
+    // owners' business, so the admin's Finance tab shows commission only.
+    final List<SalesEntry> entries = <SalesEntry>[
+      for (final _DayStat d in allDays)
+        SalesEntry(
+          at: d.day,
+          count: d.paymentCount,
+          commissionCentavos: (d.commission * 100).round(),
+        ),
+    ];
+    DateTime? earliest;
+    for (final SalesEntry e in entries) {
+      if (earliest == null || e.at.isBefore(earliest)) earliest = e.at;
+    }
+    final SalesReport report = SalesReport.forRange(entries, _financeRange);
+    final SalesRow totals = report.totals;
+    final _RevenueSeries series = _commissionSeries(report);
+    final String period = salesReportPeriod(report);
+
     final User? admin = FirebaseAuth.instance.currentUser;
     final Widget salesReport = SpSalesReportCard(
-      entries: <SalesEntry>[
-        for (final _DayStat d in allDays)
-          SalesEntry(
-            at: d.day,
-            count: d.paymentCount,
-            grossCentavos: (d.gross * 100).round(),
-            commissionCentavos: (d.commission * 100).round(),
-          ),
-      ],
+      report: report,
       audience: SalesReportAudience.platform,
       scopeLabel: 'All facilities',
       preparedBy: (admin?.email ?? '').trim(),
     );
-    final Widget rangeControl = SpSegmentedControl<_FinanceRangeFilter>(
-      options: const <(_FinanceRangeFilter, String)>[
-        (_FinanceRangeFilter.month, '30D'),
-        (_FinanceRangeFilter.quarter, '90D'),
-        (_FinanceRangeFilter.year, '12M'),
-        (_FinanceRangeFilter.all, 'All'),
-      ],
-      selected: _financeRange,
-      onChanged: (_FinanceRangeFilter range) =>
-          setState(() => _financeRange = range),
-    );
-    final Widget revenueTile = SpStatTile(
-      icon: Icons.trending_up_rounded,
-      color: spExitColor,
-      label: 'Revenue',
-      caption: rangeLabel,
-      value: spCompactPeso(totalRevenue),
+    final Widget periodBar = SpFinancePeriodBar(
+      range: _financeRange,
+      earliest: earliest,
+      onChanged: (FinanceRange range) => setState(() => _financeRange = range),
     );
     final Widget commissionTile = SpStatTile(
       icon: Icons.payments_rounded,
       color: spInsideColor,
       label: 'Commission',
-      caption: rangeLabel,
-      value: spCompactPeso(commission),
+      caption: period,
+      value: spCompactPeso(totals.commissionCentavos / 100),
     );
     final Widget transactionsTile = SpStatTile(
       icon: Icons.receipt_long_rounded,
       color: spEntryColor,
       label: 'Transactions',
-      caption: rangeLabel,
-      value: '$paymentCount',
+      caption: 'Paid in the app',
+      value: '${totals.count}',
     );
-    final Widget avgTicketTile = SpStatTile(
+    final Widget perTransactionTile = SpStatTile(
       icon: Icons.calculate_outlined,
       color: const Color(0xFF7C3AED),
-      label: 'Avg. Ticket',
-      caption: 'Revenue per transaction',
-      value: spCompactPeso(paymentCount == 0 ? 0 : totalRevenue / paymentCount),
+      label: 'Per Transaction',
+      caption: 'Average commission',
+      value: totals.count == 0
+          ? 'PHP 0'
+          : spCompactPeso(totals.commissionCentavos / 100 / totals.count),
+    );
+    final Widget chart = _buildRevenueChartCard(
+      series: series,
+      title: 'Commission · $period',
+      subtitle: 'Platform commission earned per ${series.bucketLabel}.',
+      color: spInsideColor,
     );
 
     if (_isTablet) {
       return <Widget>[
-        SpPageHeader(
+        const SpPageHeader(
           title: 'Finance',
-          subtitle: 'Revenue, commission and transaction trends.',
-          trailing: SizedBox(width: 340, child: rangeControl),
+          subtitle: 'SmartPark commission and transactions.',
         ),
-        const SizedBox(height: 20),
+        const SizedBox(height: 16),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 520),
+            child: periodBar,
+          ),
+        ),
+        const SizedBox(height: 16),
         SpGrid(
-          columns: 4,
+          columns: 3,
           spacing: 10,
           children: <Widget>[
-            revenueTile,
             commissionTile,
             transactionsTile,
-            avgTicketTile,
+            perTransactionTile,
           ],
         ),
         const SizedBox(height: 20),
-        _buildRevenueChartCard(
-          series: financeSeries,
-          title: 'Revenue · $rangeLabel',
-          subtitle: 'Gross parking payments per ${financeSeries.bucketLabel}.',
-        ),
+        chart,
         const SizedBox(height: 20),
         salesReport,
       ];
@@ -481,21 +482,17 @@ extension _AdminHomePageFragments on _AdminHomePageState {
     return <Widget>[
       _buildTabHero(
         title: 'Finance',
-        subtitle: 'Revenue, commission and transaction trends.',
+        subtitle: 'SmartPark commission and transactions.',
         icon: Icons.payments_rounded,
       ),
       const SizedBox(height: 16),
-      rangeControl,
+      periodBar,
       const SizedBox(height: 12),
-      SpStatRow(left: revenueTile, right: commissionTile),
+      SpStatRow(left: commissionTile, right: transactionsTile),
       const SizedBox(height: 10),
-      SpStatRow(left: transactionsTile, right: avgTicketTile),
+      perTransactionTile,
       const SizedBox(height: 16),
-      _buildRevenueChartCard(
-        series: financeSeries,
-        title: 'Revenue · $rangeLabel',
-        subtitle: 'Gross parking payments per ${financeSeries.bucketLabel}.',
-      ),
+      chart,
       const SizedBox(height: 16),
       salesReport,
     ];
@@ -634,16 +631,10 @@ extension _AdminHomePageFragments on _AdminHomePageState {
     required int filteredUsersCount,
     required int establishmentCount,
     required int pendingCount,
-    required double totalRevenue,
     required double commission,
-    required int paymentCount,
     required _RevenueSeries dashboardCommission,
-    required _RevenueSeries financeSeries,
-    required double financeRevenue,
-    required double financeCommission,
     required List<QueryDocumentSnapshot<Map<String, dynamic>>> users,
     required List<QueryDocumentSnapshot<Map<String, dynamic>>> establishments,
-    required List<_DayStat> financePayments,
     required List<_DayStat> allPayments,
   }) {
     switch (_selectedTab) {
@@ -670,13 +661,7 @@ extension _AdminHomePageFragments on _AdminHomePageState {
           users: users,
         );
       case _AdminTab.finance:
-        return _buildFinanceTab(
-          totalRevenue: financeRevenue,
-          commission: financeCommission,
-          paymentCount: _sumPayments(financePayments),
-          financeSeries: financeSeries,
-          allDays: allPayments,
-        );
+        return _buildFinanceTab(allDays: allPayments);
       case _AdminTab.settings:
         return _buildSettingsTab();
     }

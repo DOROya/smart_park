@@ -30,8 +30,9 @@ import '../../services/parking_pricing.dart'
         formatParkingHours,
         graceOptionLabel;
 import '../../services/platform_fees.dart';
-import '../../services/sales_report.dart' show SalesEntry;
-import '../../services/sales_report_pdf.dart' show SalesReportAudience;
+import '../../services/sales_report.dart';
+import '../../services/sales_report_pdf.dart'
+    show SalesReportAudience, salesReportPeriod;
 import '../../theme/app_theme.dart';
 import '../../utils/friendly_error.dart';
 import '../../utils/staff_credentials.dart';
