@@ -407,9 +407,7 @@ class _ActivityDetailsSheetState extends State<_ActivityDetailsSheet> {
                   : () => _save(() => onMark(log), 'collected'),
               icon: const Icon(Icons.check_rounded),
               label: Text(
-                _marking
-                    ? 'Saving...'
-                    : 'Cash collected (PHP ${amount.toStringAsFixed(2)})',
+                _marking ? 'Saving...' : 'Cash collected (${spPeso(amount)})',
               ),
             ),
           ),

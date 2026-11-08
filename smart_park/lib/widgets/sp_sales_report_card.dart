@@ -271,7 +271,7 @@ class _SpSalesReportCardState extends State<SpSalesReportCard> {
               ),
               if (_owner)
                 Text(
-                  'Payout ${formatSalesPeso(row.payoutCentavos)}',
+                  'Est. payout ${formatSalesPeso(row.payoutCentavos)}',
                   style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
                 ),
             ],

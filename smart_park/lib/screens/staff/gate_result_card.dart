@@ -181,7 +181,7 @@ class GateResultCard extends StatelessWidget {
                   marking
                       ? 'Saving...'
                       : 'Cash collected '
-                            '(PHP ${result.overtimeAmount!.toStringAsFixed(2)})',
+                            '(${spPeso(result.overtimeAmount!)})',
                 ),
               ),
             ],

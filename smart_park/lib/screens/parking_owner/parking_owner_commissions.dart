@@ -377,19 +377,36 @@ class _CommissionsListContentState extends State<_CommissionsListContent>
         const SizedBox(height: 12),
         SpStatRow(
           left: SpStatTile(
-            icon: Icons.account_balance_wallet_rounded,
-            color: spEntryColor,
-            label: 'Revenue',
-            caption: 'Your payout',
-            value: formatSalesPeso(totals.payoutCentavos),
+            icon: Icons.trending_up_rounded,
+            color: spExitColor,
+            label: 'Gross Sales',
+            caption: 'Paid by drivers',
+            value: formatSalesPeso(totals.grossCentavos),
           ),
           right: SpStatTile(
+            icon: Icons.account_balance_wallet_rounded,
+            color: spEntryColor,
+            label: 'Payout',
+            caption: 'After fees (estimate)',
+            value: formatSalesPeso(totals.payoutCentavos),
+          ),
+        ),
+        const SizedBox(height: 10),
+        SpStatRow(
+          left: SpStatTile(
             icon: Icons.percent_rounded,
             color: spInsideColor,
             label: 'Commission',
             caption:
                 '${(kPlatformFeeRate * 100).toStringAsFixed(0)}% SmartPark fee',
             value: formatSalesPeso(totals.commissionCentavos),
+          ),
+          right: SpStatTile(
+            icon: Icons.receipt_long_rounded,
+            color: const Color(0xFF7C3AED),
+            label: 'Transactions',
+            caption: 'Paid in the app',
+            value: '${totals.count}',
           ),
         ),
         if (totals.cashCentavos > 0 || owed.dueCount > 0) ...[
@@ -542,7 +559,7 @@ class _TransactionCard extends StatelessWidget {
       child: Row(
         children: [
           Expanded(child: Text(label, style: style)),
-          Text('PHP ${amount.toStringAsFixed(2)}', style: style),
+          Text(spPeso(amount), style: style),
         ],
       ),
     );
@@ -679,7 +696,7 @@ class _TransactionCard extends StatelessWidget {
                   children: [
                     Expanded(
                       child: Text(
-                        'PHP ${record.grossAmount.toStringAsFixed(2)}',
+                        spPeso(record.grossAmount),
                         style: TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.w800,
@@ -704,8 +721,8 @@ class _TransactionCard extends StatelessWidget {
                   child: Divider(height: 1, color: AppTheme.border),
                 ),
                 _line('Commission', record.platformFee),
-                _line('Processing', record.processingFee),
-                _line('Payout', record.netToOwner, strong: true),
+                _line('Processing (est.)', record.processingFee),
+                _line('Payout (est.)', record.netToOwner, strong: true),
                 if (record.hasOvertime) _overtimeLine(),
               ],
             ),

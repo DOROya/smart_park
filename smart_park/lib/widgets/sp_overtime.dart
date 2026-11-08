@@ -9,13 +9,14 @@ import '../services/parking_pricing.dart';
 import '../theme/app_theme.dart';
 import 'smartpark_ui.dart';
 
+// Callers that only import this file still get the shared formatter.
+export 'smartpark_ui.dart' show spPeso;
+
 /// Overtime tracking for the owner: vehicles past their paid time right now,
 /// and overtime cash still owed versus handed over at the gate.
 
 String spOvertimeStatus(Map<String, dynamic> data) =>
     ((data['overtimeStatus'] as String?) ?? '').toLowerCase();
-
-String spPeso(double value) => 'PHP ${value.toStringAsFixed(2)}';
 
 /// Overtime cash across exit logs or tickets: flagged at the gate but not
 /// yet collected, and collected.
