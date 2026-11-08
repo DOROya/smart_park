@@ -357,6 +357,7 @@ extension _AdminHomePageFragments on _AdminHomePageState {
     required int driverCount,
     required int parkingOwnerCount,
     required List<QueryDocumentSnapshot<Map<String, dynamic>>> users,
+    required List<QueryDocumentSnapshot<Map<String, dynamic>>> establishments,
   }) {
     return <Widget>[
       _buildTabHero(
@@ -382,7 +383,7 @@ extension _AdminHomePageFragments on _AdminHomePageState {
         ),
       ),
       const SizedBox(height: 12),
-      _buildUserDirectory(users),
+      _buildUserDirectory(users, establishments),
     ];
   }
 
@@ -661,6 +662,7 @@ extension _AdminHomePageFragments on _AdminHomePageState {
           driverCount: driverCount,
           parkingOwnerCount: parkingOwnerCount,
           users: users,
+          establishments: establishments,
         );
       case _AdminTab.finance:
         return _buildFinanceTab(allDays: allPayments);
