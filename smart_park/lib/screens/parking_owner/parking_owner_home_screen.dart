@@ -19,7 +19,6 @@ import '../../services/gate_scan_service.dart'
         isStaffRecordActive,
         kOvertimeCashDue,
         kOvertimeCollected,
-        kOvertimeWaived,
         setOvertimeStatusAsOwner;
 import '../../services/establishment_repository.dart';
 import '../../services/driver_reports.dart' show driverReportsSummary;

@@ -115,19 +115,25 @@ const String kOvertimeCashDue = 'cash_due';
 const String kOvertimeCollected = 'collected';
 const String kOvertimeRateUnresolved = 'rate_unresolved';
 
-/// The owner let the driver off the overtime charge.
-const String kOvertimeWaived = 'waived';
-
-/// Statuses an owner may switch an overtime exit between.
+/// Statuses an owner may switch an overtime exit between. Overtime can no
+/// longer be waived: nobody, owner or staff, may forgive the charge.
 const List<String> kOwnerOvertimeStatuses = <String>[
   kOvertimeCashDue,
   kOvertimeCollected,
-  kOvertimeWaived,
 ];
 
+/// The exit's `overtimeStatus`. Exits saved as "waived" before waiving was
+/// removed read as cash still owed, so they can be collected.
+String overtimeStatusOf(Map<String, dynamic> data) {
+  final String status = ((data['overtimeStatus'] as String?) ?? '')
+      .trim()
+      .toLowerCase();
+  return status == 'waived' ? kOvertimeCashDue : status;
+}
+
 /// Owner override of an exit's overtime status (e.g. cash handed over without
-/// staff confirming it, a wrong confirmation, or a waived charge). Updates the
-/// ticket and its exit log. Only exits that billed overtime cash can change.
+/// staff confirming it, or a wrong confirmation). Updates the ticket and its
+/// exit log. Only exits that billed overtime cash can change.
 Future<void> setOvertimeStatusAsOwner({
   required String ownerId,
   required String transactionId,
@@ -143,8 +149,7 @@ Future<void> setOvertimeStatusAsOwner({
       .doc(transactionId);
   final Map<String, dynamic> ticket =
       (await ticketRef.get()).data() ?? <String, dynamic>{};
-  final String current = ((ticket['overtimeStatus'] as String?) ?? '')
-      .toLowerCase();
+  final String current = overtimeStatusOf(ticket);
   if (!kOwnerOvertimeStatuses.contains(current)) {
     throw StateError('This exit has no overtime cash to update.');
   }
@@ -909,8 +914,7 @@ class GateScanService {
         .doc(transactionId);
     final Map<String, dynamic> ticket =
         (await ticketRef.get()).data() ?? <String, dynamic>{};
-    final String status = ((ticket['overtimeStatus'] as String?) ?? '')
-        .toLowerCase();
+    final String status = overtimeStatusOf(ticket);
     if (status == kOvertimeCollected) return;
     if (status != kOvertimeCashDue) {
       throw StateError('No overtime cash is due on this ticket.');

@@ -227,12 +227,15 @@ service cloud.firestore {
         request.resource.data.overtimeCollectedBy == uid();
     }
 
-    // Owners may switch an overtime exit between owed, collected and waived
-    // (on the ticket and its exit log), and change nothing else.
+    // Owners may switch an overtime exit between owed and collected (on the
+    // ticket and its exit log), and change nothing else. Overtime can't be
+    // waived; exits waived before that was removed may be set back to owed
+    // or collected.
     function ownerOvertimeUpdateOk() {
-      let statuses = ['cash_due', 'collected', 'waived'];
-      return resource.data.get('overtimeStatus', '') in statuses &&
-        request.resource.data.get('overtimeStatus', '') in statuses &&
+      return resource.data.get('overtimeStatus', '') in
+          ['cash_due', 'collected', 'waived'] &&
+        request.resource.data.get('overtimeStatus', '') in
+          ['cash_due', 'collected'] &&
         request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'overtimeStatus', 'overtimeStatusBy', 'overtimeStatusAt',
           'overtimeCollectedBy', 'overtimeCollectedAt', 'updatedAt'

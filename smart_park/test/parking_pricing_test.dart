@@ -187,13 +187,13 @@ void main() {
       );
     });
 
-    test('parking hours read as days and hours', () {
-      expect(formatParkingHours(166), '6 days, 22 hours');
-      expect(formatParkingHours(48), '2 days');
-      expect(formatParkingHours(25), '1 day, 1 hour');
-      expect(formatParkingHours(5), '5 hours');
+    test('parking hours always read as hours', () {
+      expect(formatParkingHours(166), '166 hours');
+      expect(formatParkingHours(48), '48 hours');
+      expect(formatParkingHours(25), '25 hours');
       expect(formatParkingHours(1), '1 hour');
       expect(formatParkingHours(0), '0 hours');
+      expect(formatParkingHours(1500), '1,500 hours');
     });
 
     test('a daily ticket is not charged after two hours', () {

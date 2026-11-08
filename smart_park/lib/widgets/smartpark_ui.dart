@@ -3,7 +3,8 @@ import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
-import '../services/gate_scan_service.dart' show kRefusalWrongVehicle;
+import '../services/gate_scan_service.dart'
+    show kRefusalWrongVehicle, overtimeStatusOf;
 import '../services/parking_pricing.dart';
 import '../services/sales_report.dart' show formatSalesPeso;
 import '../theme/app_theme.dart';
@@ -1615,10 +1616,7 @@ class SpActivityCard extends StatelessWidget {
     final int overtimeHours = ((data['overtimeHours'] as num?) ?? 0).toInt();
     final double overtimeAmount = ((data['overtimeAmount'] as num?) ?? 0)
         .toDouble();
-    final String overtimeStatus = ((data['overtimeStatus'] as String?) ?? '')
-        .toLowerCase();
-    final bool overtimeCollected = overtimeStatus == 'collected';
-    final bool overtimeWaived = overtimeStatus == 'waived';
+    final bool overtimeCollected = overtimeStatusOf(data) == 'collected';
     final String? staffName = spLogStaffName(data, staffNames);
     final String driverName = ((data['driverName'] as String?) ?? '').trim();
     final String staffId = ((data['staffId'] as String?) ?? '').trim();
@@ -1723,8 +1721,6 @@ class SpActivityCard extends StatelessWidget {
                   decoration: BoxDecoration(
                     color: overtimeCollected
                         ? AppTheme.successSoft
-                        : overtimeWaived
-                        ? AppTheme.surfaceAlt
                         : AppTheme.warningSoft,
                     borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
                   ),
@@ -1733,17 +1729,11 @@ class SpActivityCard extends StatelessWidget {
                         ? 'Overtime ${overtimeHours}h · rate missing'
                         : overtimeCollected
                         ? 'Overtime ${overtimeHours}h · ${spPeso(overtimeAmount)} cash collected'
-                        : overtimeWaived
-                        ? 'Overtime ${overtimeHours}h · ${spPeso(overtimeAmount)} waived'
                         : 'Overtime ${overtimeHours}h · collect ${spPeso(overtimeAmount)} cash',
                     style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w700,
-                      color: overtimeCollected
-                          ? spEntryColor
-                          : overtimeWaived
-                          ? AppTheme.textMuted
-                          : spInsideColor,
+                      color: overtimeCollected ? spEntryColor : spInsideColor,
                     ),
                   ),
                 ),
@@ -2123,6 +2113,8 @@ List<Map<String, dynamic>> spNewestFirst(List<Map<String, dynamic>> logs) {
 
 /// Equal-width segmented filter (grey track, white pill on the selected
 /// option), so options with different label lengths still line up evenly.
+/// The pill slides to the new option instead of jumping, and the labels
+/// fade between their selected and plain styles.
 class SpSegmentedControl<T> extends StatelessWidget {
   const SpSegmentedControl({
     super.key,
@@ -2136,61 +2128,89 @@ class SpSegmentedControl<T> extends StatelessWidget {
   final T selected;
   final ValueChanged<T> onChanged;
 
+  static const Duration _slide = Duration(milliseconds: 260);
+
   @override
   Widget build(BuildContext context) {
+    final int index = options.indexWhere(((T, String) o) => o.$1 == selected);
     return Container(
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
         color: AppTheme.border,
         borderRadius: BorderRadius.circular(AppTheme.radiusLarge),
       ),
-      child: Row(
-        children: [
-          for (final (T value, String label) in options)
-            Expanded(
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: () {
-                  if (value != selected) onChanged(value);
-                },
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 180),
-                  curve: Curves.easeOut,
-                  padding: const EdgeInsets.symmetric(vertical: 9),
-                  decoration: BoxDecoration(
-                    color: value == selected
-                        ? AppTheme.surface
-                        : Colors.transparent,
-                    borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
-                    boxShadow: value == selected
-                        ? const <BoxShadow>[
-                            BoxShadow(
-                              color: Color(0x14000000),
-                              blurRadius: 6,
-                              offset: Offset(0, 2),
-                            ),
-                          ]
-                        : null,
-                  ),
-                  alignment: Alignment.center,
-                  child: Text(
-                    label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: value == selected
-                          ? FontWeight.w800
-                          : FontWeight.w600,
-                      color: value == selected
-                          ? AppTheme.textDark
-                          : AppTheme.textMuted,
+      child: LayoutBuilder(
+        builder: (BuildContext context, BoxConstraints constraints) {
+          final double width = constraints.maxWidth / options.length;
+          return Stack(
+            children: [
+              if (index >= 0)
+                AnimatedPositioned(
+                  duration: _slide,
+                  curve: Curves.easeOutCubic,
+                  left: width * index,
+                  top: 0,
+                  bottom: 0,
+                  width: width,
+                  child: AnimatedContainer(
+                    // Also eases the pill's colour when the theme changes.
+                    duration: _slide,
+                    decoration: BoxDecoration(
+                      color: AppTheme.surface,
+                      borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
+                      boxShadow: const <BoxShadow>[
+                        BoxShadow(
+                          color: Color(0x14000000),
+                          blurRadius: 6,
+                          offset: Offset(0, 2),
+                        ),
+                      ],
                     ),
                   ),
                 ),
+              Row(
+                children: [
+                  for (final (T value, String label) in options)
+                    Expanded(
+                      child: Semantics(
+                        button: true,
+                        selected: value == selected,
+                        child: GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: () {
+                            if (value != selected) onChanged(value);
+                          },
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 9),
+                            child: Center(
+                              child: AnimatedDefaultTextStyle(
+                                duration: _slide,
+                                curve: Curves.easeOut,
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: value == selected
+                                      ? FontWeight.w800
+                                      : FontWeight.w600,
+                                  color: value == selected
+                                      ? AppTheme.textDark
+                                      : AppTheme.textMuted,
+                                ),
+                                child: Text(
+                                  label,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
               ),
-            ),
-        ],
+            ],
+          );
+        },
       ),
     );
   }
