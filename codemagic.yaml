@@ -3,7 +3,8 @@
 workflows:
   android-release:
     name: Android release
-    instance_type: linux_x2
+    # The free personal plan only includes macOS M2 machines; they build Android too.
+    instance_type: mac_mini_m2
     max_build_duration: 60
     working_directory: smart_park
     environment:
