@@ -39,7 +39,7 @@ class DriverHomeSection extends StatefulWidget {
 
 class _DriverHomeSectionState extends State<DriverHomeSection>
     with SpStreamCache<DriverHomeSection> {
-  static const List<double> _radiusOptionsKm = <double>[0.5, 1, 2, 3, 5];
+  static const List<double> _radiusOptionsKm = <double>[0.5, 1, 2, 5, 10];
 
   double _selectedRadiusKm = 1;
 

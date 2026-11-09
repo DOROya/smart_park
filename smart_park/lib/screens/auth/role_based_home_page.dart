@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 
 import '../../theme/app_theme.dart';
@@ -205,8 +208,62 @@ class _RoleBasedHomePageState extends State<RoleBasedHomePage> {
         .set(mergedData, SetOptions(merge: true));
   }
 
+  /// Picks the home screen from the profile Firestore saved on this device,
+  /// so reopening the app doesn't wait on the network. The first server
+  /// request after launch can take 10+ seconds on networks with broken IPv6.
+  ///
+  /// The server copy is still fetched in the background; if the role there
+  /// differs (rare: e.g. an account was changed by an admin), the screen
+  /// switches to it. Routing on a cached role is safe because Firestore
+  /// security rules, not this screen, decide what the user can access.
   Future<String> _resolveRole() async {
-    return _resolveRoleInternal(hasRetriedAfterTokenRefresh: false);
+    final Stopwatch watch = Stopwatch()..start();
+    final String? cachedRole = await _cachedRole();
+    if (kDebugMode) {
+      debugPrint(
+        '[sign-in timing] Saved profile check finished after '
+        '${watch.elapsedMilliseconds} ms (role: ${cachedRole ?? 'none'})',
+      );
+    }
+    if (cachedRole == null) {
+      return _resolveRoleInternal(hasRetriedAfterTokenRefresh: false);
+    }
+
+    unawaited(
+      _resolveRoleInternal(hasRetriedAfterTokenRefresh: false).then(
+        (String serverRole) {
+          if (mounted && serverRole != cachedRole) {
+            setState(() => _roleFuture = Future<String>.value(serverRole));
+          }
+        },
+        // Keep the cached screen; its own reads will surface real problems.
+        onError: (Object _) {},
+      ),
+    );
+    return cachedRole;
+  }
+
+  Future<String?> _cachedRole() async {
+    final User? user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      return null;
+    }
+    // Same gate as the server path: unverified non-staff accounts must go
+    // through the server check, which rejects them.
+    if (!user.emailVerified && !isStaffAuthEmail(user.email)) {
+      return null;
+    }
+    try {
+      final DocumentSnapshot<Map<String, dynamic>> doc = await FirebaseFirestore
+          .instance
+          .collection('users')
+          .doc(user.uid)
+          .get(const GetOptions(source: Source.cache));
+      return _extractRole(doc.data());
+    } on FirebaseException {
+      // Nothing saved on this device yet (fresh install or cleared data).
+      return null;
+    }
   }
 
   Future<String> _resolveRoleInternal({
@@ -231,6 +288,7 @@ class _RoleBasedHomePageState extends State<RoleBasedHomePage> {
     final CollectionReference<Map<String, dynamic>> usersCollection =
         FirebaseFirestore.instance.collection('users');
 
+    final Stopwatch watch = Stopwatch()..start();
     final DocumentSnapshot<Map<String, dynamic>> userDoc =
         await _readUserDocWithRetry(
           usersCollection: usersCollection,
@@ -238,6 +296,12 @@ class _RoleBasedHomePageState extends State<RoleBasedHomePage> {
           authenticatedUser: authenticatedUser,
           hasRetriedAfterTokenRefresh: hasRetriedAfterTokenRefresh,
         );
+    if (kDebugMode) {
+      debugPrint(
+        '[sign-in timing] User profile read finished after '
+        '${watch.elapsedMilliseconds} ms',
+      );
+    }
     if (userDoc.exists) {
       final String? role = _extractRole(userDoc.data());
       if (role != null) {

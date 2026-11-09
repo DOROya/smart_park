@@ -1,7 +1,9 @@
 import 'dart:async';
 
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 
 import '../../services/auth_email_service.dart';
@@ -29,6 +31,40 @@ class _SignInScreenState extends State<SignInScreen> {
   bool _obscurePassword = true;
   bool _isSigningIn = false;
   bool _sendingReset = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _warmUpFirestoreConnection();
+  }
+
+  /// Opens the Firestore connection while the user is still typing.
+  ///
+  /// On networks with broken IPv6, every new connection to a Google host can
+  /// stall for close to a minute before Android falls back to IPv4. Paying
+  /// that cost here, in the background, means the profile read that follows
+  /// sign-in reuses an already-open connection instead of stalling again.
+  /// The read itself is expected to be denied (no one is signed in yet);
+  /// only the connection matters, so every outcome is ignored.
+  void _warmUpFirestoreConnection() {
+    final Stopwatch watch = Stopwatch()..start();
+    unawaited(
+      FirebaseFirestore.instance
+          .collection('users')
+          .doc('_warmup')
+          .get(const GetOptions(source: Source.server))
+          .then<void>((_) {}, onError: (_) {})
+          .whenComplete(
+            () => _logTiming('Firestore warm-up finished', watch),
+          ),
+    );
+  }
+
+  void _logTiming(String step, Stopwatch watch) {
+    if (kDebugMode) {
+      debugPrint('[sign-in timing] $step after ${watch.elapsedMilliseconds} ms');
+    }
+  }
 
   @override
   void dispose() {
@@ -67,11 +103,13 @@ class _SignInScreenState extends State<SignInScreen> {
           ? rawInput
           : staffUsernameToAuthEmail(rawInput);
 
+      final Stopwatch watch = Stopwatch()..start();
       final UserCredential userCredential = await FirebaseAuth.instance
           .signInWithEmailAndPassword(email: email, password: password)
           // Generous: on networks with broken IPv6 the request can stall for
           // ~55s before Android falls back to IPv4, and then still succeeds.
           .timeout(const Duration(seconds: 60));
+      _logTiming('Firebase Auth sign-in finished', watch);
 
       final User? user = userCredential.user;
       if (user != null &&
@@ -88,11 +126,11 @@ class _SignInScreenState extends State<SignInScreen> {
         return;
       }
 
-      if (user != null) {
-        // Firestore rules use request.auth.token.email_verified; force-refresh token
-        // so verified users immediately receive updated claims.
-        await user.getIdToken(true);
-      }
+      // No forced token refresh here: a fresh sign-in already mints a new ID
+      // token carrying the current email_verified claim, and a refresh is an
+      // extra round trip to another Google host (another possible IPv6
+      // stall). RoleBasedHomePage still refreshes and retries if Firestore
+      // ever denies a read.
 
       if (!mounted) {
         return;
