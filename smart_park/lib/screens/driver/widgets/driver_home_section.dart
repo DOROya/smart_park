@@ -387,43 +387,120 @@ class _DriverHomeSectionState extends State<DriverHomeSection>
             style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
           ),
           const SizedBox(height: 10),
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
+          Row(
+            children: [
+              _filterChip(
+                label: 'Open now',
+                icon: Icons.schedule_rounded,
+                selected: widget.openNowOnly,
+                onTap: () => widget.onOpenNowChanged(!widget.openNowOnly),
+              ),
+              _filterChip(
+                label: 'Most slots',
+                icon: Icons.local_parking_rounded,
+                selected: widget.sortOption == DriverSortOption.mostSlots,
+                onTap: () => widget.onSortChanged(
+                  widget.sortOption == DriverSortOption.mostSlots
+                      ? DriverSortOption.none
+                      : DriverSortOption.mostSlots,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          _buildRadiusSelector(),
+        ],
+      ),
+    );
+  }
+
+  /// Full-width segmented control for the search radius, with a highlight
+  /// that slides to the selected option.
+  Widget _buildRadiusSelector() {
+    final int count = _radiusOptionsKm.length;
+    final int selectedIndex = _radiusOptionsKm
+        .indexOf(_selectedRadiusKm)
+        .clamp(0, count - 1);
+
+    return Row(
+      children: [
+        Icon(Icons.near_me_rounded, size: 16, color: AppTheme.textMuted),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Container(
+            height: 34,
+            padding: const EdgeInsets.all(3),
+            decoration: BoxDecoration(
+              color: AppTheme.surfaceAlt,
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(color: spCardBorder),
+            ),
+            child: Stack(
               children: [
-                _filterChip(
-                  label: 'Open now',
-                  icon: Icons.schedule_rounded,
-                  selected: widget.openNowOnly,
-                  onTap: () => widget.onOpenNowChanged(!widget.openNowOnly),
-                ),
-                _filterChip(
-                  label: 'Most slots',
-                  icon: Icons.local_parking_rounded,
-                  selected: widget.sortOption == DriverSortOption.mostSlots,
-                  onTap: () => widget.onSortChanged(
-                    widget.sortOption == DriverSortOption.mostSlots
-                        ? DriverSortOption.none
-                        : DriverSortOption.mostSlots,
+                AnimatedAlign(
+                  duration: const Duration(milliseconds: 220),
+                  curve: Curves.easeOutCubic,
+                  alignment: Alignment(
+                    count == 1 ? 0 : -1 + 2 * selectedIndex / (count - 1),
+                    0,
+                  ),
+                  child: FractionallySizedBox(
+                    widthFactor: 1 / count,
+                    heightFactor: 1,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: AppTheme.accent,
+                        borderRadius: BorderRadius.circular(999),
+                        boxShadow: const [
+                          BoxShadow(
+                            color: Color(0x1F000000),
+                            blurRadius: 4,
+                            offset: Offset(0, 1),
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
                 ),
-                Container(
-                  width: 1,
-                  height: 24,
-                  margin: const EdgeInsets.only(right: 8),
-                  color: spCardBorder,
+                Row(
+                  children: [
+                    for (int i = 0; i < count; i++)
+                      Expanded(
+                        child: Semantics(
+                          button: true,
+                          selected: i == selectedIndex,
+                          child: GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTap: () => setState(
+                              () => _selectedRadiusKm = _radiusOptionsKm[i],
+                            ),
+                            child: Center(
+                              child: AnimatedDefaultTextStyle(
+                                duration: const Duration(milliseconds: 180),
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: i == selectedIndex
+                                      ? FontWeight.w800
+                                      : FontWeight.w600,
+                                  color: i == selectedIndex
+                                      ? AppTheme.onAccent
+                                      : AppTheme.textMuted,
+                                ),
+                                child: Text(
+                                  '${_formatKm(_radiusOptionsKm[i])} km',
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
-                for (final double km in _radiusOptionsKm)
-                  _filterChip(
-                    label: '${_formatKm(km)} km',
-                    selected: _selectedRadiusKm == km,
-                    onTap: () => setState(() => _selectedRadiusKm = km),
-                  ),
               ],
             ),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
