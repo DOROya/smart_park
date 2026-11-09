@@ -69,7 +69,9 @@ class _SignInScreenState extends State<SignInScreen> {
 
       final UserCredential userCredential = await FirebaseAuth.instance
           .signInWithEmailAndPassword(email: email, password: password)
-          .timeout(const Duration(seconds: 20));
+          // Generous: on networks with broken IPv6 the request can stall for
+          // ~55s before Android falls back to IPv4, and then still succeeds.
+          .timeout(const Duration(seconds: 60));
 
       final User? user = userCredential.user;
       if (user != null &&
@@ -126,7 +128,7 @@ class _SignInScreenState extends State<SignInScreen> {
       _showSnackBar(
         'Sign-in timed out. Check your internet connection and try again.',
       );
-      debugPrint('Sign-in timed out after 20 seconds.');
+      debugPrint('Sign-in timed out after 60 seconds.');
     } catch (error, stackTrace) {
       if (!mounted) {
         return;
