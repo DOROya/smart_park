@@ -1,0 +1,45 @@
+# Codemagic CI/CD for SmartPark (the Flutter app lives in smart_park/).
+# Docs: https://docs.codemagic.io/yaml-quick-start/building-a-flutter-app/
+workflows:
+  android-release:
+    name: Android release
+    instance_type: linux_x2
+    max_build_duration: 60
+    working_directory: smart_park
+    environment:
+      flutter: 3.44.2
+      java: 17
+      android_signing:
+        # Must match the reference name given to the keystore uploaded in
+        # Codemagic: Team settings > Code signing identities > Android keystores.
+        - smartpark_upload
+      # groups:
+      #   - firebase_credentials   # uncomment with the Firebase publishing block below
+    triggering:
+      events:
+        - push
+      branch_patterns:
+        - pattern: master
+          include: true
+      cancel_previous_builds: true
+    scripts:
+      - name: Get packages
+        script: flutter pub get
+      - name: Build release APK
+        script: flutter build apk --release
+      - name: Build release App Bundle (for Google Play)
+        script: flutter build appbundle --release
+    artifacts:
+      - build/app/outputs/flutter-apk/app-release.apk
+      - build/app/outputs/bundle/release/app-release.aab
+      - build/app/outputs/mapping/release/mapping.txt
+    # Send each build to testers' phones. Needs the firebase_credentials group
+    # (variable FIREBASE_SERVICE_ACCOUNT) and the groups entry above.
+    # publishing:
+    #   firebase:
+    #     firebase_service_account: $FIREBASE_SERVICE_ACCOUNT
+    #     android:
+    #       app_id: 1:858489179060:android:79fd2f93bc73021ba8c0e1
+    #       groups:
+    #         - testers
+    #       artifact_type: apk
