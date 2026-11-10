@@ -9,6 +9,7 @@ import '../../services/error_reporter.dart';
 import '../../services/operating_hours.dart';
 import '../../services/parking_checkout_service.dart';
 import '../../services/parking_pricing.dart' show facilityGraceMinutes;
+import '../../services/parking_receipt.dart' show ParkingReceipt;
 import '../../theme/app_theme.dart';
 import '../../utils/friendly_error.dart';
 import '../../widgets/smartpark_ui.dart';
@@ -998,6 +999,17 @@ class _EstablishmentDetailPageState extends State<EstablishmentDetailPage>
             amount: status.amount,
             qrData: status.qrCode!,
             vehicleType: vehicleType,
+            receipt: ParkingReceipt(
+              transactionId: status.transactionId,
+              facilityName: status.establishmentName,
+              amountCentavos: (status.amount * 100).round(),
+              paidAt: DateTime.now(),
+              paymentMethod: paymentMethod.apiType,
+              vehicleType: vehicleType,
+              plate: plateNumber,
+              plan: plan,
+              duration: duration,
+            ),
           ),
         ),
       );

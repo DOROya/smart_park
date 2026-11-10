@@ -102,17 +102,7 @@ class FinanceRange {
   String get label {
     switch (period) {
       case FinancePeriod.week:
-        final DateTime last = lastDay;
-        if (start.year != last.year) {
-          return '${_shortMonth(start.month)} ${start.day}, ${start.year} - '
-              '${_shortMonth(last.month)} ${last.day}, ${last.year}';
-        }
-        if (start.month != last.month) {
-          return '${_shortMonth(start.month)} ${start.day} - '
-              '${_shortMonth(last.month)} ${last.day}, ${last.year}';
-        }
-        return '${_shortMonth(start.month)} ${start.day} - ${last.day}, '
-            '${start.year}';
+        return salesDateSpan(start, lastDay);
       case FinancePeriod.month:
         return '${kSalesMonthNames[start.month - 1]} ${start.year}';
       case FinancePeriod.quarter:
@@ -234,7 +224,8 @@ class SalesRow {
 /// Sales in one [FinanceRange], broken down per day (week, month) or per
 /// month (quarter, year). Rows stop at today: no empty future days.
 class SalesReport {
-  SalesReport._(this.range, this.rows) : totals = SalesRow(range.start) {
+  SalesReport._(this.range, this.rows, this.through)
+    : totals = SalesRow(range.start) {
     for (final SalesRow row in rows) {
       totals.addRow(row);
     }
@@ -271,7 +262,45 @@ class SalesReport {
                 range.start.month;
       if (index >= 0 && index < rows.length) rows[index].add(e);
     }
-    return SalesReport._(range, rows);
+    return SalesReport._(
+      range,
+      rows,
+      range.lastDay.isAfter(today) ? today : range.lastDay,
+    );
+  }
+
+  /// The period before [range], for comparison. While [range] is still
+  /// running it is cut at the same point, so ten days of November are
+  /// compared with the first ten days of October, not all of it.
+  factory SalesReport.prior(
+    Iterable<SalesEntry> entries,
+    FinanceRange range, {
+    DateTime? now,
+  }) {
+    final DateTime current = now ?? DateTime.now();
+    final DateTime today = DateTime(current.year, current.month, current.day);
+    final FinanceRange previous = range.step(-1);
+    DateTime cutoff = previous.lastDay;
+    if (range.contains(today)) {
+      // Counted in UTC so a daylight-saving change can't shave off a day.
+      final int elapsed = DateTime.utc(today.year, today.month, today.day)
+          .difference(
+            DateTime.utc(range.start.year, range.start.month, range.start.day),
+          )
+          .inDays;
+      final DateTime same = DateTime(
+        previous.start.year,
+        previous.start.month,
+        previous.start.day + elapsed,
+      );
+      if (same.isBefore(cutoff)) cutoff = same;
+    }
+    final DateTime stop = DateTime(cutoff.year, cutoff.month, cutoff.day + 1);
+    return SalesReport.forRange(
+      entries.where((SalesEntry e) => e.at.isBefore(stop)),
+      previous,
+      now: cutoff,
+    );
   }
 
   final FinanceRange range;
@@ -279,6 +308,16 @@ class SalesReport {
   /// Oldest first.
   final List<SalesRow> rows;
   final SalesRow totals;
+
+  /// Last day the report covers: the range's last day, or today while the
+  /// range is still running.
+  final DateTime through;
+
+  /// Whether the report stops before the end of its range.
+  bool get isPartial => through.isBefore(range.lastDay);
+
+  /// The days actually covered, e.g. "Nov 1 - 10, 2026".
+  String get coveredLabel => salesDateSpan(range.start, through);
 
   SalesBreakdown get breakdown => range.breakdown;
 
@@ -300,6 +339,26 @@ class SalesReport {
 }
 
 String salesWeekday(DateTime d) => kSalesWeekdays[d.weekday - 1];
+
+/// e.g. "Nov 8, 2026", "Nov 2 - 8, 2026", "Oct 26 - Nov 1, 2026" or
+/// "Dec 28, 2026 - Jan 3, 2027".
+String salesDateSpan(DateTime first, DateTime last) {
+  if (first.year == last.year &&
+      first.month == last.month &&
+      first.day == last.day) {
+    return '${_shortMonth(first.month)} ${first.day}, ${first.year}';
+  }
+  if (first.year != last.year) {
+    return '${_shortMonth(first.month)} ${first.day}, ${first.year} - '
+        '${_shortMonth(last.month)} ${last.day}, ${last.year}';
+  }
+  if (first.month != last.month) {
+    return '${_shortMonth(first.month)} ${first.day} - '
+        '${_shortMonth(last.month)} ${last.day}, ${last.year}';
+  }
+  return '${_shortMonth(first.month)} ${first.day} - ${last.day}, '
+      '${first.year}';
+}
 
 /// "PHP 1,234.50" from centavos.
 String formatSalesPeso(int centavos) {

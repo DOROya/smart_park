@@ -403,6 +403,7 @@ extension _AdminHomePageFragments on _AdminHomePageState {
       if (earliest == null || e.at.isBefore(earliest)) earliest = e.at;
     }
     final SalesReport report = SalesReport.forRange(entries, _financeRange);
+    final SalesReport previous = SalesReport.prior(entries, _financeRange);
     final SalesRow totals = report.totals;
     final _RevenueSeries series = _commissionSeries(report);
     final String period = salesReportPeriod(report);
@@ -410,6 +411,7 @@ extension _AdminHomePageFragments on _AdminHomePageState {
     final User? admin = FirebaseAuth.instance.currentUser;
     final Widget salesReport = SpSalesReportCard(
       report: report,
+      previous: previous,
       audience: SalesReportAudience.platform,
       scopeLabel: 'All facilities',
       preparedBy: (admin?.email ?? '').trim(),

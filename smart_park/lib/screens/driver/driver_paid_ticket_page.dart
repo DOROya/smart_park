@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
+import '../../services/parking_receipt.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/smartpark_ui.dart' show spPeso;
+import '../../widgets/sp_receipt_button.dart';
 import '../../widgets/sp_vehicle_type.dart';
 
 class DriverPaidTicketPage extends StatelessWidget {
@@ -12,6 +14,7 @@ class DriverPaidTicketPage extends StatelessWidget {
     required this.amount,
     required this.qrData,
     required this.vehicleType,
+    this.receipt,
   });
 
   final String establishmentName;
@@ -20,6 +23,10 @@ class DriverPaidTicketPage extends StatelessWidget {
 
   /// The vehicle type the ticket was bought for.
   final String vehicleType;
+
+  /// What the app knows about the payment, for the receipt. The receipt is
+  /// read fresh from the ticket when possible, with this as a fallback.
+  final ParkingReceipt? receipt;
 
   @override
   Widget build(BuildContext context) {
@@ -129,6 +136,20 @@ class DriverPaidTicketPage extends StatelessWidget {
                       ],
                     ),
                   ),
+                  if (receipt != null) ...[
+                    const SizedBox(height: 14),
+                    SpReceiptButton(
+                      outlined: true,
+                      label: 'Save receipt',
+                      onShare: (ReceiptFormat format, Rect? origin) =>
+                          shareParkingReceipt(
+                            transactionId: receipt!.transactionId,
+                            format: format,
+                            fallback: receipt,
+                            origin: origin,
+                          ),
+                    ),
+                  ],
                 ],
               ),
             ),

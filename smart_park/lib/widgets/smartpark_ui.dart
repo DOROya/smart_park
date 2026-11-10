@@ -1002,6 +1002,9 @@ class SpStatTile extends StatelessWidget {
     required this.label,
     required this.value,
     this.caption,
+    this.trend,
+    this.trendRatio,
+    this.trendNeutral = false,
   });
 
   final IconData icon;
@@ -1009,6 +1012,16 @@ class SpStatTile extends StatelessWidget {
   final String label;
   final String value;
   final String? caption;
+
+  /// Comparison line under the caption, e.g. "+12.5% vs last month".
+  final String? trend;
+
+  /// The relative change behind [trend]; its sign picks the arrow and, unless
+  /// [trendNeutral], green or red.
+  final double? trendRatio;
+
+  /// For costs, where up is not simply good: grey instead of green or red.
+  final bool trendNeutral;
 
   @override
   Widget build(BuildContext context) {
@@ -1062,8 +1075,45 @@ class SpStatTile extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
               style: TextStyle(color: AppTheme.textMuted, fontSize: 11),
             ),
+          if (trend != null) ...[const SizedBox(height: 4), _trendLine()],
         ],
       ),
+    );
+  }
+
+  Widget _trendLine() {
+    final double r = trendRatio ?? 0;
+    final bool flat = r.abs() < 0.0005;
+    final Color c = flat || trendNeutral
+        ? AppTheme.textMuted
+        : r > 0
+        ? AppTheme.success
+        : AppTheme.danger;
+    return Row(
+      children: [
+        Icon(
+          flat
+              ? Icons.trending_flat_rounded
+              : r > 0
+              ? Icons.arrow_upward_rounded
+              : Icons.arrow_downward_rounded,
+          size: 13,
+          color: c,
+        ),
+        const SizedBox(width: 3),
+        Expanded(
+          child: Text(
+            trend!,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: c,
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

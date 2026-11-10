@@ -1,10 +1,12 @@
 import 'dart:typed_data';
 
+import 'package:archive/archive.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:smart_park/services/sales_report.dart';
+import 'package:smart_park/services/sales_report_excel.dart';
 import 'package:smart_park/services/sales_report_pdf.dart';
-import 'package:smart_park/widgets/smartpark_ui.dart' show spPeso;
+import 'package:smart_park/widgets/smartpark_ui.dart' show SpStatTile, spPeso;
 import 'package:smart_park/widgets/sp_sales_report_card.dart';
 
 // Sunday, November 8, 2026.
@@ -197,11 +199,142 @@ void main() {
     );
   });
 
+  group('SalesReport.prior', () {
+    test('cuts a running month at the same day of the month before', () {
+      final FinanceRange month = rangeOf(FinancePeriod.month, now);
+      final SalesReport current = SalesReport.forRange(
+        entries,
+        month,
+        now: now,
+      );
+      final SalesReport prior = SalesReport.prior(
+        <SalesEntry>[
+          ...entries,
+          SalesEntry(at: DateTime(2026, 10, 8, 23), grossCentavos: 4000),
+          // After Oct 8: outside the like-for-like window.
+          SalesEntry(at: DateTime(2026, 10, 9, 1), grossCentavos: 9900),
+        ],
+        month,
+        now: now,
+      );
+      expect(current.isPartial, isTrue);
+      expect(current.coveredLabel, 'Nov 1 - 8, 2026');
+      expect(prior.range.label, 'October 2026');
+      expect(prior.coveredLabel, 'Oct 1 - 8, 2026');
+      expect(prior.rows, hasLength(8));
+      expect(prior.totals.grossCentavos, 4000);
+    });
+
+    test('compares a finished period with the whole one before', () {
+      final FinanceRange march = rangeOf(
+        FinancePeriod.month,
+        DateTime(2026, 3, 1),
+      );
+      final SalesReport prior = SalesReport.prior(entries, march, now: now);
+      expect(prior.isPartial, isFalse);
+      expect(prior.coveredLabel, 'Feb 1 - 28, 2026');
+    });
+
+    test('a running quarter is compared up to the same day', () {
+      final FinanceRange q4 = rangeOf(FinancePeriod.quarter, now);
+      final SalesReport prior = SalesReport.prior(entries, q4, now: now);
+      // Nov 8 is day 39 of Q4; day 39 of Q3 is Aug 8.
+      expect(prior.coveredLabel, 'Jul 1 - Aug 8, 2026');
+    });
+  });
+
+  test('comparison metrics and change formatting', () {
+    final FinanceRange month = rangeOf(FinancePeriod.month, now);
+    final SalesReport current = SalesReport.forRange(entries, month, now: now);
+    final SalesReport prior = SalesReport.prior(
+      <SalesEntry>[SalesEntry(at: DateTime(2026, 10, 2), grossCentavos: 20000)],
+      month,
+      now: now,
+    );
+    final List<SalesMetric> m = salesMetrics(
+      current,
+      prior,
+      SalesReportAudience.owner,
+    );
+    expect(m.first.label, 'Gross sales');
+    expect(m.first.current, 35000);
+    expect(m.first.previous, 20000);
+    expect(formatSalesChange(m.first.ratio), '+75.0%');
+    expect(formatSalesChange(null), 'n/a');
+    expect(formatSalesChange(-0.03), '-3.0%');
+    expect(
+      salesNarrative(current, prior, SalesReportAudience.owner),
+      contains('up 75.0%'),
+    );
+  });
+
+  test('builds an Excel workbook with a summary, breakdown and chart', () {
+    final FinanceRange month = rangeOf(FinancePeriod.month, now);
+    for (final SalesReportAudience audience in SalesReportAudience.values) {
+      for (final bool compare in <bool>[true, false]) {
+        final Uint8List bytes = buildSalesReportXlsx(
+          report: SalesReport.forRange(entries, month, now: now),
+          previous: compare
+              ? SalesReport.prior(entries, month, now: now)
+              : null,
+          audience: audience,
+          scopeLabel: 'Peña’s Lot & Co <Main>',
+          preparedBy: 'Juan dela Cruz',
+          generatedAt: now,
+        );
+        final Archive zip = ZipDecoder().decodeBytes(bytes);
+        String part(String name) =>
+            String.fromCharCodes(zip.findFile(name)!.content);
+        expect(zip.findFile('xl/charts/chart1.xml'), isNotNull);
+        expect(part('xl/workbook.xml'), contains('name="Breakdown"'));
+        final String breakdown = part('xl/worksheets/sheet2.xml');
+        // Totals are live formulas.
+        expect(breakdown, contains('<f>SUM(C5:C12)</f>'));
+        // Names are escaped, not dropped.
+        expect(breakdown, contains('&amp; Co &lt;Main&gt;'));
+        expect(
+          part('xl/charts/chart1.xml'),
+          compare ? contains('Prior period') : isNot(contains('Prior')),
+        );
+      }
+    }
+    expect(
+      salesReportFileName(
+        SalesReport.forRange(entries, month, now: now),
+        SalesReportAudience.owner,
+        extension: 'xlsx',
+      ),
+      'SmartPark-Sales-2026-11.xlsx',
+    );
+  });
+
+  testWidgets('a stat tile shows its trend with an arrow', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: SpStatTile(
+            icon: Icons.trending_up_rounded,
+            color: Colors.blue,
+            label: 'Gross Sales',
+            value: 'PHP 1.00',
+            trend: '-6.5% vs last month',
+            trendRatio: -0.065,
+          ),
+        ),
+      ),
+    );
+    expect(find.text('-6.5% vs last month'), findsOneWidget);
+    expect(find.byIcon(Icons.arrow_downward_rounded), findsOneWidget);
+  });
+
   test('builds a PDF for every period and both audiences', () async {
     for (final FinancePeriod period in FinancePeriod.values) {
       for (final SalesReportAudience audience in SalesReportAudience.values) {
         final Uint8List bytes = await buildSalesReportPdf(
           report: SalesReport.forRange(entries, rangeOf(period, now), now: now),
+          previous: SalesReport.prior(entries, rangeOf(period, now), now: now),
           audience: audience,
           scopeLabel: 'Peña’s Lot 🚗',
           preparedBy: 'Juan dela Cruz',

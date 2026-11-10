@@ -31,7 +31,7 @@ import '../../services/parking_pricing.dart'
 import '../../services/platform_fees.dart';
 import '../../services/sales_report.dart';
 import '../../services/sales_report_pdf.dart'
-    show SalesReportAudience, salesReportPeriod;
+    show SalesReportAudience, formatSalesChange, salesChange, salesReportPeriod;
 import '../../theme/app_theme.dart';
 import '../../utils/friendly_error.dart';
 import '../../utils/staff_credentials.dart';
