@@ -8,12 +8,14 @@ import 'package:qr_flutter/qr_flutter.dart';
 
 import '../../../services/facility_status.dart';
 import '../../../services/parking_pricing.dart';
+import '../../../services/parking_receipt.dart';
 import '../../../services/ticket_plate.dart';
 import '../../../theme/app_theme.dart';
 import '../../../utils/friendly_error.dart';
 import '../../../widgets/smartpark_ui.dart';
 import '../../../widgets/sp_loading.dart';
 import '../../../widgets/sp_overtime.dart';
+import '../../../widgets/sp_receipt_button.dart';
 import '../../../widgets/sp_vehicle_type.dart';
 
 /// Rebuilds a scanner-compatible QR payload for tickets saved before the QR
@@ -275,6 +277,23 @@ class _DriverTicketHistorySectionState extends State<DriverTicketHistorySection>
     );
   }
 }
+
+/// Tickets that were paid for, and so have a receipt.
+bool _isPaid(_TicketState state) =>
+    state == _TicketState.ready ||
+    state == _TicketState.parked ||
+    state == _TicketState.completed;
+
+/// Shares the ticket's receipt from the data already on screen, so it works
+/// offline and always matches the card.
+Widget _receiptButton(QueryDocumentSnapshot<Map<String, dynamic>> doc) =>
+    SpReceiptButton(
+      onShare: (ReceiptFormat format, Rect? origin) => shareParkingReceiptAs(
+        ParkingReceipt.fromTicket(doc.id, doc.data()),
+        format,
+        origin: origin,
+      ),
+    );
 
 bool _hasTimeLeft(_TicketState state) =>
     state == _TicketState.ready || state == _TicketState.parked;
@@ -572,10 +591,22 @@ class _ActiveTicketCard extends StatelessWidget {
                     ),
                   ],
                 ),
-                const SizedBox(height: 8),
-                Text(
-                  'Ticket #${doc.id}',
-                  style: TextStyle(fontSize: 11, color: AppTheme.textMuted),
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'Ticket #${doc.id}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: AppTheme.textMuted,
+                        ),
+                      ),
+                    ),
+                    if (_isPaid(state)) _receiptButton(doc),
+                  ],
                 ),
               ],
             ),
@@ -1113,6 +1144,12 @@ class _InvalidTicketCardState extends State<_InvalidTicketCard> {
                       'Ticket #${widget.doc.id}',
                       style: TextStyle(fontSize: 11, color: AppTheme.textMuted),
                     ),
+                    // Still a paid ticket: the driver may need proof of
+                    // payment while the facility is pulled.
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: _receiptButton(widget.doc),
+                    ),
                   ] else ...[
                     const SizedBox(height: 6),
                     Padding(
@@ -1239,6 +1276,11 @@ class _PastTicketRow extends StatelessWidget {
                   const SizedBox(height: 8),
                   SpOvertimeBreakdown.fromRecord(data, forDriver: true),
                 ],
+                if (_isPaid(state))
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: _receiptButton(doc),
+                  ),
               ],
             ),
           ),
