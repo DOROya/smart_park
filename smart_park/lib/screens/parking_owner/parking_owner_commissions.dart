@@ -329,7 +329,18 @@ class _CommissionsListContentState extends State<_CommissionsListContent>
     }
     final FinanceRange range = _range;
     final SalesReport report = SalesReport.forRange(entries, range);
+    final SalesReport previous = SalesReport.prior(entries, range);
     final SalesRow totals = report.totals;
+    final SalesRow prior = previous.totals;
+    // "+12.5% vs last month"; nothing when last month had none to compare.
+    // While the period runs, "last month" means its same days.
+    String? trend(int now, int before) {
+      final double? r = salesChange(now, before);
+      return r == null
+          ? null
+          : '${formatSalesChange(r)} vs last ${range.period.name}';
+    }
+
     final int cashCollections = entries
         .where((SalesEntry e) => e.cashCentavos > 0 && range.contains(e.at))
         .length;
@@ -380,6 +391,8 @@ class _CommissionsListContentState extends State<_CommissionsListContent>
             label: 'Gross Sales',
             caption: 'Paid by drivers',
             value: formatSalesPeso(totals.grossCentavos),
+            trend: trend(totals.grossCentavos, prior.grossCentavos),
+            trendRatio: salesChange(totals.grossCentavos, prior.grossCentavos),
           ),
           right: SpStatTile(
             icon: Icons.account_balance_wallet_rounded,
@@ -387,6 +400,11 @@ class _CommissionsListContentState extends State<_CommissionsListContent>
             label: 'Payout',
             caption: 'After fees (estimate)',
             value: formatSalesPeso(totals.payoutCentavos),
+            trend: trend(totals.payoutCentavos, prior.payoutCentavos),
+            trendRatio: salesChange(
+              totals.payoutCentavos,
+              prior.payoutCentavos,
+            ),
           ),
         ),
         const SizedBox(height: 10),
@@ -398,6 +416,12 @@ class _CommissionsListContentState extends State<_CommissionsListContent>
             caption:
                 '${(kPlatformFeeRate * 100).toStringAsFixed(0)}% SmartPark fee',
             value: formatSalesPeso(totals.commissionCentavos),
+            trend: trend(totals.commissionCentavos, prior.commissionCentavos),
+            trendRatio: salesChange(
+              totals.commissionCentavos,
+              prior.commissionCentavos,
+            ),
+            trendNeutral: true,
           ),
           right: SpStatTile(
             icon: Icons.receipt_long_rounded,
@@ -405,6 +429,8 @@ class _CommissionsListContentState extends State<_CommissionsListContent>
             label: 'Transactions',
             caption: 'Paid in the app',
             value: '${totals.count}',
+            trend: trend(totals.count, prior.count),
+            trendRatio: salesChange(totals.count, prior.count),
           ),
         ),
         if (totals.cashCentavos > 0 || owed.dueCount > 0) ...[
@@ -429,7 +455,7 @@ class _CommissionsListContentState extends State<_CommissionsListContent>
           ),
         ],
         const SizedBox(height: 12),
-        _buildSalesReport(report),
+        _buildSalesReport(report, previous),
         const SizedBox(height: 12),
         SpSectionCard(
           icon: Icons.receipt_long_rounded,
@@ -504,7 +530,7 @@ extension on _CommissionsListContentState {
     ];
   }
 
-  Widget _buildSalesReport(SalesReport report) {
+  Widget _buildSalesReport(SalesReport report, SalesReport previous) {
     // Sign-up stores the display name as "First|Last".
     final User? user = FirebaseAuth.instance.currentUser;
     final String displayName = (user?.displayName ?? '')
@@ -531,6 +557,7 @@ extension on _CommissionsListContentState {
                 ((snapshot.data?.data()?['name'] as String?) ?? '').trim();
             return SpSalesReportCard(
               report: report,
+              previous: previous,
               audience: SalesReportAudience.owner,
               scopeLabel: name.isEmpty ? 'Your facility' : name,
               preparedBy: preparedBy,
@@ -636,7 +663,8 @@ class _TransactionCard extends StatelessWidget {
                     text: settled == null
                         ? label
                         : '$label ${spFormatDate(settled)}, '
-                              '${spFormatClockTime(settled)}',
+                              // Keeps "1:23 PM" on one line.
+                              '${spFormatClockTime(settled).replaceAll(' ', ' ')}',
                     style: TextStyle(color: color),
                   ),
                 ],

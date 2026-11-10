@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../services/error_reporter.dart';
 import '../services/sales_report.dart';
+import '../services/sales_report_excel.dart';
 import '../services/sales_report_pdf.dart';
 import '../theme/app_theme.dart';
 import 'smartpark_ui.dart';
@@ -270,7 +271,7 @@ class _PeriodPickerSheet extends StatelessWidget {
 }
 
 /// The selected period per day (week, month) or per month (quarter,
-/// year), which can be printed or shared as a PDF report.
+/// year), which can be printed, or shared as a PDF or Excel report.
 class SpSalesReportCard extends StatefulWidget {
   const SpSalesReportCard({
     super.key,
@@ -278,10 +279,15 @@ class SpSalesReportCard extends StatefulWidget {
     required this.audience,
     required this.scopeLabel,
     required this.preparedBy,
+    this.previous,
   });
 
   final SalesReport report;
   final SalesReportAudience audience;
+
+  /// The period before, for the reports' comparison (see
+  /// [SalesReport.prior]).
+  final SalesReport? previous;
 
   /// What the figures cover, e.g. the facility name.
   final String scopeLabel;
@@ -294,28 +300,44 @@ class SpSalesReportCard extends StatefulWidget {
 }
 
 class _SpSalesReportCardState extends State<SpSalesReportCard> {
-  bool _busy = false;
+  /// The export in progress, whose button shows the spinner; all three
+  /// buttons are disabled meanwhile.
+  _ReportFormat? _working;
+
+  bool get _busy => _working != null;
 
   bool get _owner => widget.audience == SalesReportAudience.owner;
 
-  Future<void> _export({required bool share}) async {
+  Future<void> _export(_ReportFormat format, {Rect? origin}) async {
     if (_busy) return;
-    setState(() => _busy = true);
+    setState(() => _working = format);
     try {
-      if (share) {
-        await shareSalesReport(
-          report: widget.report,
-          audience: widget.audience,
-          scopeLabel: widget.scopeLabel,
-          preparedBy: widget.preparedBy,
-        );
-      } else {
-        await printSalesReport(
-          report: widget.report,
-          audience: widget.audience,
-          scopeLabel: widget.scopeLabel,
-          preparedBy: widget.preparedBy,
-        );
+      switch (format) {
+        case _ReportFormat.print:
+          await printSalesReport(
+            report: widget.report,
+            previous: widget.previous,
+            audience: widget.audience,
+            scopeLabel: widget.scopeLabel,
+            preparedBy: widget.preparedBy,
+          );
+        case _ReportFormat.excel:
+          await shareSalesReportExcel(
+            report: widget.report,
+            previous: widget.previous,
+            audience: widget.audience,
+            scopeLabel: widget.scopeLabel,
+            preparedBy: widget.preparedBy,
+            origin: origin,
+          );
+        case _ReportFormat.pdf:
+          await shareSalesReport(
+            report: widget.report,
+            previous: widget.previous,
+            audience: widget.audience,
+            scopeLabel: widget.scopeLabel,
+            preparedBy: widget.preparedBy,
+          );
       }
     } catch (error, stack) {
       reportError(error, stack, reason: 'sales report export');
@@ -327,8 +349,61 @@ class _SpSalesReportCardState extends State<SpSalesReportCard> {
         );
       }
     } finally {
-      if (mounted) setState(() => _busy = false);
+      if (mounted) setState(() => _working = null);
     }
+  }
+
+  Widget _shareButton({
+    required IconData icon,
+    required String label,
+    required String tooltip,
+    required _ReportFormat format,
+    required bool compact,
+  }) {
+    return Builder(
+      builder: (BuildContext context) => SizedBox(
+        height: 48,
+        child: Tooltip(
+          message: tooltip,
+          child: OutlinedButton.icon(
+            onPressed: _busy
+                ? null
+                : () {
+                    // Where the iPad share popover points.
+                    final RenderBox? box =
+                        context.findRenderObject() as RenderBox?;
+                    _export(
+                      format,
+                      origin: box == null
+                          ? null
+                          : box.localToGlobal(Offset.zero) & box.size,
+                    );
+                  },
+            icon: _working == format
+                ? SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: AppTheme.textMuted,
+                    ),
+                  )
+                : Icon(icon, size: 18),
+            // Icon only on narrow phones; the tooltip still names it.
+            label: compact ? const SizedBox.shrink() : Text(label),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: AppTheme.textDark,
+              side: BorderSide(color: AppTheme.border),
+              minimumSize: const Size(48, 48),
+              padding: EdgeInsets.symmetric(horizontal: compact ? 12 : 14),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(AppTheme.radius),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   @override
@@ -348,7 +423,8 @@ class _SpSalesReportCardState extends State<SpSalesReportCard> {
       title: daily ? 'Daily $what' : 'Monthly $what',
       subtitle:
           '${daily ? 'Per day' : 'Per month'} for '
-          '${salesReportPeriod(report)}. Print it or save it as a PDF.',
+          '${salesReportPeriod(report)}. Print it, or save it as an Excel '
+          'or PDF file.',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -366,33 +442,40 @@ class _SpSalesReportCardState extends State<SpSalesReportCard> {
           else
             for (final SalesRow row in rows) _row(report, row),
           const SizedBox(height: 14),
-          Row(
-            children: [
-              Expanded(
-                child: SpPrimaryButton(
-                  icon: Icons.print_rounded,
-                  label: 'Print report',
-                  busy: _busy,
-                  onPressed: () => _export(share: false),
-                ),
-              ),
-              const SizedBox(width: 10),
-              SizedBox(
-                height: 48,
-                child: OutlinedButton.icon(
-                  onPressed: _busy ? null : () => _export(share: true),
-                  icon: const Icon(Icons.ios_share_rounded, size: 18),
-                  label: const Text('PDF'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: AppTheme.textDark,
-                    side: BorderSide(color: AppTheme.border),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(AppTheme.radius),
+          LayoutBuilder(
+            builder: (BuildContext context, BoxConstraints constraints) {
+              final bool compact = constraints.maxWidth < 310;
+              return Row(
+                children: [
+                  Expanded(
+                    child: SpPrimaryButton(
+                      icon: Icons.print_rounded,
+                      label: 'Print report',
+                      busy: _working == _ReportFormat.print,
+                      onPressed: _busy
+                          ? null
+                          : () => _export(_ReportFormat.print),
                     ),
                   ),
-                ),
-              ),
-            ],
+                  const SizedBox(width: 8),
+                  _shareButton(
+                    icon: Icons.table_chart_outlined,
+                    label: 'Excel',
+                    tooltip: 'Share as an Excel workbook (.xlsx)',
+                    format: _ReportFormat.excel,
+                    compact: compact,
+                  ),
+                  const SizedBox(width: 8),
+                  _shareButton(
+                    icon: Icons.ios_share_rounded,
+                    label: 'PDF',
+                    tooltip: 'Share as a PDF',
+                    format: _ReportFormat.pdf,
+                    compact: compact,
+                  ),
+                ],
+              );
+            },
           ),
         ],
       ),
@@ -452,3 +535,5 @@ class _SpSalesReportCardState extends State<SpSalesReportCard> {
     );
   }
 }
+
+enum _ReportFormat { print, excel, pdf }
