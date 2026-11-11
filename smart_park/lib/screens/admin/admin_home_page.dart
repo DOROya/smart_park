@@ -11,6 +11,7 @@ import '../../services/sales_report.dart';
 import '../../services/sales_report_pdf.dart'
     show SalesReportAudience, salesReportPeriod;
 import '../../theme/app_theme.dart';
+import '../../widgets/smartpark_logo.dart';
 import '../../utils/friendly_error.dart';
 import '../../widgets/smartpark_ui.dart';
 import '../../widgets/sp_profile_view.dart';
@@ -1537,7 +1538,7 @@ class _AdminHomePageState extends State<AdminHomePage>
         title: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.local_parking_rounded, color: AppTheme.textDark),
+            const SmartParkLogo(size: 28),
             SizedBox(width: 8),
             Text(
               'SmartPark',
