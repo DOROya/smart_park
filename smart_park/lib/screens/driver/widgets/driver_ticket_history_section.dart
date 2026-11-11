@@ -16,6 +16,7 @@ import '../../../widgets/smartpark_ui.dart';
 import '../../../widgets/sp_loading.dart';
 import '../../../widgets/sp_overtime.dart';
 import '../../../widgets/sp_receipt_button.dart';
+import '../../../widgets/sp_save_qr_button.dart';
 import '../../../widgets/sp_vehicle_type.dart';
 
 /// Rebuilds a scanner-compatible QR payload for tickets saved before the QR
@@ -288,11 +289,13 @@ bool _isPaid(_TicketState state) =>
 /// offline and always matches the card.
 Widget _receiptButton(QueryDocumentSnapshot<Map<String, dynamic>> doc) =>
     SpReceiptButton(
-      onShare: (ReceiptFormat format, Rect? origin) => shareParkingReceiptAs(
-        ParkingReceipt.fromTicket(doc.id, doc.data()),
-        format,
-        origin: origin,
-      ),
+      onExport: (ReceiptFormat format, bool save, Rect? origin) =>
+          exportParkingReceiptAs(
+            ParkingReceipt.fromTicket(doc.id, doc.data()),
+            format,
+            save: save,
+            origin: origin,
+          ),
     );
 
 bool _hasTimeLeft(_TicketState state) =>
@@ -604,6 +607,10 @@ class _ActiveTicketCard extends StatelessWidget {
                           color: AppTheme.textMuted,
                         ),
                       ),
+                    ),
+                    SpSaveQrButton(
+                      ticket: ParkingReceipt.fromTicket(doc.id, data),
+                      qrData: _resolveTicketQrPayload(doc),
                     ),
                     if (_isPaid(state)) _receiptButton(doc),
                   ],

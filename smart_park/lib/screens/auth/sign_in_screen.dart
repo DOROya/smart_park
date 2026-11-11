@@ -54,15 +54,15 @@ class _SignInScreenState extends State<SignInScreen> {
           .doc('_warmup')
           .get(const GetOptions(source: Source.server))
           .then<void>((_) {}, onError: (_) {})
-          .whenComplete(
-            () => _logTiming('Firestore warm-up finished', watch),
-          ),
+          .whenComplete(() => _logTiming('Firestore warm-up finished', watch)),
     );
   }
 
   void _logTiming(String step, Stopwatch watch) {
     if (kDebugMode) {
-      debugPrint('[sign-in timing] $step after ${watch.elapsedMilliseconds} ms');
+      debugPrint(
+        '[sign-in timing] $step after ${watch.elapsedMilliseconds} ms',
+      );
     }
   }
 

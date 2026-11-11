@@ -16,6 +16,7 @@ import 'package:share_plus/share_plus.dart';
 
 import 'gate_scan_service.dart'
     show kOvertimeCashDue, kOvertimeCollected, overtimeStatusOf;
+import 'local_save.dart';
 import 'parking_pricing.dart' show includedStayHours, kBaseStayHours;
 import 'sales_report.dart' show formatSalesPeso, kSalesMonthNames;
 import 'sales_report_pdf.dart' show pdfSafeText;
@@ -154,12 +155,14 @@ DateTime? _date(Object? value) {
 /// How a receipt is saved or shared.
 enum ReceiptFormat { pdf, png }
 
-/// Loads the ticket and opens the share sheet with its receipt. Falls back
-/// to [fallback] (built from what the app already knows) if the ticket
-/// can't be read in time, e.g. on a slow network right after paying.
-Future<void> shareParkingReceipt({
+/// Loads the ticket, then saves or shares its receipt (see
+/// [exportParkingReceiptAs]). Falls back to [fallback] (built from what the
+/// app already knows) if the ticket can't be read in time, e.g. on a slow
+/// network right after paying.
+Future<bool> exportParkingReceipt({
   required String transactionId,
   ReceiptFormat format = ReceiptFormat.pdf,
+  bool save = false,
   ParkingReceipt? fallback,
   Rect? origin,
 }) async {
@@ -182,25 +185,39 @@ Future<void> shareParkingReceipt({
   if (receipt == null) {
     throw StateError('Ticket $transactionId not found.');
   }
-  await shareParkingReceiptAs(receipt, format, origin: origin);
+  return exportParkingReceiptAs(receipt, format, save: save, origin: origin);
 }
 
-/// Opens the share sheet with [receipt] as a PDF or a PNG image.
-Future<void> shareParkingReceiptAs(
+/// [receipt] as a PDF or a PNG image. With [save], the image goes to the
+/// gallery and the PDF to Downloads (see [saveFileToDevice]); otherwise the
+/// share sheet opens. Returns false if nothing was saved on the device.
+Future<bool> exportParkingReceiptAs(
   ParkingReceipt receipt,
   ReceiptFormat format, {
+  bool save = false,
   Rect? origin,
 }) async {
   final Uint8List pdf = await buildParkingReceiptPdf(receipt);
   if (format == ReceiptFormat.pdf) {
+    if (save) {
+      return saveFileToDevice(
+        bytes: pdf,
+        fileName: receipt.fileName,
+        mimeType: 'application/pdf',
+      );
+    }
     await Printing.sharePdf(
       bytes: pdf,
       filename: receipt.fileName,
       bounds: origin,
     );
-    return;
+    return true;
   }
   final Uint8List png = await parkingReceiptPng(pdf);
+  if (save) {
+    await saveImageToGallery(png);
+    return true;
+  }
   final String name = receipt.fileName.replaceFirst(RegExp(r'\.pdf$'), '.png');
   await SharePlus.instance.share(
     ShareParams(
@@ -210,6 +227,7 @@ Future<void> shareParkingReceiptAs(
       sharePositionOrigin: origin,
     ),
   );
+  return true;
 }
 
 /// The receipt's page rendered as a PNG, sharp enough to read when zoomed

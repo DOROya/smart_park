@@ -1,21 +1,28 @@
 import 'package:flutter/material.dart';
 
 import '../services/error_reporter.dart';
+import '../services/local_save.dart'
+    show StorageAccessDenied, kDownloadsFolderLabel;
 import '../services/parking_receipt.dart' show ReceiptFormat;
 import '../theme/app_theme.dart';
+import 'sp_export_sheet.dart';
 
-/// "Receipt" button: asks PDF or image (PNG), then builds and shares the
-/// receipt, with a spinner while it works. [onShare] also gets where the
-/// button is, for the iPad share popover.
+/// "Receipt" button: asks whether to save the receipt on the phone (image
+/// to the gallery, PDF to files) or share it, then builds it, with a
+/// spinner while it works.
 class SpReceiptButton extends StatefulWidget {
   const SpReceiptButton({
     super.key,
-    required this.onShare,
+    required this.onExport,
     this.outlined = false,
     this.label = 'Receipt',
   });
 
-  final Future<void> Function(ReceiptFormat format, Rect? origin) onShare;
+  /// Builds the receipt and saves ([save]) or shares it. [origin] is where
+  /// the button is, for the iPad share popover. Returns false if nothing
+  /// was saved on the device.
+  final Future<bool> Function(ReceiptFormat format, bool save, Rect? origin)
+  onExport;
 
   /// A full outlined button (payment screen) instead of a compact text
   /// button (ticket cards).
@@ -26,72 +33,83 @@ class SpReceiptButton extends StatefulWidget {
   State<SpReceiptButton> createState() => _SpReceiptButtonState();
 }
 
+typedef _Choice = ({ReceiptFormat format, bool save});
+
 class _SpReceiptButtonState extends State<SpReceiptButton> {
   bool _busy = false;
 
-  Future<void> _share() async {
+  Future<void> _run() async {
     if (_busy) return;
-    final ReceiptFormat? format = await _pickFormat();
-    if (format == null || !mounted) return;
+    final _Choice? choice = await showSpExportSheet<_Choice>(
+      context,
+      title: 'Receipt',
+      sections: const <SpExportSection<_Choice>>[
+        SpExportSection<_Choice>('Save to phone', <SpExportOption<_Choice>>[
+          SpExportOption<_Choice>(
+            icon: Icons.photo_library_outlined,
+            title: 'Image to Gallery',
+            subtitle: 'Saved as a PNG in the SmartPark album',
+            value: (format: ReceiptFormat.png, save: true),
+          ),
+          SpExportOption<_Choice>(
+            icon: Icons.download_rounded,
+            title: 'PDF to Files',
+            subtitle: 'Saved in $kDownloadsFolderLabel',
+            value: (format: ReceiptFormat.pdf, save: true),
+          ),
+        ]),
+        SpExportSection<_Choice>('Share', <SpExportOption<_Choice>>[
+          SpExportOption<_Choice>(
+            icon: Icons.image_outlined,
+            title: 'Share as image',
+            subtitle: 'Send in a chat',
+            value: (format: ReceiptFormat.png, save: false),
+          ),
+          SpExportOption<_Choice>(
+            icon: Icons.picture_as_pdf_outlined,
+            title: 'Share as PDF',
+            subtitle: 'Best for printing and email',
+            value: (format: ReceiptFormat.pdf, save: false),
+          ),
+        ]),
+      ],
+    );
+    if (choice == null || !mounted) return;
     final RenderBox? box = context.findRenderObject() as RenderBox?;
     final Rect? origin = box == null
         ? null
         : box.localToGlobal(Offset.zero) & box.size;
     setState(() => _busy = true);
     try {
-      await widget.onShare(format, origin);
+      final bool done = await widget.onExport(
+        choice.format,
+        choice.save,
+        origin,
+      );
+      if (done && choice.save && mounted) {
+        showSpSaveResult(
+          context,
+          saved: choice.format == ReceiptFormat.png
+              ? 'Receipt saved to your gallery.'
+              : 'Receipt saved to $kDownloadsFolderLabel.',
+        );
+      }
     } catch (error, stack) {
-      reportError(error, stack, reason: 'parking receipt');
+      if (error is! StorageAccessDenied) {
+        reportError(error, stack, reason: 'parking receipt');
+      }
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Could not create the receipt. Please try again.'),
-          ),
+        showSpSaveResult(
+          context,
+          saved: '',
+          error: error,
+          failed: 'Could not create the receipt. Please try again.',
         );
       }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
   }
-
-  Future<ReceiptFormat?> _pickFormat() => showModalBottomSheet<ReceiptFormat>(
-    context: context,
-    showDragHandle: true,
-    constraints: const BoxConstraints(maxWidth: 560),
-    backgroundColor: AppTheme.surface,
-    builder: (BuildContext context) => SafeArea(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
-            child: Text(
-              'Save receipt as',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w800,
-                color: AppTheme.textDark,
-              ),
-            ),
-          ),
-          ListTile(
-            leading: const Icon(Icons.picture_as_pdf_outlined),
-            title: const Text('PDF'),
-            subtitle: const Text('Best for printing and email'),
-            onTap: () => Navigator.of(context).pop(ReceiptFormat.pdf),
-          ),
-          ListTile(
-            leading: const Icon(Icons.image_outlined),
-            title: const Text('Image (PNG)'),
-            subtitle: const Text('Save to your gallery or send in a chat'),
-            onTap: () => Navigator.of(context).pop(ReceiptFormat.png),
-          ),
-          const SizedBox(height: 8),
-        ],
-      ),
-    ),
-  );
 
   @override
   Widget build(BuildContext context) {
@@ -114,7 +132,7 @@ class _SpReceiptButtonState extends State<SpReceiptButton> {
         width: double.infinity,
         height: 48,
         child: OutlinedButton.icon(
-          onPressed: _busy ? null : _share,
+          onPressed: _busy ? null : _run,
           icon: icon,
           label: label,
           style: OutlinedButton.styleFrom(
@@ -128,9 +146,9 @@ class _SpReceiptButtonState extends State<SpReceiptButton> {
       );
     }
     return Tooltip(
-      message: 'Save or share a receipt (PDF)',
+      message: 'Save or share the receipt',
       child: TextButton.icon(
-        onPressed: _busy ? null : _share,
+        onPressed: _busy ? null : _run,
         icon: icon,
         label: label,
         style: TextButton.styleFrom(
