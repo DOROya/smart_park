@@ -11,6 +11,7 @@ import '../../services/facility_status.dart';
 import '../../services/gate_scan_service.dart';
 import '../../services/permission_service.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/smartpark_logo.dart';
 import '../../theme/theme_controller.dart';
 import '../../utils/friendly_error.dart';
 import '../../widgets/smartpark_ui.dart';
@@ -460,7 +461,7 @@ class _StaffHomePageState extends State<StaffHomePage>
                 title: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.local_parking_rounded, color: AppTheme.textDark),
+                    const SmartParkLogo(size: 28),
                     SizedBox(width: 8),
                     Text(
                       'SmartPark',

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
+import 'smartpark_logo.dart';
 import 'smartpark_ui.dart';
 
 /// Page frame for the sign-in / sign-up flow: brand mark, optional round
@@ -79,7 +80,7 @@ class AuthShell extends StatelessWidget {
   }
 }
 
-/// Yellow "P" tile + wordmark, matching the in-app top bars.
+/// Pin logo tile + wordmark, matching the in-app top bars.
 class AuthBrandMark extends StatelessWidget {
   const AuthBrandMark({super.key});
 
@@ -88,19 +89,7 @@ class AuthBrandMark extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Container(
-          width: 32,
-          height: 32,
-          decoration: BoxDecoration(
-            color: AppTheme.accent,
-            borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
-          ),
-          child: Icon(
-            Icons.local_parking_rounded,
-            size: 20,
-            color: AppTheme.onAccent,
-          ),
-        ),
+        const SmartParkLogo(size: 32),
         const SizedBox(width: 8),
         Text(
           'SmartPark',

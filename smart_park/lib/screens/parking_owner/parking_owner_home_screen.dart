@@ -33,6 +33,7 @@ import '../../services/sales_report.dart';
 import '../../services/sales_report_pdf.dart'
     show SalesReportAudience, formatSalesChange, salesChange, salesReportPeriod;
 import '../../theme/app_theme.dart';
+import '../../widgets/smartpark_logo.dart';
 import '../../utils/friendly_error.dart';
 import '../../utils/staff_credentials.dart';
 import '../../widgets/smartpark_ui.dart';
@@ -787,7 +788,7 @@ class _ParkingOwnerHomePageState extends State<ParkingOwnerHomePage>
             title: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(Icons.local_parking_rounded, color: AppTheme.textDark),
+                const SmartParkLogo(size: 28),
                 SizedBox(width: 8),
                 Text(
                   'SmartPark',

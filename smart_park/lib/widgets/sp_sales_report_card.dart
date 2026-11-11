@@ -1,11 +1,15 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 
 import '../services/error_reporter.dart';
+import '../services/local_save.dart';
 import '../services/sales_report.dart';
 import '../services/sales_report_excel.dart';
 import '../services/sales_report_pdf.dart';
 import '../theme/app_theme.dart';
 import 'smartpark_ui.dart';
+import 'sp_export_sheet.dart';
 
 /// Week / Month / Quarter / Year selector with arrows to step through
 /// periods. Everything under it on a Finance tab follows the chosen range.
@@ -308,8 +312,36 @@ class _SpSalesReportCardState extends State<SpSalesReportCard> {
 
   bool get _owner => widget.audience == SalesReportAudience.owner;
 
+  /// For Excel and PDF, asks whether to save the file on the phone or share
+  /// it; printing goes straight to the print dialog.
   Future<void> _export(_ReportFormat format, {Rect? origin}) async {
     if (_busy) return;
+    bool save = false;
+    if (format != _ReportFormat.print) {
+      final String kind = format == _ReportFormat.excel ? 'Excel' : 'PDF';
+      final bool? choice = await showSpExportSheet<bool>(
+        context,
+        title: '$kind report',
+        sections: <SpExportSection<bool>>[
+          SpExportSection<bool>('Choose an option', <SpExportOption<bool>>[
+            const SpExportOption<bool>(
+              icon: Icons.download_rounded,
+              title: 'Save to phone',
+              subtitle: 'Saved in $kDownloadsFolderLabel',
+              value: true,
+            ),
+            SpExportOption<bool>(
+              icon: Icons.ios_share_rounded,
+              title: 'Share',
+              subtitle: 'Send the $kind file in a chat or email',
+              value: false,
+            ),
+          ]),
+        ],
+      );
+      if (choice == null || !mounted) return;
+      save = choice;
+    }
     setState(() => _working = format);
     try {
       switch (format) {
@@ -321,6 +353,22 @@ class _SpSalesReportCardState extends State<SpSalesReportCard> {
             scopeLabel: widget.scopeLabel,
             preparedBy: widget.preparedBy,
           );
+        case _ReportFormat.excel when save:
+          await _saveFile(
+            buildSalesReportXlsx(
+              report: widget.report,
+              previous: widget.previous,
+              audience: widget.audience,
+              scopeLabel: widget.scopeLabel,
+              preparedBy: widget.preparedBy,
+            ),
+            salesReportFileName(
+              widget.report,
+              widget.audience,
+              extension: 'xlsx',
+            ),
+            kXlsxMimeType,
+          );
         case _ReportFormat.excel:
           await shareSalesReportExcel(
             report: widget.report,
@@ -329,6 +377,18 @@ class _SpSalesReportCardState extends State<SpSalesReportCard> {
             scopeLabel: widget.scopeLabel,
             preparedBy: widget.preparedBy,
             origin: origin,
+          );
+        case _ReportFormat.pdf when save:
+          await _saveFile(
+            await buildSalesReportPdf(
+              report: widget.report,
+              previous: widget.previous,
+              audience: widget.audience,
+              scopeLabel: widget.scopeLabel,
+              preparedBy: widget.preparedBy,
+            ),
+            salesReportFileName(widget.report, widget.audience),
+            'application/pdf',
           );
         case _ReportFormat.pdf:
           await shareSalesReport(
@@ -340,16 +400,29 @@ class _SpSalesReportCardState extends State<SpSalesReportCard> {
           );
       }
     } catch (error, stack) {
-      reportError(error, stack, reason: 'sales report export');
+      if (error is! StorageAccessDenied) {
+        reportError(error, stack, reason: 'sales report export');
+      }
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Could not create the report. Please try again.'),
-          ),
+        showSpSaveResult(
+          context,
+          saved: '',
+          error: error,
+          failed: 'Could not create the report. Please try again.',
         );
       }
     } finally {
       if (mounted) setState(() => _working = null);
+    }
+  }
+
+  Future<void> _saveFile(Uint8List bytes, String name, String mime) async {
+    if (await saveFileToDevice(bytes: bytes, fileName: name, mimeType: mime) &&
+        mounted) {
+      showSpSaveResult(
+        context,
+        saved: 'Saved $name to $kDownloadsFolderLabel.',
+      );
     }
   }
 
@@ -461,15 +534,15 @@ class _SpSalesReportCardState extends State<SpSalesReportCard> {
                   _shareButton(
                     icon: Icons.table_chart_outlined,
                     label: 'Excel',
-                    tooltip: 'Share as an Excel workbook (.xlsx)',
+                    tooltip: 'Save or share as an Excel workbook (.xlsx)',
                     format: _ReportFormat.excel,
                     compact: compact,
                   ),
                   const SizedBox(width: 8),
                   _shareButton(
-                    icon: Icons.ios_share_rounded,
+                    icon: Icons.picture_as_pdf_outlined,
                     label: 'PDF',
-                    tooltip: 'Share as a PDF',
+                    tooltip: 'Save or share as a PDF',
                     format: _ReportFormat.pdf,
                     compact: compact,
                   ),

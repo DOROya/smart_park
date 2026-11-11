@@ -5,6 +5,7 @@ import '../../services/parking_receipt.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/smartpark_ui.dart' show spPeso;
 import '../../widgets/sp_receipt_button.dart';
+import '../../widgets/sp_save_qr_button.dart';
 import '../../widgets/sp_vehicle_type.dart';
 
 class DriverPaidTicketPage extends StatelessWidget {
@@ -136,18 +137,33 @@ class DriverPaidTicketPage extends StatelessWidget {
                       ],
                     ),
                   ),
+                  const SizedBox(height: 16),
+                  SpSaveQrButton(
+                    prominent: true,
+                    qrData: qrData,
+                    ticket:
+                        receipt ??
+                        ParkingReceipt(
+                          transactionId: '',
+                          facilityName: establishmentName,
+                          amountCentavos: (amount * 100).round(),
+                          vehicleType: vehicleType,
+                        ),
+                  ),
                   if (receipt != null) ...[
-                    const SizedBox(height: 14),
+                    const SizedBox(height: 10),
                     SpReceiptButton(
                       outlined: true,
                       label: 'Save receipt',
-                      onShare: (ReceiptFormat format, Rect? origin) =>
-                          shareParkingReceipt(
-                            transactionId: receipt!.transactionId,
-                            format: format,
-                            fallback: receipt,
-                            origin: origin,
-                          ),
+                      onExport:
+                          (ReceiptFormat format, bool save, Rect? origin) =>
+                              exportParkingReceipt(
+                                transactionId: receipt!.transactionId,
+                                format: format,
+                                save: save,
+                                fallback: receipt,
+                                origin: origin,
+                              ),
                     ),
                   ],
                 ],

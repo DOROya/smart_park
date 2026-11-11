@@ -9,6 +9,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import '../../services/permission_service.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/smartpark_logo.dart';
 import '../../widgets/smartpark_ui.dart';
 import '../../widgets/sp_profile_view.dart';
 import '../auth/sign_in_screen.dart';
@@ -456,7 +457,7 @@ class _DriverHomePageState extends State<DriverHomePage>
                 title: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.local_parking_rounded, color: AppTheme.textDark),
+                    const SmartParkLogo(size: 28),
                     const SizedBox(width: 8),
                     Text(
                       'SmartPark',
