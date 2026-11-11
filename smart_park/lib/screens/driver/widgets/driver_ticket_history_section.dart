@@ -14,6 +14,7 @@ import '../../../theme/app_theme.dart';
 import '../../../utils/friendly_error.dart';
 import '../../../widgets/smartpark_ui.dart';
 import '../../../widgets/sp_loading.dart';
+import '../../../widgets/sp_max_brightness.dart';
 import '../../../widgets/sp_overtime.dart';
 import '../../../widgets/sp_receipt_button.dart';
 import '../../../widgets/sp_save_qr_button.dart';
@@ -511,10 +512,12 @@ class _ActiveTicketCard extends StatelessWidget {
                     border: Border.all(color: spCardBorder),
                     borderRadius: BorderRadius.circular(AppTheme.radiusLarge),
                   ),
-                  child: QrImageView(
-                    data: _resolveTicketQrPayload(doc),
-                    size: 190,
-                    backgroundColor: Colors.white,
+                  child: SpMaxBrightness(
+                    child: QrImageView(
+                      data: _resolveTicketQrPayload(doc),
+                      size: 190,
+                      backgroundColor: Colors.white,
+                    ),
                   ),
                 ),
                 const SizedBox(height: 14),
