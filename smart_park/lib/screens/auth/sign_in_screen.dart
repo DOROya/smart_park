@@ -1,17 +1,15 @@
 import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 
-import '../../services/auth_email_service.dart';
-import '../../services/email_rate_limiter.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/friendly_error.dart';
 import '../../utils/staff_credentials.dart';
 import '../../widgets/auth_widgets.dart';
+import 'forgot_password_screen.dart';
 import 'role_based_home_page.dart';
 import 'sign_up_screen.dart';
 import 'verify_email_screen.dart';
@@ -30,7 +28,6 @@ class _SignInScreenState extends State<SignInScreen> {
 
   bool _obscurePassword = true;
   bool _isSigningIn = false;
-  bool _sendingReset = false;
 
   @override
   void initState() {
@@ -185,70 +182,11 @@ class _SignInScreenState extends State<SignInScreen> {
     }
   }
 
-  Future<void> _sendPasswordReset() async {
-    final String input = _emailController.text.trim();
-    if (input.isEmpty || !input.contains('@')) {
-      _showSnackBar(
-        input.isEmpty
-            ? 'Enter your email above, then tap Forgot Password.'
-            : 'Username accounts are reset by whoever set up your account.',
-      );
-      return;
-    }
-    const String rateLimitAction = 'password-reset';
-    final Duration wait = EmailRateLimiter.remaining(rateLimitAction, input);
-    if (wait > Duration.zero) {
-      _showSnackBar(
-        'A reset link was already sent. Please wait '
-        '${EmailRateLimiter.describe(wait)} before requesting another.',
-      );
-      return;
-    }
-    if (_sendingReset) return;
-    _sendingReset = true;
-    try {
-      await AuthEmailService().sendPasswordResetEmail(input);
-      EmailRateLimiter.recordSend(rateLimitAction, input);
-      if (mounted) {
-        await _showResetSentDialog(input);
-      }
-    } on FirebaseFunctionsException catch (error) {
-      final bool throttled = AuthEmailService.isThrottled(error);
-      if (throttled) {
-        EmailRateLimiter.recordSend(rateLimitAction, input);
-      }
-      if (mounted) {
-        _showSnackBar(
-          throttled
-              ? EmailRateLimiter.tooManyRequestsMessage
-              : friendlyError(error, fallback: 'Unable to send reset email.'),
-        );
-      }
-    } finally {
-      _sendingReset = false;
-    }
-  }
-
-  Future<void> _showResetSentDialog(String email) {
-    return showDialog<void>(
-      context: context,
-      builder: (BuildContext context) => AlertDialog(
-        icon: const Icon(Icons.mark_email_read_outlined, size: 40),
-        title: const Text('Check your email'),
-        content: Text(
-          // The server answers the same for unknown emails, so don't claim
-          // the account exists.
-          'If $email has a SmartPark account, a password reset link is on '
-          'its way.\n\n'
-          "If you don't see it in a few minutes, check your Spam or Junk "
-          'folder, and make sure the email above is spelled correctly.',
-        ),
-        actions: <Widget>[
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('OK'),
-          ),
-        ],
+  void _openForgotPassword() {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) =>
+            ForgotPasswordScreen(initialEmail: _emailController.text),
       ),
     );
   }
@@ -311,7 +249,7 @@ class _SignInScreenState extends State<SignInScreen> {
               Align(
                 alignment: Alignment.centerRight,
                 child: TextButton(
-                  onPressed: _sendPasswordReset,
+                  onPressed: _openForgotPassword,
                   style: TextButton.styleFrom(
                     foregroundColor: AppTheme.textSecondary,
                     textStyle: const TextStyle(
