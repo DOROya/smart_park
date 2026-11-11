@@ -4,6 +4,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 import '../../services/parking_receipt.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/smartpark_ui.dart' show spPeso;
+import '../../widgets/sp_max_brightness.dart';
 import '../../widgets/sp_receipt_button.dart';
 import '../../widgets/sp_save_qr_button.dart';
 import '../../widgets/sp_vehicle_type.dart';
@@ -95,10 +96,12 @@ class DriverPaidTicketPage extends StatelessWidget {
                     ),
                     child: Column(
                       children: [
-                        QrImageView(
-                          data: qrData,
-                          size: 210,
-                          backgroundColor: Colors.white,
+                        SpMaxBrightness(
+                          child: QrImageView(
+                            data: qrData,
+                            size: 210,
+                            backgroundColor: Colors.white,
+                          ),
                         ),
                         const SizedBox(height: 14),
                         SpVehicleTypeBadge(

@@ -142,8 +142,10 @@ class _EstablishmentDetailPageState extends State<EstablishmentDetailPage>
       _showSnackBar('No location available for this establishment.');
       return;
     }
+    // A route from the driver's location, ready to start navigating.
     final Uri uri = Uri.parse(
-      'https://www.google.com/maps/search/?api=1&query=$query',
+      'https://www.google.com/maps/dir/?api=1'
+      '&destination=$query&travelmode=driving',
     );
     if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
       _showSnackBar('Unable to open maps.');

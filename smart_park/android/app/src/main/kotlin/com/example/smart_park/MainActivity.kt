@@ -6,6 +6,7 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
+import android.view.WindowManager
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -14,6 +15,24 @@ import java.io.File
 class MainActivity : FlutterActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        // Full brightness while a QR ticket is on screen, so gate scanners
+        // can read it; "false" hands brightness back to the system.
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "smartpark/screen")
+            .setMethodCallHandler { call, result ->
+                if (call.method != "setMaxBrightness") {
+                    result.notImplemented()
+                    return@setMethodCallHandler
+                }
+                val on = call.arguments as? Boolean ?: false
+                val attrs = window.attributes
+                attrs.screenBrightness = if (on) {
+                    WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_FULL
+                } else {
+                    WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
+                }
+                window.attributes = attrs
+                result.success(null)
+            }
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "smartpark/downloads")
             .setMethodCallHandler { call, result ->
                 if (call.method != "save") {
