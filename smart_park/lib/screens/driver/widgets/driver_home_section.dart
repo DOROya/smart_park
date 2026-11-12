@@ -9,6 +9,7 @@ import '../../../services/operating_hours.dart';
 import '../../../theme/app_theme.dart';
 import '../../../widgets/smartpark_ui.dart';
 import '../../../widgets/sp_loading.dart';
+import '../../../widgets/sp_network_image.dart';
 import '../services/driver_establishment_service.dart';
 
 class DriverHomeSection extends StatefulWidget {
@@ -728,17 +729,15 @@ class _DriverParkingCard extends StatelessWidget {
                         ),
                       )
                     else
-                      Image.network(
-                        thumbnailUrl,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, _, _) => ColoredBox(
-                          color: AppTheme.surfaceAlt,
-                          child: Icon(
-                            Icons.local_parking_rounded,
-                            color: AppTheme.textMuted,
-                            size: 40,
-                          ),
-                        ),
+                      // Cached on the device after the first load, and
+                      // decoded at card size rather than camera size.
+                      LayoutBuilder(
+                        builder: (BuildContext context, BoxConstraints box) =>
+                            SpNetworkImage(
+                              thumbnailUrl,
+                              decodeWidth: box.maxWidth,
+                              errorIcon: Icons.local_parking_rounded,
+                            ),
                       ),
                     Positioned(
                       top: 10,
