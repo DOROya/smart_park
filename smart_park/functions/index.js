@@ -3,12 +3,15 @@ const { getFirestore, Timestamp, FieldValue } = require("firebase-admin/firestor
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { onDocumentWritten } = require("firebase-functions/v2/firestore");
+const { onObjectFinalized } = require("firebase-functions/v2/storage");
+const { getStorage } = require("firebase-admin/storage");
 const { setGlobalOptions } = require("firebase-functions/v2");
 const { defineSecret } = require("firebase-functions/params");
 
 const authEmails = require("./src/auth_emails");
 const checkout = require("./src/checkout");
 const occupancy = require("./src/occupancy");
+const photoCompress = require("./src/photo_compress");
 const staff = require("./src/staff");
 const { platformFeeCentavosFor } = require("./src/pricing");
 const { dayKeyManila, dayStartManila } = require("./src/dates");
@@ -158,5 +161,46 @@ exports.rebuildDailyStats = onCall(
     }
 
     return { days: days.size, ...total };
+  },
+);
+
+// Re-encodes each facility photo / business document an owner uploads to a
+// phone-sized JPEG (see src/photo_compress.js), in place, so drivers on
+// mobile data download a few hundred KB instead of a 6-7 MB original.
+// Storage triggers must run in the bucket's own region (us-east1).
+exports.compressFacilityPhoto = onObjectFinalized(
+  { region: "us-east1", memory: "1GiB", timeoutSeconds: 120 },
+  async (event) => {
+    const object = event.data;
+    if (!photoCompress.shouldCompress(object)) return;
+    const file = getStorage().bucket(object.bucket).file(object.name);
+    const result = await photoCompress.compressObject(file);
+    if (!result.skipped) {
+      console.log(
+        `Compressed ${result.name}: ${result.before} -> ${result.after} bytes`,
+      );
+    }
+  },
+);
+
+/**
+ * Admin-only: compresses the facility photos and documents uploaded before
+ * compressFacilityPhoto existed. Safe to run again; finished files are
+ * skipped. Run from Settings > Compress existing photos.
+ */
+exports.compressExistingPhotos = onCall(
+  { memory: "1GiB", timeoutSeconds: 540 },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError("unauthenticated", "Please sign in again.");
+    }
+    const caller = await getFirestore()
+      .collection("users")
+      .doc(request.auth.uid)
+      .get();
+    if (caller.data()?.role !== "admin") {
+      throw new HttpsError("permission-denied", "Admins only.");
+    }
+    return photoCompress.compressAllExisting(getStorage().bucket());
   },
 );

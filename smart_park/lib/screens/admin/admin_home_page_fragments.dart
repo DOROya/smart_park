@@ -563,26 +563,50 @@ extension _AdminHomePageFragments on _AdminHomePageState {
     );
 
     final Widget statsCard = SpSectionCard(
-      icon: Icons.query_stats_rounded,
-      title: 'Platform Statistics',
+      icon: Icons.build_circle_outlined,
+      title: 'Maintenance',
       subtitle:
-          'Dashboard and Finance totals are kept on the server. Rebuild them '
-          'from all payments if they ever look wrong.',
-      child: SizedBox(
-        width: double.infinity,
-        child: OutlinedButton.icon(
-          onPressed: _rebuildingStats ? null : _rebuildStats,
-          icon: _rebuildingStats
-              ? const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Icon(Icons.refresh_rounded),
-          label: Text(
-            _rebuildingStats ? 'Rebuilding...' : 'Rebuild statistics',
+          'Server-side fixes. Dashboard and Finance totals can be rebuilt '
+          'from all payments if they ever look wrong, and photos uploaded '
+          'before compression existed can be shrunk for faster loading.',
+      child: Column(
+        children: [
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: _rebuildingStats ? null : _rebuildStats,
+              icon: _rebuildingStats
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.refresh_rounded),
+              label: Text(
+                _rebuildingStats ? 'Rebuilding...' : 'Rebuild statistics',
+              ),
+            ),
           ),
-        ),
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: _compressingPhotos ? null : _compressExistingPhotos,
+              icon: _compressingPhotos
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.compress_rounded),
+              label: Text(
+                _compressingPhotos
+                    ? 'Compressing photos...'
+                    : 'Compress existing photos',
+              ),
+            ),
+          ),
+        ],
       ),
     );
 
