@@ -18,6 +18,7 @@ import '../../../services/parking_pricing.dart'
         kGracePeriodOptions;
 import '../../../services/parking_storage_service.dart';
 import '../../../theme/app_theme.dart';
+import '../../../widgets/sp_network_image.dart';
 import 'facility_review_status_banner.dart';
 
 class FacilityRegistrationPage extends StatefulWidget {
@@ -398,6 +399,10 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
     final XFile? picked = await _imagePicker.pickImage(
       source: ImageSource.gallery,
       imageQuality: 80,
+      // Phone cameras shoot 4000px+; 1600px is plenty for the app and keeps
+      // each photo a few hundred KB so drivers on mobile data load it fast.
+      maxWidth: 1600,
+      maxHeight: 1600,
     );
     if (picked == null) {
       return;
@@ -460,6 +465,10 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
     final XFile? picked = await _imagePicker.pickImage(
       source: source,
       imageQuality: 90,
+      // Large enough that permit text stays readable when zoomed, without
+      // uploading a 4000 px camera original.
+      maxWidth: 2400,
+      maxHeight: 2400,
     );
     if (picked == null || !mounted) {
       return;
@@ -1063,6 +1072,13 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
     );
   }
 
+  /// Thumbnails are 92 px; photos are decoded at that size rather than
+  /// their 4000 px camera size so the dialog stays quick to open.
+  static const double _thumbnailSize = 92;
+
+  int _thumbnailCacheWidth(BuildContext context) =>
+      (_thumbnailSize * MediaQuery.devicePixelRatioOf(context)).round();
+
   Widget _buildPhotoThumbnail({
     required Widget image,
     required VoidCallback onRemove,
@@ -1071,7 +1087,11 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
       children: [
         ClipRRect(
           borderRadius: BorderRadius.circular(AppTheme.radius),
-          child: SizedBox(width: 92, height: 92, child: image),
+          child: SizedBox(
+            width: _thumbnailSize,
+            height: _thumbnailSize,
+            child: image,
+          ),
         ),
         Positioned(
           top: 4,
@@ -1113,12 +1133,16 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
             children: [
               for (final String url in _existingPhotoUrls)
                 _buildPhotoThumbnail(
-                  image: Image.network(url, fit: BoxFit.cover),
+                  image: SpNetworkImage(url, decodeWidth: _thumbnailSize),
                   onRemove: () => _removeExistingPhoto(url),
                 ),
               for (final File file in _newPhotoFiles)
                 _buildPhotoThumbnail(
-                  image: Image.file(file, fit: BoxFit.cover),
+                  image: Image.file(
+                    file,
+                    fit: BoxFit.cover,
+                    cacheWidth: _thumbnailCacheWidth(context),
+                  ),
                   onRemove: () => _removeNewPhoto(file),
                 ),
               if (canAddMore)
@@ -1174,12 +1198,16 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
             children: [
               for (final String url in _existingDocumentUrls)
                 _buildPhotoThumbnail(
-                  image: Image.network(url, fit: BoxFit.cover),
+                  image: SpNetworkImage(url, decodeWidth: _thumbnailSize),
                   onRemove: () => _removeExistingDocument(url),
                 ),
               for (final File file in _newDocumentFiles)
                 _buildPhotoThumbnail(
-                  image: Image.file(file, fit: BoxFit.cover),
+                  image: Image.file(
+                    file,
+                    fit: BoxFit.cover,
+                    cacheWidth: _thumbnailCacheWidth(context),
+                  ),
                   onRemove: () => _removeNewDocument(file),
                 ),
               if (canAddMore)

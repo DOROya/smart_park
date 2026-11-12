@@ -13,6 +13,7 @@ import '../../services/parking_receipt.dart' show ParkingReceipt;
 import '../../theme/app_theme.dart';
 import '../../utils/friendly_error.dart';
 import '../../widgets/smartpark_ui.dart';
+import '../../widgets/sp_image_gallery.dart';
 import '../../widgets/sp_network_image.dart';
 import 'driver_in_app_checkout_page.dart';
 import 'driver_paid_ticket_page.dart';
@@ -211,6 +212,7 @@ class _EstablishmentDetailPageState extends State<EstablishmentDetailPage>
               SpNetworkImage(
                 photoUrls.first,
                 errorIcon: Icons.local_parking_rounded,
+                decodeWidth: MediaQuery.sizeOf(context).width,
               )
             else
               PageView.builder(
@@ -218,7 +220,10 @@ class _EstablishmentDetailPageState extends State<EstablishmentDetailPage>
                 onPageChanged: (int index) =>
                     setState(() => _photoIndex = index),
                 itemBuilder: (BuildContext context, int index) =>
-                    SpNetworkImage(photoUrls[index]),
+                    SpNetworkImage(
+                      photoUrls[index],
+                      decodeWidth: MediaQuery.sizeOf(context).width,
+                    ),
               ),
             const IgnorePointer(
               child: DecoratedBox(
@@ -593,13 +598,19 @@ class _EstablishmentDetailPageState extends State<EstablishmentDetailPage>
             separatorBuilder: (_, _) => const SizedBox(width: 10),
             itemBuilder: (BuildContext context, int index) {
               return GestureDetector(
-                onTap: () => _showPhoto(photoUrls[index]),
+                onTap: () => showSpImageGallery(
+                  context,
+                  photoUrls,
+                  initialIndex: index,
+                  thumbnailWidth: 150,
+                ),
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(AppTheme.radiusLarge),
                   child: SpNetworkImage(
                     photoUrls[index],
                     width: 150,
                     height: 110,
+                    decodeWidth: 150,
                   ),
                 ),
               );
@@ -608,34 +619,6 @@ class _EstablishmentDetailPageState extends State<EstablishmentDetailPage>
         ),
         const SizedBox(height: 16),
       ],
-    );
-  }
-
-  void _showPhoto(String url) {
-    showDialog<void>(
-      context: context,
-      builder: (BuildContext viewerContext) {
-        return Dialog(
-          backgroundColor: Colors.black,
-          insetPadding: const EdgeInsets.all(12),
-          child: Stack(
-            children: [
-              InteractiveViewer(
-                maxScale: 5,
-                child: Center(child: SpNetworkImage(url, fit: BoxFit.contain)),
-              ),
-              Positioned(
-                top: 4,
-                right: 4,
-                child: IconButton(
-                  onPressed: () => Navigator.of(viewerContext).pop(),
-                  icon: const Icon(Icons.close_rounded, color: Colors.white),
-                ),
-              ),
-            ],
-          ),
-        );
-      },
     );
   }
 

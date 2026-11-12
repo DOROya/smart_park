@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 
 import '../../services/facility_status.dart';
+import '../../services/parking_pricing.dart';
 import '../../services/sales_report.dart';
 import '../../services/sales_report_pdf.dart'
     show SalesReportAudience, salesReportPeriod;
@@ -14,6 +15,8 @@ import '../../theme/app_theme.dart';
 import '../../widgets/smartpark_logo.dart';
 import '../../utils/friendly_error.dart';
 import '../../widgets/smartpark_ui.dart';
+import '../../widgets/sp_image_gallery.dart';
+import '../../widgets/sp_network_image.dart';
 import '../../widgets/sp_profile_view.dart';
 import '../../widgets/sp_reason_dropdowns.dart';
 import '../../widgets/sp_sales_report_card.dart';
@@ -297,40 +300,160 @@ class _AdminHomePageState extends State<AdminHomePage>
     }).toList();
   }
 
-  String _formatSingleRateVal(dynamic val) {
-    if (val is Map) {
-      final String initial = (val['initial'] ?? val['hourly'] ?? '-')
-          .toString();
-      final String succH = (val['succeedingHour'] ?? '').toString();
-      final String succD = (val['succeedingDaily'] ?? val['daily'] ?? '')
-          .toString();
-      final String weekly = (val['weekly'] ?? '').toString();
-      final String monthly = (val['monthly'] ?? '').toString();
-      String res = initial;
-      if (succH.isNotEmpty) res += ' (+$succH/hr)';
-      if (succD.isNotEmpty) res += ' ($succD/day)';
-      if (weekly.isNotEmpty) res += ' ($weekly/week)';
-      if (monthly.isNotEmpty) res += ' ($monthly/month)';
-      return res;
+  String _rateAmount(double amount) => amount % 1 == 0
+      ? '₱${amount.toStringAsFixed(0)}'
+      : '₱${amount.toStringAsFixed(2)}';
+
+  /// One card per vehicle type: its slot count and each rate on its own
+  /// line ("First 2 hrs  ₱30", "Each extra hour  ₱10"), so admins can read
+  /// the pricing at a glance instead of parsing "30 (+10/hr) (200/day)".
+  Widget _buildVehicleRates(Map<String, dynamic> data) {
+    final dynamic rawRates = data['rates'] ?? data['ratesByType'];
+    final Map<dynamic, dynamic> rates = rawRates is Map
+        ? rawRates
+        : <dynamic, dynamic>{};
+    final Map<dynamic, dynamic> slotCounts = data['slotCounts'] is Map
+        ? data['slotCounts'] as Map<dynamic, dynamic>
+        : <dynamic, dynamic>{};
+
+    final List<String> vehicleKeys = <String>[
+      'car',
+      'motorcycle',
+      for (final dynamic key in <dynamic>{...slotCounts.keys, ...rates.keys})
+        if (key is String && key != 'car' && key != 'motorcycle') key,
+    ];
+
+    final List<Widget> cards = <Widget>[
+      for (final String key in vehicleKeys)
+        if (rates[key] != null || ((slotCounts[key] as num?) ?? 0) > 0)
+          _buildVehicleRateCard(
+            vehicleKey: key,
+            slots: ((slotCounts[key] as num?) ?? 0).toInt(),
+            rates: VehicleRates.from(rates[key]),
+          ),
+    ];
+
+    if (cards.isEmpty) {
+      final String text = rawRates is String ? rawRates.trim() : '';
+      return _buildReviewField('Rates', text.isEmpty ? 'Not provided' : text);
     }
-    return (val ?? '-').toString();
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: LayoutBuilder(
+        builder: (BuildContext context, BoxConstraints box) {
+          if (box.maxWidth < 440 || cards.length == 1) {
+            return Column(
+              children: [
+                for (int i = 0; i < cards.length; i++) ...[
+                  if (i > 0) const SizedBox(height: 8),
+                  cards[i],
+                ],
+              ],
+            );
+          }
+          return IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                for (int i = 0; i < cards.length; i++) ...[
+                  if (i > 0) const SizedBox(width: 8),
+                  Expanded(child: cards[i]),
+                ],
+              ],
+            ),
+          );
+        },
+      ),
+    );
   }
 
-  String _formatRates(dynamic value) {
-    if (value == null) {
-      return 'Not provided';
-    }
-    if (value is String) {
-      final String text = value.trim();
-      return text.isEmpty ? 'Not provided' : text;
-    }
-    if (value is Map) {
-      final Map<dynamic, dynamic> map = value;
-      final String car = _formatSingleRateVal(map['car']);
-      final String motorcycle = _formatSingleRateVal(map['motorcycle']);
-      return 'Car: $car, Motorcycle: $motorcycle';
-    }
-    return value.toString();
+  Widget _buildVehicleRateCard({
+    required String vehicleKey,
+    required int slots,
+    required VehicleRates rates,
+  }) {
+    final (IconData icon, String label) = switch (vehicleKey) {
+      'car' => (Icons.directions_car_rounded, 'Car'),
+      'motorcycle' => (Icons.two_wheeler_rounded, 'Motorcycle'),
+      _ => (
+        Icons.local_parking_rounded,
+        '${vehicleKey[0].toUpperCase()}${vehicleKey.substring(1)}',
+      ),
+    };
+    final List<(String, double)> lines = <(String, double)>[
+      if (rates.initial > 0) ('First $spBaseStayLabel', rates.initial),
+      if (rates.succeedingHour > 0) ('Each extra hour', rates.succeedingHour),
+      if (rates.succeedingDaily > 0) ('Per day', rates.succeedingDaily),
+      if (rates.weekly > 0) ('Per week', rates.weekly),
+      if (rates.monthly > 0) ('Per month', rates.monthly),
+    ];
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppTheme.surfaceAlt,
+        borderRadius: BorderRadius.circular(AppTheme.radius),
+        border: Border.all(color: AppTheme.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 18, color: AppTheme.textDark),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
+                    color: AppTheme.textDark,
+                  ),
+                ),
+              ),
+              SpChip(
+                label: '$slots ${slots == 1 ? 'slot' : 'slots'}',
+                color: spExitColor,
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          if (lines.isEmpty)
+            Text(
+              'No rates set',
+              style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
+            )
+          else
+            for (final (String name, double amount) in lines)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 3),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        name,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: AppTheme.textSecondary,
+                        ),
+                      ),
+                    ),
+                    Text(
+                      _rateAmount(amount),
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: AppTheme.textDark,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+        ],
+      ),
+    );
   }
 
   /// Recomputes `stats_daily` from every payment on the server. Needed once
@@ -473,34 +596,6 @@ class _AdminHomePageState extends State<AdminHomePage>
     return controller.stream;
   }
 
-  void _showDocumentViewer(String url) {
-    showDialog<void>(
-      context: context,
-      builder: (BuildContext viewerContext) {
-        return Dialog(
-          backgroundColor: Colors.black,
-          insetPadding: const EdgeInsets.all(12),
-          child: Stack(
-            children: [
-              InteractiveViewer(
-                maxScale: 5,
-                child: Center(child: Image.network(url, fit: BoxFit.contain)),
-              ),
-              Positioned(
-                top: 4,
-                right: 4,
-                child: IconButton(
-                  onPressed: () => Navigator.of(viewerContext).pop(),
-                  icon: const Icon(Icons.close_rounded, color: Colors.white),
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
   String _formatReviewDate(DateTime date) {
     const List<String> months = <String>[
       'Jan',
@@ -637,42 +732,28 @@ class _AdminHomePageState extends State<AdminHomePage>
     );
   }
 
+  /// Thumbnails that open a full-screen viewer with back and next, so every
+  /// photo can be checked without closing the viewer in between.
   Widget _buildImageGrid(List<String> urls, {double size = 84}) {
     return Wrap(
       spacing: 8,
       runSpacing: 8,
       children: [
-        for (final String url in urls)
+        for (int i = 0; i < urls.length; i++)
           GestureDetector(
-            onTap: () => _showDocumentViewer(url),
+            onTap: () => showSpImageGallery(
+              context,
+              urls,
+              initialIndex: i,
+              thumbnailWidth: size,
+            ),
             child: ClipRRect(
               borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
-              child: SizedBox(
+              child: SpNetworkImage(
+                urls[i],
                 width: size,
                 height: size,
-                child: Image.network(
-                  url,
-                  fit: BoxFit.cover,
-                  loadingBuilder: (_, Widget child, ImageChunkEvent? progress) {
-                    if (progress == null) {
-                      return child;
-                    }
-                    return ColoredBox(
-                      color: AppTheme.surfaceAlt,
-                      child: Center(
-                        child: SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        ),
-                      ),
-                    );
-                  },
-                  errorBuilder: (_, _, _) => ColoredBox(
-                    color: AppTheme.border,
-                    child: Icon(Icons.broken_image_rounded),
-                  ),
-                ),
+                decodeWidth: size,
               ),
             ),
           ),
@@ -984,11 +1065,6 @@ class _AdminHomePageState extends State<AdminHomePage>
             );
             final String previousRejection =
                 ((data['rejectionReason'] as String?) ?? '').trim();
-            final Map<dynamic, dynamic> rates =
-                (data['rates'] ?? data['ratesByType']) is Map
-                ? (data['rates'] ?? data['ratesByType'])
-                      as Map<dynamic, dynamic>
-                : <dynamic, dynamic>{};
             final List<String> photoUrls = _stringList(data['photoUrls']);
             final List<String> documentUrls = _stringList(
               data['businessDocumentUrls'],
@@ -1287,21 +1363,16 @@ class _AdminHomePageState extends State<AdminHomePage>
                                         'Operating Hours',
                                         _readText(data['operatingHours']),
                                       ),
-                                      _buildReviewField(
-                                        'Slots',
-                                        'Car: ${((data['slotCounts'] as Map?)?['car'] as num?) ?? 0}\n'
-                                            'Motorcycle: ${((data['slotCounts'] as Map?)?['motorcycle'] as num?) ?? 0}',
+                                      Text(
+                                        'Slots & Rates',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: AppTheme.textMuted,
+                                          fontWeight: FontWeight.w600,
+                                        ),
                                       ),
-                                      _buildReviewField(
-                                        'Rates',
-                                        rates.isEmpty
-                                            ? _formatRates(
-                                                data['rates'] ??
-                                                    data['ratesByType'],
-                                              )
-                                            : 'Car: ${_formatSingleRateVal(rates['car'])}\n'
-                                                  'Motorcycle: ${_formatSingleRateVal(rates['motorcycle'])}',
-                                      ),
+                                      const SizedBox(height: 6),
+                                      _buildVehicleRates(data),
                                       _buildReviewField(
                                         'Policies',
                                         _readText(data['policies']),
