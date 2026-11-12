@@ -101,6 +101,8 @@ class DriverPaidTicketPage extends StatelessWidget {
                             data: qrData,
                             size: 210,
                             backgroundColor: Colors.white,
+                            eyeStyle: kTicketQrEyeStyle,
+                            dataModuleStyle: kTicketQrModuleStyle,
                           ),
                         ),
                         const SizedBox(height: 14),

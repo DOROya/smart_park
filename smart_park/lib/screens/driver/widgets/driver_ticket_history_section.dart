@@ -14,7 +14,8 @@ import '../../../theme/app_theme.dart';
 import '../../../utils/friendly_error.dart';
 import '../../../widgets/smartpark_ui.dart';
 import '../../../widgets/sp_loading.dart';
-import '../../../widgets/sp_max_brightness.dart';
+import '../../../widgets/sp_max_brightness.dart'
+    show SpMaxBrightness, kTicketQrEyeStyle, kTicketQrModuleStyle;
 import '../../../widgets/sp_overtime.dart';
 import '../../../widgets/sp_receipt_button.dart';
 import '../../../widgets/sp_save_qr_button.dart';
@@ -507,8 +508,10 @@ class _ActiveTicketCard extends StatelessWidget {
                 const SizedBox(height: 16),
                 Container(
                   padding: const EdgeInsets.all(10),
+                  // Always white, even in dark mode: scanners need a light
+                  // border around the code.
                   decoration: BoxDecoration(
-                    color: AppTheme.surface,
+                    color: Colors.white,
                     border: Border.all(color: spCardBorder),
                     borderRadius: BorderRadius.circular(AppTheme.radiusLarge),
                   ),
@@ -517,6 +520,8 @@ class _ActiveTicketCard extends StatelessWidget {
                       data: _resolveTicketQrPayload(doc),
                       size: 190,
                       backgroundColor: Colors.white,
+                      eyeStyle: kTicketQrEyeStyle,
+                      dataModuleStyle: kTicketQrModuleStyle,
                     ),
                   ),
                 ),
