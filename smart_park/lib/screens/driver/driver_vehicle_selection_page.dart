@@ -118,48 +118,53 @@ class _DriverVehicleSelectionPageState
     final VehicleRates rates = VehicleRates.from(
       widget.ratesByType[_selectedVehicleType],
     );
-    final double initial = rates.initial;
-    final double succHour = rates.succeedingHour;
-    final double succDaily = rates.succeedingDaily;
-
     final List<DriverPackageOption> options = <DriverPackageOption>[];
+    // Plans that can't reach the online payment minimum are left out; the
+    // rest start at the fewest units that reach it.
+    int? minFor(String plan) => minPackageDuration(plan: plan, rates: rates);
 
-    if (initial > 0) {
+    final int? baseMin = minFor('base');
+    if (baseMin != null) {
       options.add(
         DriverPackageOption(
           key: 'base',
           label: 'Base Package',
           icon: Icons.timer_outlined,
-          initialAmount: initial,
+          initialAmount: rates.initial,
         ),
       );
     }
 
-    if (initial > 0 && succHour > 0) {
+    final int? extendedMin = minFor('extended');
+    if (extendedMin != null) {
       options.add(
         DriverPackageOption(
           key: 'extended',
           label: 'Extended Stay',
           icon: Icons.more_time_outlined,
-          initialAmount: initial,
-          succeedingHourAmount: succHour,
+          initialAmount: rates.initial,
+          succeedingHourAmount: rates.succeedingHour,
+          minDuration: extendedMin,
         ),
       );
     }
 
-    if (succDaily > 0) {
+    final int? dailyMin = minFor('daily');
+    if (dailyMin != null) {
       options.add(
         DriverPackageOption(
           key: 'daily',
           label: 'Daily Package',
           icon: Icons.calendar_today_outlined,
           initialAmount: 0,
-          dailyAmount: succDaily,
+          dailyAmount: rates.succeedingDaily,
+          minDuration: dailyMin,
         ),
       );
     }
 
-    if (rates.offersWeekly) {
+    final int? weeklyMin = minFor('weekly');
+    if (weeklyMin != null) {
       options.add(
         DriverPackageOption(
           key: 'weekly',
@@ -167,11 +172,13 @@ class _DriverVehicleSelectionPageState
           icon: Icons.date_range_outlined,
           initialAmount: 0,
           weeklyAmount: rates.weekly,
+          minDuration: weeklyMin,
         ),
       );
     }
 
-    if (rates.offersMonthly) {
+    final int? monthlyMin = minFor('monthly');
+    if (monthlyMin != null) {
       options.add(
         DriverPackageOption(
           key: 'monthly',
@@ -179,6 +186,7 @@ class _DriverVehicleSelectionPageState
           icon: Icons.calendar_month_outlined,
           initialAmount: 0,
           monthlyAmount: rates.monthly,
+          minDuration: monthlyMin,
         ),
       );
     }
@@ -188,9 +196,13 @@ class _DriverVehicleSelectionPageState
         return;
       }
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
+        SnackBar(
           content: Text(
-            'No parking packages are configured for this vehicle type.',
+            rates.offersBase || rates.offersDaily
+                ? 'This vehicle type has no package of at least '
+                      '₱${kMinOnlinePayment.toStringAsFixed(0)}, the online '
+                      'payment minimum. Please pay at the gate.'
+                : 'No parking packages are configured for this vehicle type.',
           ),
         ),
       );

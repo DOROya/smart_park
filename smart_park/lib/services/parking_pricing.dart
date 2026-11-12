@@ -119,6 +119,40 @@ double packageTotal({
   }
 }
 
+/// PayMongo's smallest online payment, in pesos. Must match the check in
+/// functions/src/checkout.js.
+const double kMinOnlinePayment = 20;
+
+/// The fewest units (succeeding hours, days, weeks or months) a plan needs
+/// so its total reaches [kMinOnlinePayment], or null when the plan can't be
+/// paid online at all (not offered, or still under the minimum at its
+/// largest duration). `base` has no duration, so it's 1 or null.
+///
+/// A ₱10 two-hour motorcycle stay with ₱10 succeeding hours can't be paid
+/// alone, but extended by 1 hour it is ₱20 for 3 hours.
+int? minPackageDuration({required String plan, required VehicleRates rates}) {
+  int? fewestUnits(double alreadyPaid, double perUnit) {
+    if (perUnit <= 0) return null;
+    // The tiny epsilon keeps float noise (2.0000000001) from adding a unit.
+    final int needed = ((kMinOnlinePayment - alreadyPaid) / perUnit - 1e-9)
+        .ceil();
+    final int units = needed < 1 ? 1 : needed;
+    return units <= (kMaxPackageDuration[plan] ?? 1) ? units : null;
+  }
+
+  return switch (plan) {
+    'base' => rates.initial >= kMinOnlinePayment ? 1 : null,
+    'extended' =>
+      rates.initial > 0
+          ? fewestUnits(rates.initial, rates.succeedingHour)
+          : null,
+    'daily' => fewestUnits(0, rates.succeedingDaily),
+    'weekly' => fewestUnits(0, rates.weekly),
+    'monthly' => fewestUnits(0, rates.monthly),
+    _ => null,
+  };
+}
+
 /// Hours of parking a ticket already paid for.
 int includedStayHours({required String plan, required int duration}) {
   final int count = duration < 1 ? 1 : duration;
