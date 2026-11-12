@@ -71,6 +71,7 @@ class _AdminHomePageState extends State<AdminHomePage>
 
   bool _railExtended = false;
   bool _rebuildingStats = false;
+  bool _compressingPhotos = false;
 
   /// How many facilities each review panel shows, keyed by panel title.
   final Map<String, int> _facilityPanelLimits = <String, int>{};
@@ -488,6 +489,54 @@ class _AdminHomePageState extends State<AdminHomePage>
       );
     } finally {
       if (mounted) setState(() => _rebuildingStats = false);
+    }
+  }
+
+  /// Shrinks facility photos and documents uploaded before the
+  /// compressFacilityPhoto function existed. Safe to run again.
+  Future<void> _compressExistingPhotos() async {
+    if (_compressingPhotos) return;
+    setState(() => _compressingPhotos = true);
+    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+    try {
+      final HttpsCallableResult<dynamic> result =
+          await FirebaseFunctions.instanceFor(region: 'asia-southeast1')
+              .httpsCallable(
+                'compressExistingPhotos',
+                options: HttpsCallableOptions(
+                  timeout: const Duration(minutes: 9),
+                ),
+              )
+              .call<dynamic>();
+      final Map<dynamic, dynamic> data = result.data is Map
+          ? result.data as Map<dynamic, dynamic>
+          : <dynamic, dynamic>{};
+      final int compressed = (data['compressed'] as num?)?.toInt() ?? 0;
+      final double savedMb =
+          (((data['bytesBefore'] as num?) ?? 0) -
+              ((data['bytesAfter'] as num?) ?? 0)) /
+          (1024 * 1024);
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            compressed == 0
+                ? 'All photos are already compressed.'
+                : 'Compressed $compressed '
+                      '${compressed == 1 ? 'photo' : 'photos'}, saving '
+                      '${savedMb.toStringAsFixed(1)} MB.',
+          ),
+        ),
+      );
+    } on FirebaseFunctionsException catch (error) {
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            friendlyError(error, fallback: 'Unable to compress photos.'),
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _compressingPhotos = false);
     }
   }
 
