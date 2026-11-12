@@ -249,7 +249,7 @@ class _DriverHomeSectionState extends State<DriverHomeSection>
         DriverEstablishmentService.buildUserLocationCircle(
           widget.currentPosition,
         );
-    if (widget.currentPosition != null) {
+    if (widget.currentPosition != null && !_searching) {
       circles.add(
         Circle(
           circleId: const CircleId('selected_radius_coverage_alt'),
@@ -478,8 +478,11 @@ class _DriverHomeSectionState extends State<DriverHomeSection>
               ),
             ],
           ),
-          const SizedBox(height: 8),
-          _buildRadiusSelector(),
+          // A search ignores the radius, so the picker would only confuse.
+          if (!_searching) ...[
+            const SizedBox(height: 8),
+            _buildRadiusSelector(),
+          ],
         ],
       ),
     );
