@@ -4,6 +4,18 @@ import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
+import 'package:qr_flutter/qr_flutter.dart';
+
+/// Ticket QR colours: pure black on white whatever the app theme, which is
+/// what gate scanners read most reliably.
+const QrEyeStyle kTicketQrEyeStyle = QrEyeStyle(
+  eyeShape: QrEyeShape.square,
+  color: Color(0xFF000000),
+);
+const QrDataModuleStyle kTicketQrModuleStyle = QrDataModuleStyle(
+  dataModuleShape: QrDataModuleShape.square,
+  color: Color(0xFF000000),
+);
 
 const MethodChannel _screen = MethodChannel('smartpark/screen');
 

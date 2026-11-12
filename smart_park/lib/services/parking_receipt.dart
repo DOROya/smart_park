@@ -6,6 +6,7 @@ library;
 
 import 'dart:async';
 import 'dart:typed_data';
+import 'dart:ui' as ui;
 import 'dart:ui' show Rect;
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -230,15 +231,40 @@ Future<bool> exportParkingReceiptAs(
   return true;
 }
 
-/// The receipt's page rendered as a PNG, sharp enough to read when zoomed
-/// (A5 at 220 dpi is about 1280 x 1820 px).
+/// The first page of [pdf] rendered as a PNG (the receipt at 220 dpi is
+/// about 1280 x 1820 px, sharp enough to read when zoomed).
+///
+/// The raster is transparent wherever the page draws nothing, which a
+/// dark-mode gallery shows as black, hiding dark text and the QR code. So
+/// the page is flattened onto white: the image always looks like paper.
 Future<Uint8List> parkingReceiptPng(Uint8List pdf, {double dpi = 220}) async {
   await for (final PdfRaster page in Printing.raster(
     pdf,
     pages: <int>[0],
     dpi: dpi,
   )) {
-    return page.toPng();
+    final ui.Image raster = await page.toImage();
+    final ui.PictureRecorder recorder = ui.PictureRecorder();
+    final ui.Canvas canvas = ui.Canvas(recorder);
+    canvas.drawRect(
+      ui.Rect.fromLTWH(0, 0, page.width.toDouble(), page.height.toDouble()),
+      ui.Paint()..color = const ui.Color(0xFFFFFFFF),
+    );
+    canvas.drawImage(raster, ui.Offset.zero, ui.Paint());
+    final ui.Image flat = await recorder.endRecording().toImage(
+      page.width,
+      page.height,
+    );
+    raster.dispose();
+    try {
+      final ByteData? png = await flat.toByteData(
+        format: ui.ImageByteFormat.png,
+      );
+      if (png == null) throw StateError('Could not encode the receipt image.');
+      return png.buffer.asUint8List();
+    } finally {
+      flat.dispose();
+    }
   }
   throw StateError('The receipt has no page to render.');
 }
