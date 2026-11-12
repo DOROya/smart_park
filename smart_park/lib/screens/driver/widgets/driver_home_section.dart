@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
@@ -44,6 +46,57 @@ class _DriverHomeSectionState extends State<DriverHomeSection>
   double _selectedRadiusKm = 1;
 
   bool get _searching => widget.searchQuery.trim().isNotEmpty;
+
+  static const double _collapsedSheetSize = 0.1;
+  static const double _resultsSheetSize = 0.5;
+
+  final DraggableScrollableController _sheetController =
+      DraggableScrollableController();
+
+  /// Waits for the driver to stop typing before popping up the results.
+  Timer? _searchPopUpTimer;
+
+  @override
+  void didUpdateWidget(covariant DriverHomeSection oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.searchQuery == oldWidget.searchQuery) return;
+    _searchPopUpTimer?.cancel();
+    if (_searching) {
+      _searchPopUpTimer = Timer(
+        const Duration(milliseconds: 700),
+        _popUpSearchResults,
+      );
+    } else {
+      // Search cleared: tuck the sheet back down so the map is clear.
+      _moveSheetTo(_collapsedSheetSize);
+    }
+  }
+
+  @override
+  void dispose() {
+    _searchPopUpTimer?.cancel();
+    _sheetController.dispose();
+    super.dispose();
+  }
+
+  /// Raises the sheet so the search results (or "No Parking Space Found")
+  /// show, unless the driver already pulled it up further.
+  void _popUpSearchResults() {
+    _searchPopUpTimer?.cancel();
+    if (!_searching || !_sheetController.isAttached) return;
+    if (_sheetController.size < _resultsSheetSize) {
+      _moveSheetTo(_resultsSheetSize);
+    }
+  }
+
+  void _moveSheetTo(double size) {
+    if (!mounted || !_sheetController.isAttached) return;
+    _sheetController.animateTo(
+      size,
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeOutCubic,
+    );
+  }
 
   String _formatKm(double km) => km.toStringAsFixed(km % 1 == 0 ? 0 : 1);
 
@@ -247,6 +300,7 @@ class _DriverHomeSectionState extends State<DriverHomeSection>
             child: TextField(
               controller: widget.searchController,
               textInputAction: TextInputAction.search,
+              onSubmitted: (_) => _popUpSearchResults(),
               decoration: InputDecoration(
                 hintText: 'Search parking by name or address',
                 prefixIcon: const Icon(Icons.search_rounded),
@@ -268,13 +322,18 @@ class _DriverHomeSectionState extends State<DriverHomeSection>
         ),
         Positioned.fill(
           child: DraggableScrollableSheet(
+            controller: _sheetController,
             // Starts collapsed to just the handle + title so the map stays
             // clear; drag up for filters and the list.
-            initialChildSize: 0.1,
-            minChildSize: 0.1,
+            initialChildSize: _collapsedSheetSize,
+            minChildSize: _collapsedSheetSize,
             maxChildSize: 0.85,
             snap: true,
-            snapSizes: const <double>[0.1, 0.5, 0.85],
+            snapSizes: const <double>[
+              _collapsedSheetSize,
+              _resultsSheetSize,
+              0.85,
+            ],
             builder: (BuildContext context, ScrollController scrollController) {
               return DecoratedBox(
                 decoration: BoxDecoration(
@@ -321,13 +380,13 @@ class _DriverHomeSectionState extends State<DriverHomeSection>
                             icon: Icons.search_off_rounded,
                             message: _searching
                                 ? widget.openNowOnly
-                                      ? 'No open parking matches "${widget.searchQuery}". '
+                                      ? 'No Parking Space Found. '
                                             'Try turning off "Open now".'
-                                      : 'No parking matches "${widget.searchQuery}".'
+                                      : 'No Parking Space Found'
                                 : widget.openNowOnly
-                                ? 'No open parking within ${_formatKm(_selectedRadiusKm)} km. '
+                                ? 'No Parking Space Found within ${_formatKm(_selectedRadiusKm)} km. '
                                       'Try a wider radius or turn off "Open now".'
-                                : 'No parking found within ${_formatKm(_selectedRadiusKm)} km. '
+                                : 'No Parking Space Found within ${_formatKm(_selectedRadiusKm)} km. '
                                       'Try a wider radius.',
                           ),
                         ),
