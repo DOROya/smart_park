@@ -839,9 +839,23 @@ class _DriverParkingCard extends StatelessWidget {
                               int capacity,
                               int? occupied,
                               String what,
-                            ) => occupied == null
-                                ? '$capacity $what slots'
-                                : '${(capacity - occupied).clamp(0, capacity)}/$capacity $what free';
+                            ) {
+                              // Plain wording: "8 car slots free" or "Car
+                              // slots full"; total capacity is on the
+                              // details page.
+                              if (occupied == null) {
+                                return '$capacity $what slots';
+                              }
+                              final int free = (capacity - occupied).clamp(
+                                0,
+                                capacity,
+                              );
+                              if (free == 0) {
+                                return '${what[0].toUpperCase()}${what.substring(1)} slots full';
+                              }
+                              return '$free $what ${free == 1 ? 'slot' : 'slots'} free';
+                            }
+
                             return Wrap(
                               spacing: 6,
                               runSpacing: 6,
@@ -857,7 +871,7 @@ class _DriverParkingCard extends StatelessWidget {
                                     slots(
                                       motorcycleSlots,
                                       live?.motorcycle,
-                                      'moto',
+                                      'motorcycle',
                                     ),
                                   ),
                                 if (hours.isNotEmpty)
