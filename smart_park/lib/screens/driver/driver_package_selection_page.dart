@@ -14,6 +14,7 @@ class DriverPackageOption {
     this.dailyAmount = 0.0,
     this.weeklyAmount = 0.0,
     this.monthlyAmount = 0.0,
+    this.minDuration = 1,
   });
 
   final String key;
@@ -24,6 +25,10 @@ class DriverPackageOption {
   final double dailyAmount;
   final double weeklyAmount;
   final double monthlyAmount;
+
+  /// Fewest units the stepper allows, so the total reaches the online
+  /// payment minimum (see `minPackageDuration`).
+  final int minDuration;
 
   /// The price of one unit of this package: the base stay, or one day, week
   /// or month.
@@ -79,7 +84,12 @@ class _DriverPackageSelectionPageState
   void initState() {
     super.initState();
     _selectedPlan = widget.options.first.key;
+    _duration = widget.options.first.minDuration;
   }
+
+  DriverPackageOption get _selectedOption => widget.options.firstWhere(
+    (DriverPackageOption option) => option.key == _selectedPlan,
+  );
 
   String _amountText(double amount) {
     return amount % 1 == 0
@@ -210,7 +220,7 @@ class _DriverPackageSelectionPageState
           borderRadius: BorderRadius.circular(AppTheme.radiusLarge),
           onTap: () => setState(() {
             _selectedPlan = option.key;
-            _duration = 1;
+            _duration = option.minDuration;
           }),
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 150),
@@ -324,6 +334,7 @@ class _DriverPackageSelectionPageState
   Widget _buildDurationStepper() {
     final int max = _maxDuration(_selectedPlan);
     final String maxUnit = _durationUnit(_selectedPlan, max);
+    final int min = _selectedOption.minDuration;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(16),
@@ -349,7 +360,7 @@ class _DriverPackageSelectionPageState
               _stepButton(
                 Icons.remove_rounded,
                 'Less',
-                _duration > 1 ? () => setState(() => _duration--) : null,
+                _duration > min ? () => setState(() => _duration--) : null,
               ),
               Expanded(
                 child: Column(
@@ -383,9 +394,15 @@ class _DriverPackageSelectionPageState
           ),
           const SizedBox(height: 10),
           Text(
-            _duration >= max
-                ? 'Maximum of $max $maxUnit.'
-                : 'Up to $max $maxUnit.',
+            [
+              if (min > 1)
+                'At least $min ${_durationUnit(_selectedPlan, min)} to reach '
+                    'the ${_amountText(kMinOnlinePayment)} online payment '
+                    'minimum.',
+              _duration >= max
+                  ? 'Maximum of $max $maxUnit.'
+                  : 'Up to $max $maxUnit.',
+            ].join(' '),
             textAlign: TextAlign.center,
             style: TextStyle(color: AppTheme.textMuted, fontSize: 11),
           ),

@@ -43,6 +43,8 @@ class _DriverHomeSectionState extends State<DriverHomeSection>
 
   double _selectedRadiusKm = 1;
 
+  bool get _searching => widget.searchQuery.trim().isNotEmpty;
+
   String _formatKm(double km) => km.toStringAsFixed(km % 1 == 0 ? 0 : 1);
 
   double _distanceMeters(Map<String, dynamic> establishment) {
@@ -170,10 +172,13 @@ class _DriverHomeSectionState extends State<DriverHomeSection>
           currentPosition: widget.currentPosition,
         );
     if (widget.currentPosition != null) {
-      displayedDocs.removeWhere(
-        (Map<String, dynamic> establishment) =>
-            _distanceMeters(establishment) > _selectedRadiusKm * 1000,
-      );
+      // A search looks through every registered parking, not just nearby.
+      if (!_searching) {
+        displayedDocs.removeWhere(
+          (Map<String, dynamic> establishment) =>
+              _distanceMeters(establishment) > _selectedRadiusKm * 1000,
+        );
+      }
       // Nearest first unless the driver picked another sort.
       if (widget.sortOption == DriverSortOption.none) {
         displayedDocs.sort(
@@ -314,7 +319,12 @@ class _DriverHomeSectionState extends State<DriverHomeSection>
                           padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
                           child: SpEmptyState(
                             icon: Icons.search_off_rounded,
-                            message: widget.openNowOnly
+                            message: _searching
+                                ? widget.openNowOnly
+                                      ? 'No open parking matches "${widget.searchQuery}". '
+                                            'Try turning off "Open now".'
+                                      : 'No parking matches "${widget.searchQuery}".'
+                                : widget.openNowOnly
                                 ? 'No open parking within ${_formatKm(_selectedRadiusKm)} km. '
                                       'Try a wider radius or turn off "Open now".'
                                 : 'No parking found within ${_formatKm(_selectedRadiusKm)} km. '
@@ -376,12 +386,14 @@ class _DriverHomeSectionState extends State<DriverHomeSection>
           ),
           const SizedBox(height: 12),
           SpSectionLabel(
-            'Nearby Parking',
+            _searching ? 'Search Results' : 'Nearby Parking',
             trailing: SpChip(label: '$count found', color: spExitColor),
           ),
           const SizedBox(height: 2),
           Text(
-            widget.currentPosition == null
+            _searching
+                ? 'All registered parking matching "${widget.searchQuery}".'
+                : widget.currentPosition == null
                 ? 'Turn on location to see parking around you.'
                 : 'Within ${_formatKm(_selectedRadiusKm)} km of you. Tap a card for details.',
             style: TextStyle(fontSize: 12, color: AppTheme.textMuted),

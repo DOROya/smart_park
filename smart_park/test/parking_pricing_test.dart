@@ -256,4 +256,68 @@ void main() {
       );
     });
   });
+
+  group('minPackageDuration (PHP 20 online minimum)', () {
+    const VehicleRates motorcycle = VehicleRates(
+      initial: 10,
+      succeedingHour: 10,
+      succeedingDaily: 0,
+    );
+
+    test('a PHP 10 base stay alone cannot be paid online', () {
+      expect(minPackageDuration(plan: 'base', rates: motorcycle), isNull);
+    });
+
+    test('PHP 10 for 2 hours extends by 1 hour to PHP 20 for 3 hours', () {
+      final int? hours = minPackageDuration(
+        plan: 'extended',
+        rates: motorcycle,
+      );
+      expect(hours, 1);
+      expect(includedStayHours(plan: 'extended', duration: hours!), 3);
+      expect(
+        packageTotal(
+          plan: 'extended',
+          initialAmount: 10,
+          succeedingHourAmount: 10,
+          duration: hours,
+        ),
+        20,
+      );
+    });
+
+    test('cheaper succeeding hours need more of them', () {
+      const VehicleRates rates = VehicleRates(
+        initial: 10,
+        succeedingHour: 5,
+        succeedingDaily: 8,
+      );
+      expect(minPackageDuration(plan: 'extended', rates: rates), 2);
+      expect(minPackageDuration(plan: 'daily', rates: rates), 3);
+    });
+
+    test('rates already at the minimum start at one unit', () {
+      const VehicleRates car = VehicleRates(
+        initial: 40,
+        succeedingHour: 20,
+        succeedingDaily: 200,
+        weekly: 1000,
+      );
+      expect(minPackageDuration(plan: 'base', rates: car), 1);
+      expect(minPackageDuration(plan: 'extended', rates: car), 1);
+      expect(minPackageDuration(plan: 'daily', rates: car), 1);
+      expect(minPackageDuration(plan: 'weekly', rates: car), 1);
+      expect(minPackageDuration(plan: 'monthly', rates: car), isNull);
+    });
+
+    test('a plan that cannot reach the minimum is left out', () {
+      const VehicleRates rates = VehicleRates(
+        initial: 5,
+        succeedingHour: 1,
+        succeedingDaily: 0,
+      );
+      // 5 + 12 x 1 = 17, still under PHP 20 at the 12-hour cap.
+      expect(minPackageDuration(plan: 'extended', rates: rates), isNull);
+    });
+  });
 }
