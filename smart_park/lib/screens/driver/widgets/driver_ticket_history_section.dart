@@ -19,7 +19,9 @@ import '../../../widgets/sp_max_brightness.dart'
 import '../../../widgets/sp_overtime.dart';
 import '../../../widgets/sp_receipt_button.dart';
 import '../../../widgets/sp_save_qr_button.dart';
+import '../../../widgets/sp_ticket_cost.dart' show spPackageParts;
 import '../../../widgets/sp_vehicle_type.dart';
+import '../driver_parking_pass_page.dart';
 
 /// Rebuilds a scanner-compatible QR payload for tickets saved before the QR
 /// string was persisted. The gate scanner requires JSON containing at least
@@ -216,6 +218,20 @@ class _DriverTicketHistorySectionState extends State<DriverTicketHistorySection>
           subtitle: 'Show the QR code to gate staff on entry and exit.',
         ),
         const SizedBox(height: 16),
+        _TemporaryQrList(
+          stream: cachedStream(
+            'passes_${FirebaseAuth.instance.currentUser?.uid}',
+            () => FirebaseFirestore.instance
+                .collection('parking_checkouts')
+                .where(
+                  'driverId',
+                  isEqualTo: FirebaseAuth.instance.currentUser?.uid,
+                )
+                .where('kind', isEqualTo: 'gate_pass')
+                .where('status', whereIn: <String>['awaiting_gate', 'pending'])
+                .snapshots(),
+          ),
+        ),
         if (snapshot.hasError)
           const SpEmptyState(
             icon: Icons.error_outline_rounded,
@@ -228,7 +244,7 @@ class _DriverTicketHistorySectionState extends State<DriverTicketHistorySection>
             icon: Icons.confirmation_number_outlined,
             message:
                 'No parking tickets yet. Pick a parking spot on the '
-                'Home tab to buy one.',
+                'Home tab to get a temporary QR, then pay at the gate.',
           )
         else ...[
           const SpSectionLabel('Active'),
@@ -277,6 +293,158 @@ class _DriverTicketHistorySectionState extends State<DriverTicketHistorySection>
           ],
         ],
       ],
+    );
+  }
+}
+
+/// Unpaid temporary QRs, paid at the gate. Expired ones are left out; the
+/// server deletes them after a while.
+class _TemporaryQrList extends StatelessWidget {
+  const _TemporaryQrList({required this.stream});
+
+  final Stream<QuerySnapshot<Map<String, dynamic>>> stream;
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: stream,
+      builder: (BuildContext context, snapshot) {
+        final DateTime now = DateTime.now();
+        final List<QueryDocumentSnapshot<Map<String, dynamic>>> passes =
+            (snapshot.data?.docs ??
+                    <QueryDocumentSnapshot<Map<String, dynamic>>>[])
+                .where((QueryDocumentSnapshot<Map<String, dynamic>> d) {
+                  final Object? expiresAt = d.data()['expiresAt'];
+                  return d.data()['status'] == 'pending' ||
+                      (expiresAt is Timestamp &&
+                          now.isBefore(expiresAt.toDate()));
+                })
+                .toList();
+        if (passes.isEmpty) return const SizedBox.shrink();
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            const SpSectionLabel('Temporary QRs'),
+            const SizedBox(height: 4),
+            Text(
+              'Not paid yet. Show one at the gate and pay once staff confirm '
+              'there is space.',
+              style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
+            ),
+            const SizedBox(height: 8),
+            for (final QueryDocumentSnapshot<Map<String, dynamic>> doc
+                in passes)
+              _TemporaryQrRow(doc: doc),
+            const SizedBox(height: 16),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _TemporaryQrRow extends StatelessWidget {
+  const _TemporaryQrRow({required this.doc});
+
+  final QueryDocumentSnapshot<Map<String, dynamic>> doc;
+
+  @override
+  Widget build(BuildContext context) {
+    final ParkingReceipt t = ParkingReceipt.fromTicket(doc.id, doc.data());
+    final bool paying = doc.data()['status'] == 'pending';
+    final Object? expiresAt = doc.data()['expiresAt'];
+    final (String package, String covers) = spPackageParts(t);
+    final TextStyle muted = TextStyle(
+      fontSize: 12,
+      color: AppTheme.textMuted,
+      fontWeight: FontWeight.w600,
+    );
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(AppTheme.radius),
+        onTap: () => Navigator.of(context).push<void>(
+          MaterialPageRoute<void>(
+            builder: (_) => DriverParkingPassPage(checkoutId: doc.id),
+          ),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(14, 12, 8, 12),
+          child: Row(
+            children: <Widget>[
+              Icon(
+                paying ? Icons.payments_outlined : Icons.qr_code_2_rounded,
+                color: AppTheme.accentText,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      t.facilityName.isEmpty
+                          ? 'Parking facility'
+                          : t.facilityName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 15,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text('${t.plate} · ${t.vehicleLabel}', style: muted),
+                    const SizedBox(height: 8),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: <Widget>[
+                        Expanded(
+                          child: Text.rich(
+                            TextSpan(
+                              children: <InlineSpan>[
+                                TextSpan(
+                                  text: '$package  ',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w800,
+                                    color: AppTheme.textDark,
+                                  ),
+                                ),
+                                TextSpan(
+                                  text: covers.split('\n').first,
+                                  style: muted,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        Text(
+                          spPeso(t.amountCentavos / 100),
+                          style: TextStyle(
+                            fontWeight: FontWeight.w800,
+                            fontSize: 16,
+                            color: AppTheme.textDark,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      paying
+                          ? 'Paying now at the gate'
+                          : expiresAt is Timestamp
+                          ? 'Due at the gate · valid until '
+                                '${spFormatDate(expiresAt.toDate())}'
+                          : 'Due at the gate',
+                      style: muted,
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(Icons.chevron_right_rounded),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

@@ -64,11 +64,17 @@ class DriverPackageSelectionPage extends StatefulWidget {
     required this.establishmentName,
     required this.vehicleLabel,
     required this.options,
+    this.onContinue,
   });
 
   final String establishmentName;
   final String vehicleLabel;
   final List<DriverPackageOption> options;
+
+  /// Opens the next step on top of this page, so Back returns here. This
+  /// page closes with the next step's result once it gives one. Without it,
+  /// the page closes with the selection.
+  final Future<Object?> Function(DriverPackageSelection selection)? onContinue;
 
   @override
   State<DriverPackageSelectionPage> createState() =>
@@ -176,7 +182,7 @@ class _DriverPackageSelectionPageState
     };
   }
 
-  void _continue() {
+  Future<void> _continue() async {
     final DriverPackageOption selectedOption = widget.options.firstWhere(
       (DriverPackageOption option) => option.key == _selectedPlan,
     );
@@ -196,16 +202,22 @@ class _DriverPackageSelectionPageState
       _ => '$effectiveDuration',
     };
 
-    Navigator.of(context).pop(
-      DriverPackageSelection(
-        plan: _selectedPlan,
-        duration: effectiveDuration,
-        unitAmount: selectedOption.unitAmount,
-        totalAmount: totalAmount,
-        displayPlanLabel: displayPlanLabel,
-        displayDurationLabel: displayDurationLabel,
-      ),
+    final DriverPackageSelection selection = DriverPackageSelection(
+      plan: _selectedPlan,
+      duration: effectiveDuration,
+      unitAmount: selectedOption.unitAmount,
+      totalAmount: totalAmount,
+      displayPlanLabel: displayPlanLabel,
+      displayDurationLabel: displayDurationLabel,
     );
+    final Future<Object?> Function(DriverPackageSelection)? next =
+        widget.onContinue;
+    if (next == null) {
+      Navigator.of(context).pop(selection);
+      return;
+    }
+    final Object? result = await next(selection);
+    if (result != null && mounted) Navigator.of(context).pop(result);
   }
 
   Widget _buildOptionCard(DriverPackageOption option) {

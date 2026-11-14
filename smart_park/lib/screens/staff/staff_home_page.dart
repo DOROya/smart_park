@@ -9,6 +9,7 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 import '../../services/driver_reports.dart' show kWrongVehicleTypeReason;
 import '../../services/facility_status.dart';
 import '../../services/gate_scan_service.dart';
+import '../../services/parking_checkout_service.dart' show GatePassService;
 import '../../services/permission_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/smartpark_logo.dart';
@@ -21,6 +22,7 @@ import '../../widgets/sp_driver_report.dart' show showFlagIncidentDialog;
 import '../../widgets/sp_loading.dart';
 import '../../widgets/sp_overtime.dart';
 import '../auth/sign_in_screen.dart';
+import 'gate_pass_panel.dart';
 import 'gate_result_card.dart';
 import 'walk_in_panel.dart';
 
@@ -69,7 +71,10 @@ class _StaffHomePageState extends State<StaffHomePage>
   bool _deactivated = false;
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _staffRecordSub;
 
-  final GateScanService _gateService = GateScanService();
+  final GatePassService _passService = GatePassService();
+  late final GateScanService _gateService = GateScanService(
+    findPass: _passService.find,
+  );
   late final MobileScannerController _scannerController;
   bool _isProcessingScan = false;
   GateScanResult? _lastScanResult;
@@ -192,7 +197,7 @@ class _StaffHomePageState extends State<StaffHomePage>
     }
     // Guards often look at the car, not the screen: one tap for allowed,
     // a heavy buzz for denied or error.
-    if (result.isAllowed) {
+    if (result.isAllowed || result.isTemporary) {
       unawaited(HapticFeedback.mediumImpact());
     } else {
       unawaited(HapticFeedback.heavyImpact());
@@ -248,6 +253,43 @@ class _StaffHomePageState extends State<StaffHomePage>
         rawPlate: rawPlate,
       ),
     );
+  }
+
+  /// Admits the temporary QR the driver just paid for.
+  Future<void> _admitPaidPass(String transactionId) async {
+    final GateStaff? staff = _currentStaff();
+    if (staff == null) return;
+    _presentGateResult(
+      await _gateService.admitPaidPass(
+        staff: staff,
+        transactionId: transactionId,
+      ),
+    );
+  }
+
+  /// No space (or no data to pay): logs it and clears the card.
+  Future<void> _turnAwayPass() async {
+    final GateScanResult? result = _lastScanResult;
+    final GateStaff? staff = _currentStaff();
+    if (result == null || staff == null) return;
+    try {
+      final GateScanResult refused = await _gateService.turnAwayPass(
+        staff: staff,
+        temporary: result,
+      );
+      if (mounted && identical(_lastScanResult, result)) {
+        setState(() => _lastScanResult = refused);
+      }
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            friendlyError(error, fallback: 'Could not save. Try again.'),
+          ),
+        ),
+      );
+    }
   }
 
   /// Confirms the overtime cash on the exit just scanned.

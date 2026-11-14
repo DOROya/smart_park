@@ -159,10 +159,17 @@ TermsSection _payments({required bool owner}) => TermsSection(
       : <String>[
           'Payments are made through PayMongo (card, GCash, Maya or QR Ph). '
               'SmartPark never sees or stores card details.',
-          'The price is set by the facility and shown before you pay. A '
+          'You are not charged when you pick a package. The app gives you a '
+              'temporary QR, valid for 3 days. You pay only at the gate, on '
+              'your own phone, after staff confirm there is space. If there '
+              'is no space, nothing is charged.',
+          'Paying at the gate needs mobile data. Temporary QRs cannot be '
+              'paid in cash; without data, you may park as a regular walk-in '
+              "under the facility's own terms.",
+          'The price is set by the facility and shown when you make the '
+              'temporary QR, and that price is kept until it expires. A '
               'ticket is issued only once PayMongo confirms the payment.',
-          'Paid tickets cannot be cancelled or refunded in the app. Unused '
-              'hours stay on the ticket for later visits. If SmartPark '
+          'Unused hours stay on a paid ticket for later visits. If SmartPark '
               'suspends a facility, its tickets cannot be used to enter until '
               'it is reinstated, and their hours are kept.',
           'If you were charged but no ticket appeared, or you think a charge '

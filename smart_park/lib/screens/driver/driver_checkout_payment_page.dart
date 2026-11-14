@@ -162,7 +162,7 @@ class _DriverCheckoutPaymentPageState extends State<DriverCheckoutPaymentPage> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  'Amount to Pay',
+                                  'Pay at the Gate',
                                   style: TextStyle(
                                     color: AppTheme.textSecondary,
                                     fontSize: 12,
@@ -205,6 +205,32 @@ class _DriverCheckoutPaymentPageState extends State<DriverCheckoutPaymentPage> {
                         Expanded(
                           child: Text(
                             spTicketSharingRule(widget.vehicleLabel),
+                            style: TextStyle(
+                              color: AppTheme.textSecondary,
+                              fontSize: 12,
+                              height: 1.35,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(
+                          Icons.verified_user_outlined,
+                          size: 16,
+                          color: AppTheme.textSecondary,
+                        ),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            'You are not charged now. You get a temporary QR '
+                            '(valid 3 days) and pay ${_amountText(widget.amount)} '
+                            'on your phone at the gate, once staff confirm '
+                            'there is space. You will need mobile data there.',
                             style: TextStyle(
                               color: AppTheme.textSecondary,
                               fontSize: 12,
@@ -358,7 +384,7 @@ class _DriverCheckoutPaymentPageState extends State<DriverCheckoutPaymentPage> {
                           ),
                         )
                       : Text(
-                          'Pay ${_amountText(widget.amount)}',
+                          'Get Temporary QR',
                           style: const TextStyle(fontWeight: FontWeight.w800),
                         ),
                 ),

@@ -177,3 +177,12 @@ test("occupancy recounts only when a relevant field changes", () => {
   assert.deepEqual(affectedEstablishments(t, { ...t, establishmentId: "e2" }), ["e1", "e2"]);
   assert.deepEqual(affectedEstablishments(t, undefined), ["e1"]);
 });
+
+test("checkout payload pre-fills billing only when name and email are known", () => {
+  const { buildCheckoutPayload } = require("../src/paymongo");
+  const base = { amountCentavos: 5000, platformFeeCentavos: 500, description: "d", destinationAccountId: "o1", paymentMethod: "gcash", metadata: {} };
+  const withBilling = buildCheckoutPayload({ ...base, billing: { name: "Juan Cruz", email: "j@example.com" } });
+  assert.deepEqual(withBilling.data.attributes.billing, { name: "Juan Cruz", email: "j@example.com" });
+  assert.equal(buildCheckoutPayload({ ...base, billing: { name: "", email: "j@example.com" } }).data.attributes.billing, undefined);
+  assert.equal(buildCheckoutPayload(base).data.attributes.billing, undefined);
+});
