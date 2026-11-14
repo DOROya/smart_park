@@ -389,7 +389,7 @@ extension _AdminHomePageFragments on _AdminHomePageState {
 
   List<Widget> _buildFinanceTab({required List<_DayStat> allDays}) {
     // Commission is SmartPark's income; what drivers paid the lots is the
-    // owners' business, so the admin's Finance tab shows commission only.
+    // owners' business, so the admin's Report tab shows commission only.
     final List<SalesEntry> entries = <SalesEntry>[
       for (final _DayStat d in allDays)
         SalesEntry(
@@ -456,8 +456,8 @@ extension _AdminHomePageFragments on _AdminHomePageState {
     if (_isTablet) {
       return <Widget>[
         const SpPageHeader(
-          title: 'Finance',
-          subtitle: 'SmartPark commission and transactions.',
+          title: 'Report',
+          subtitle: 'Sales report: SmartPark commission and transactions.',
         ),
         const SizedBox(height: 16),
         Align(
@@ -486,9 +486,9 @@ extension _AdminHomePageFragments on _AdminHomePageState {
 
     return <Widget>[
       _buildTabHero(
-        title: 'Finance',
-        subtitle: 'SmartPark commission and transactions.',
-        icon: Icons.payments_rounded,
+        title: 'Report',
+        subtitle: 'Sales report: SmartPark commission and transactions.',
+        icon: Icons.assessment_rounded,
       ),
       const SizedBox(height: 16),
       periodBar,
@@ -566,7 +566,7 @@ extension _AdminHomePageFragments on _AdminHomePageState {
       icon: Icons.build_circle_outlined,
       title: 'Maintenance',
       subtitle:
-          'Server-side fixes. Dashboard and Finance totals can be rebuilt '
+          'Server-side fixes. Dashboard and Report totals can be rebuilt '
           'from all payments if they ever look wrong, and photos uploaded '
           'before compression existed can be shrunk for faster loading.',
       child: Column(

@@ -1418,8 +1418,10 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
           padding: const EdgeInsets.only(top: 8),
           children: [
             const SpPageHeader(
-              title: 'Finance',
-              subtitle: 'Your earnings, SmartPark commission and transactions.',
+              title: 'Report',
+              subtitle:
+                  'Sales report: your earnings, SmartPark commission '
+                  'and transactions.',
             ),
             const SizedBox(height: 16),
             if (resolving)
