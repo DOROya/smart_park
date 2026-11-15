@@ -70,6 +70,15 @@ void main() {
         expect(text, contains('asks you to accept it before you continue'));
       }
       final String driver = allText(kDriverRole);
+      expect(driver, contains('leave within 10 minutes of entering'));
+      expect(driver, contains('Overtime does not run while the facility is'));
+      expect(driver, contains('not charged overtime for the wait'));
+      expect(driver, contains('within 3 days is approved automatically'));
+      expect(driver, contains('within 72 hours'));
+      expect(
+        allText(kParkingOwnerRole),
+        contains('written notice in the app and 7 days to fix it'),
+      );
       expect(driver, contains('at least 18 years old'));
       expect(driver, contains('but not your email address'));
       expect(driver, contains('keeps the old one'));
@@ -84,7 +93,7 @@ void main() {
     });
 
     test('the version is the date the terms were last changed', () {
-      expect(kTermsVersion, '2026-11-15');
+      expect(kTermsVersion, startsWith('2026-11-15'));
       expect(kTermsUpdatedLabel, 'November 15, 2026');
     });
   });

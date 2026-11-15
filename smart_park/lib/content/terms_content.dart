@@ -1,5 +1,11 @@
 import '../services/parking_pricing.dart'
-    show kBaseStayHours, kDefaultGraceMinutes, kGracePeriodOptions;
+    show
+        kBaseStayHours,
+        kDefaultGraceMinutes,
+        kGracePeriodOptions,
+        kTurnaroundMinutes;
+import '../services/facility_status.dart' show kComplianceNoticeDays;
+import '../services/parking_refunds.dart' show kRefundRequestAutoApproveDays;
 import '../services/platform_fees.dart' show kPlatformFeeRate;
 
 /// SmartPark's Terms and Conditions and Privacy Notice, one set per role.
@@ -11,7 +17,7 @@ import '../services/platform_fees.dart' show kPlatformFeeRate;
 /// they agreed (`termsVersion`, `termsAcceptedAt`). Anyone whose saved version
 /// differs is asked to accept the current terms when they open the app (see
 /// terms_update_gate.dart), so bump this with every change to the text.
-const String kTermsVersion = '2026-11-15';
+const String kTermsVersion = '2026-11-15.2';
 
 const String kTermsUpdatedLabel = 'November 15, 2026';
 
@@ -131,6 +137,8 @@ final List<TermsSection> _driverSections = <TermsSection>[
     'A ticket can be reused on later visits until its hours run out. Hours '
         'are only used while the vehicle is parked, and each visit uses at '
         'least $kBaseStayHours hours. The time left is not an expiry date.',
+    'If you leave within $kTurnaroundMinutes minutes of entering, for '
+        'example because you found no space, that visit uses no hours.',
     'You can change the plate on a ticket while the vehicle is not parked. '
         'Each gate scan records the plate actually used.',
     'Only one vehicle can be inside on a ticket at a time.',
@@ -144,6 +152,9 @@ final List<TermsSection> _driverSections = <TermsSection>[
         'Vehicles already inside can always exit.',
     'Every entry and exit is recorded with the time, the plate and the staff '
         'member who scanned it.',
+    'If SmartPark or the gate\'s connection is down, the facility must still '
+        'let your vehicle out, and you are not charged overtime for the '
+        'wait.',
   ]),
   TermsSection('Overtime', <String>[
     'If you stay longer than the time left on your ticket, the facility may '
@@ -155,6 +166,9 @@ final List<TermsSection> _driverSections = <TermsSection>[
         'minutes unless the owner picked another). Leave within it and you '
         'pay no overtime. Past it, every started hour after your paid time '
         'counts as one overtime hour.',
+    'Overtime does not run while the facility is closed. If your paid time '
+        'ends after closing, overtime starts counting again when the '
+        'facility reopens.',
     'Overtime is paid in cash to the gate staff at the exit. It is not paid '
         'through the app. The app shows how the charge was worked out, and '
         'you may ask the facility for its own receipt.',
@@ -185,6 +199,11 @@ final List<TermsSection> _ownerSections = <TermsSection>[
         'keeps the overtime rate that was posted when its price was fixed.',
     'Do not admit vehicles while SmartPark has your facility suspended or '
         'deactivated. Vehicles already inside must still be let out.',
+    'Overtime does not run while your facility is closed, and a visit that '
+        'ends within $kTurnaroundMinutes minutes of entry uses no hours.',
+    'If SmartPark or your connection is down, let vehicles out without '
+        'delay, do not charge overtime for the wait, and record the exit '
+        'when the app is back.',
     'You are the seller of the parking. Issuing official receipts or '
         'invoices to drivers, including for overtime cash, and paying the '
         'taxes on your sales are your responsibility. SmartPark\'s in-app '
@@ -219,6 +238,9 @@ const List<TermsSection> _staffSections = <TermsSection>[
         'space for the vehicle.',
     'Charge overtime only as the app shows it, collect it in cash, and mark '
         'it collected only when you have received it.',
+    'If the app or the connection is down, let vehicles out without delay '
+        'and do not charge overtime for the wait. Record the exit when the '
+        'app is back.',
     'Flag a driver to your parking owner only for things that really '
         'happened.',
     'Use the names, plates and tickets you see only to do your job. Do not '
@@ -286,10 +308,14 @@ TermsSection _payments({required bool owner}) => TermsSection(
               'enter until it is reinstated, and their hours are kept. If it '
               'is still suspended after 14 days, the unused hours are '
               'refunded automatically. You may also request the refund '
-              'sooner; a SmartPark administrator reviews these requests. A '
+              'sooner; a SmartPark administrator reviews these requests, '
+              'and one not decided within $kRefundRequestAutoApproveDays '
+              'days is approved automatically. A '
               'request not yet decided when the facility is reinstated is '
               'closed, because the ticket can be used again.',
-          'You are notified when a refund is sent, and if one is declined or '
+          'A refund shows as sent until PayMongo confirms it has gone '
+              'through. '
+              'You are notified when a refund is sent, and if one is declined or '
               'fails. Refunds go through PayMongo and can take several days '
               'to appear, depending on how you paid. If one does not arrive, '
               'contact SmartPark at $kSupportEmail.',
@@ -313,6 +339,12 @@ TermsSection _conduct({required bool owner}) => TermsSection(
               'complaints, a facility that is not operating, or a SmartPark '
               'policy violation. You are told the reasons and can ask for a '
               'review in the app.',
+          'For reasons that can be fixed, such as an expired permit, rates '
+              'that differ from the listing, driver complaints or a policy '
+              'violation, SmartPark first gives you written notice in the '
+              'app and $kComplianceNoticeDays days to fix it. For safety '
+              'concerns, invalid or false documents, or a facility that is '
+              'not operating, SmartPark may act at once.',
           'While a facility is suspended or deactivated, it is hidden from '
               'drivers and cannot sell tickets.',
         ]
@@ -406,6 +438,9 @@ TermsSection _privacy(_Reader reader) =>
       'You may ask to see, correct or delete your personal information, or '
           'withdraw consent, by emailing $kSupportEmail. Some records, such '
           'as payments, may have to be kept.',
+      'If a security breach puts your personal information at risk, we '
+          'tell you and the National Privacy Commission within 72 hours of '
+          'learning of it.',
       'If you are not satisfied with how we handle a privacy concern, you '
           'may complain to the National Privacy Commission.',
     ]);
