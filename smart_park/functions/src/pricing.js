@@ -101,6 +101,32 @@ function computeAmount({ ratesByType, vehicleType, plan, duration }) {
 
 class PricingError extends Error {}
 
+function parseMoney(value) {
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  if (typeof value !== "string") return null;
+  const parsed = parseFloat(value.replace(/[^0-9.]/g, ""));
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+/**
+ * Hourly overtime rate for a vehicle type, or null when none is set.
+ * Mirrors resolveOvertimeRate in lib/services/parking_pricing.dart.
+ */
+function overtimeRateFor(ratesByType, vehicleType) {
+  if (!isPlainObject(ratesByType)) return null;
+  const vehicle =
+    ratesByType[vehicleType] ?? ratesByType[String(vehicleType).toLowerCase()];
+  if (isPlainObject(vehicle)) {
+    return (
+      parseMoney(vehicle.succeedingHour) ??
+      parseMoney(vehicle.succeeding_hour) ??
+      parseMoney(vehicle.hourly) ??
+      parseMoney(vehicle.initial)
+    );
+  }
+  return parseMoney(vehicle);
+}
+
 /** Same rounding as the app's `platformFeeCentavosFor`. */
 function platformFeeCentavosFor(grossCentavos) {
   return Math.round(grossCentavos * PLATFORM_FEE_RATE);
@@ -127,6 +153,7 @@ module.exports = {
   parseAmount,
   vehicleRates,
   computeAmount,
+  overtimeRateFor,
   platformFeeCentavosFor,
   estimateProcessorFeeCentavos,
 };

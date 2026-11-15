@@ -845,7 +845,8 @@ class GateScanService {
       elapsed = Duration.zero;
     }
     final Map<String, dynamic>? details = await _loadDetails(facilityId);
-    final double? rate = resolveOvertimeRate(
+    final double? rate = ticketOvertimeRate(
+      ticket,
       _ratesOf(details),
       _vehicleType(ticket),
     );
