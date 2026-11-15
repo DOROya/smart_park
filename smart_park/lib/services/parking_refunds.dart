@@ -7,6 +7,10 @@ import 'parking_pricing.dart';
 /// automatically (matches SUSPENSION_REFUND_DAYS in functions/src/refunds.js).
 const int kSuspensionRefundDays = 14;
 
+/// Days after which a driver's refund request nobody decided is approved by
+/// itself (matches REQUEST_AUTO_APPROVE_DAYS on the server).
+const int kRefundRequestAutoApproveDays = 3;
+
 /// Restriction reasons that mean SmartPark approved bad documents, so
 /// SmartPark covers the refunds (matches ADMIN_FAULT_REASONS on the server).
 const List<String> kAdminFaultReasons = <String>[
@@ -77,8 +81,8 @@ class ParkingRefund {
 
   final String ticketId;
 
-  /// requested, approved, processing, awaiting_exit, refunded, failed or
-  /// rejected.
+  /// requested, approved, processing, awaiting_exit, sent (PayMongo has it
+  /// but has not confirmed it yet), refunded, failed or rejected.
   final String status;
 
   /// deactivated, suspended_14_days or driver_request.
@@ -111,6 +115,9 @@ class ParkingRefund {
   final DateTime? refundedAt;
 
   bool get isRefunded => status == 'refunded';
+
+  /// The refund left SmartPark: confirmed, or sent and awaiting PayMongo.
+  bool get isPaidOut => status == 'refunded' || status == 'sent';
   bool get isPendingApproval => status == 'requested';
   bool get isFailed => status == 'failed';
   bool get isRejected => status == 'rejected';
@@ -128,6 +135,7 @@ class ParkingRefund {
     'requested' => 'Awaiting approval',
     'approved' || 'processing' => 'Processing',
     'awaiting_exit' => 'After you exit',
+    'sent' => 'Sent',
     'refunded' => 'Refunded',
     'failed' => 'Failed',
     'rejected' => 'Rejected',

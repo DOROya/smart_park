@@ -94,6 +94,9 @@ class _SpRefundsSectionState extends State<SpRefundsSection> {
         SnackBar(
           content: Text(switch (status) {
             'refunded' => '${spPeso(r.amountCentavos / 100)} refunded.',
+            'sent' =>
+              '${spPeso(r.amountCentavos / 100)} sent. PayMongo will '
+                  'confirm it shortly.',
             'rejected' => 'Request rejected.',
             'failed' => 'PayMongo did not accept the refund. See its details.',
             _ => 'Refund is processing.',
@@ -132,7 +135,7 @@ class _SpRefundsSectionState extends State<SpRefundsSection> {
             ? all.where((ParkingRefund r) => !r.isPendingApproval).toList()
             : all;
         final List<ParkingRefund> done = all
-            .where((ParkingRefund r) => r.isRefunded)
+            .where((ParkingRefund r) => r.isPaidOut)
             .toList();
         int sum(Iterable<ParkingRefund> rs) =>
             rs.fold<int>(0, (int t, ParkingRefund r) => t + r.amountCentavos);
@@ -652,6 +655,7 @@ class _SpRefundsSectionState extends State<SpRefundsSection> {
   /// Status in words for whoever is reading.
   (String, Color) _status(ParkingRefund r) => switch (r.status) {
     'refunded' => ('Refunded', spEntryColor),
+    'sent' => ('Sent · PayMongo confirming', spInsideColor),
     'requested' => (
       _admin ? 'Awaiting your approval' : 'Driver asked · SmartPark reviewing',
       spInsideColor,

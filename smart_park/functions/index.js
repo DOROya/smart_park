@@ -77,7 +77,11 @@ exports.reconcilePendingCheckouts = onSchedule(
     timeZone: "Asia/Manila",
     secrets: [PAYMONGO_SECRET_KEY],
   },
-  () => checkout.reconcilePendingCheckouts(PAYMONGO_SECRET_KEY.value()),
+  async () => {
+    await checkout.reconcilePendingCheckouts(PAYMONGO_SECRET_KEY.value());
+    // Same run: mark sent refunds refunded once PayMongo confirms them.
+    await refunds.confirmSentRefunds(PAYMONGO_SECRET_KEY.value());
+  },
 );
 
 // Refunds when SmartPark pulls a facility (see src/refunds.js).

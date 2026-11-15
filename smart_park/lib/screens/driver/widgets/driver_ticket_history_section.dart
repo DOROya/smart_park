@@ -1468,9 +1468,11 @@ class _RefundPanelState extends State<_RefundPanel> {
         Icons.hourglass_top_rounded,
         spInsideColor,
         'Refund of $peso requested',
-        'A SmartPark admin will review it. You will see the result here.',
+        'A SmartPark admin will review it. If nobody decides within '
+            '$kRefundRequestAutoApproveDays days, it is approved '
+            'automatically.',
       ),
-      'approved' || 'processing' => (
+      'approved' || 'processing' || 'sent' => (
         Icons.sync_rounded,
         spInsideColor,
         'Refund of $peso on its way',
@@ -1597,9 +1599,11 @@ class _PastTicketRow extends StatelessWidget {
       state,
     );
     // A ticket SmartPark refunded when its facility was pulled.
-    if (data['refundStatus'] == 'refunded') {
+    if (data['refundStatus'] == 'refunded' || data['refundStatus'] == 'sent') {
       final int refunded = ((data['refundedCentavos'] as num?) ?? 0).toInt();
-      stateLabel = 'Refunded ${spPeso(refunded / 100)}';
+      stateLabel =
+          '${data['refundStatus'] == 'sent' ? 'Refund sent' : 'Refunded'} '
+          '${spPeso(refunded / 100)}';
       stateColor = spEntryColor;
       stateIcon = Icons.currency_exchange_rounded;
     }
