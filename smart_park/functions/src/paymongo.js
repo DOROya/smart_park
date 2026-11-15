@@ -151,6 +151,13 @@ async function createRefund(secretKey, { paymentId, amountCentavos, notes, metad
   return { id: data.id, status: data.attributes?.status || "pending" };
 }
 
+/** A refund's current state at PayMongo. Returns { id, status }. */
+async function getRefund(secretKey, refundId) {
+  const decoded = await request(secretKey, "GET", `/refunds/${encodeURIComponent(refundId)}`);
+  const data = decoded.data || {};
+  return { id: data.id || refundId, status: data.attributes?.status || "pending" };
+}
+
 /** Payment method PayMongo actually charged, if it reports one. */
 function paidPaymentMethod(session) {
   const payments = session?.attributes?.payments;
@@ -169,5 +176,6 @@ module.exports = {
   isSessionPaid,
   paidPaymentId,
   createRefund,
+  getRefund,
   paidPaymentMethod,
 };

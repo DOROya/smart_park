@@ -12,7 +12,7 @@ const { logger } = require("firebase-functions");
 const { hoursLeft } = require("./refunds");
 
 const DELETED_NAME = "Deleted user";
-const REFUNDS_IN_FLIGHT = ["approved", "processing", "awaiting_exit"];
+const REFUNDS_IN_FLIGHT = ["approved", "processing", "sent", "awaiting_exit"];
 
 function isParked(ticket) {
   const entry = String(ticket.entryStatus || "").toLowerCase();

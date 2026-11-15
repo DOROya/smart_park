@@ -11,8 +11,10 @@
 //     after 14 days still suspended it is automatic
 //   - a vehicle parked when this happens is refunded after it exits
 //
-// refunds/{ticketId} statuses: requested -> processing -> refunded | failed,
-// requested -> rejected, awaiting_exit -> processing.
+// refunds/{ticketId} statuses: requested -> processing -> sent -> refunded,
+// processing | sent -> failed (retried), requested -> rejected,
+// awaiting_exit -> processing. A refund is "sent" once PayMongo accepts it
+// and "refunded" only when PayMongo says the money went through.
 
 const { getFirestore, FieldValue, Timestamp } = require("firebase-admin/firestore");
 const { HttpsError } = require("firebase-functions/v2/https");
@@ -25,6 +27,8 @@ const { notifyUser, peso } = require("./notify");
 const REFUNDS = "refunds";
 const BALANCES = "owner_refund_balances";
 const SUSPENSION_REFUND_DAYS = 14;
+/** A driver's request nobody decided in this long is approved by itself. */
+const REQUEST_AUTO_APPROVE_DAYS = 3;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /** Restriction reasons that mean the admin approved bad documents. */
@@ -111,6 +115,17 @@ function suspensionRefundDue(suspendedAt, nowMs) {
   return start !== null && nowMs - start >= SUSPENSION_REFUND_DAYS * DAY_MS;
 }
 
+/** Whether a request made at [requestedAt] has waited long enough. */
+function requestOverdue(requestedAt, nowMs) {
+  const start = millis(requestedAt);
+  return start !== null && nowMs - start >= REQUEST_AUTO_APPROVE_DAYS * DAY_MS;
+}
+
+/** Whether PayMongo reports a refund as paid out. */
+function isRefundSettled(paymongoStatus) {
+  return String(paymongoStatus || "").toLowerCase() === "succeeded";
+}
+
 /** How much of an owner's debt one sale may repay, in centavos. */
 function recoveryFor(owedCentavos, netToOwnerCentavos) {
   const owed = Math.max(0, Math.floor(owedCentavos || 0));
@@ -167,9 +182,11 @@ async function processRefund(db, refundRef, secretKey, actor = "system") {
     }
     const ticketSnap = await tx.get(db.collection("transactions").doc(r.ticketId));
     const ticket = ticketSnap.data() || {};
-    // Hours may have changed (a parked vehicle has since left).
-    const unused = hoursLeft(ticket);
-    const amountCentavos = refundCentavos(ticket, unused);
+    // Hours may have changed (a parked vehicle has since left). A refund
+    // already sent once keeps its amount: its hours came off the ticket then.
+    const locked = typeof r.lockedAmountCentavos === "number";
+    const unused = locked ? r.unusedHours : hoursLeft(ticket);
+    const amountCentavos = locked ? r.lockedAmountCentavos : refundCentavos(ticket, unused);
     tx.update(refundRef, {
       status: "processing",
       unusedHours: unused,
@@ -223,24 +240,31 @@ async function processRefund(db, refundRef, secretKey, actor = "system") {
 
   const ownerPays = claimed.paidBy === "owner" && Boolean(claimed.ownerId);
   const owed = ownerPays ? ownerOwesCentavos(claimed.amountCentavos) : 0;
+  // PayMongo accepted it; the money has only arrived once it says so.
+  const settled = isRefundSettled(refund.status);
+  // Sent again after PayMongo failed it: the owner was charged the first time.
+  const firstSend = !claimed.charged;
   const batch = db.batch();
   batch.update(refundRef, {
-    status: "refunded",
-    ownerOwedCentavos: owed,
+    status: settled ? "refunded" : "sent",
+    lockedAmountCentavos: claimed.amountCentavos,
+    charged: true,
+    ...(firstSend ? { ownerOwedCentavos: owed } : {}),
     paymongoRefundId: refund.id,
     paymongoRefundStatus: refund.status,
     failureReason: FieldValue.delete(),
-    refundedAt: FieldValue.serverTimestamp(),
+    sentAt: FieldValue.serverTimestamp(),
+    ...(settled ? { refundedAt: FieldValue.serverTimestamp() } : {}),
     updatedAt: FieldValue.serverTimestamp(),
   });
   // The refunded hours can no longer be used.
   batch.update(db.collection("transactions").doc(claimed.ticketId), {
     remainingHours: 0,
-    refundStatus: "refunded",
+    refundStatus: settled ? "refunded" : "sent",
     refundedCentavos: claimed.amountCentavos,
     updatedAt: FieldValue.serverTimestamp(),
   });
-  if (ownerPays) {
+  if (ownerPays && firstSend) {
     batch.set(
       db.collection(BALANCES).doc(claimed.ownerId),
       {
@@ -252,16 +276,18 @@ async function processRefund(db, refundRef, secretKey, actor = "system") {
       { merge: true },
     );
   }
-  batch.set(
-    db.collection("stats").doc("refunds"),
-    {
-      ownerCentavos: FieldValue.increment(owed),
-      platformCentavos: FieldValue.increment(claimed.amountCentavos - owed),
-      count: FieldValue.increment(1),
-      updatedAt: FieldValue.serverTimestamp(),
-    },
-    { merge: true },
-  );
+  if (firstSend) {
+    batch.set(
+      db.collection("stats").doc("refunds"),
+      {
+        ownerCentavos: FieldValue.increment(owed),
+        platformCentavos: FieldValue.increment(claimed.amountCentavos - owed),
+        count: FieldValue.increment(1),
+        updatedAt: FieldValue.serverTimestamp(),
+      },
+      { merge: true },
+    );
+  }
   await batch.commit();
   await notifyUser(db, claimed.driverId, {
     title: "Refund sent",
@@ -270,7 +296,7 @@ async function processRefund(db, refundRef, secretKey, actor = "system") {
       `${claimed.establishmentName} is on its way back to the account you paid with.`,
     data: { ticketId: claimed.ticketId, kind: "refund_sent" },
   });
-  if (ownerPays) {
+  if (ownerPays && firstSend) {
     await notifyUser(db, claimed.ownerId, {
       title: "A refund was charged to you",
       body:
@@ -280,7 +306,84 @@ async function processRefund(db, refundRef, secretKey, actor = "system") {
       data: { ticketId: claimed.ticketId, kind: "refund_charged" },
     });
   }
-  return "refunded";
+  return settled ? "refunded" : "sent";
+}
+
+/**
+ * Every 15 minutes: asks PayMongo about refunds that were sent. One that
+ * went through becomes "refunded"; one PayMongo could not complete becomes
+ * "failed" and is sent again by the daily retry, for the same amount.
+ */
+async function confirmSentRefunds(secretKey) {
+  const db = getFirestore();
+  const sent = await db.collection(REFUNDS).where("status", "==", "sent").limit(50).get();
+  for (const doc of sent.docs) {
+    const r = doc.data();
+    try {
+      if (!r.paymongoRefundId) continue;
+      const refund = await paymongo.getRefund(secretKey, r.paymongoRefundId);
+      const status = String(refund.status || "").toLowerCase();
+      if (isRefundSettled(status)) {
+        const batch = db.batch();
+        batch.update(doc.ref, {
+          status: "refunded",
+          paymongoRefundStatus: status,
+          refundedAt: FieldValue.serverTimestamp(),
+          updatedAt: FieldValue.serverTimestamp(),
+        });
+        batch.update(db.collection("transactions").doc(doc.id), {
+          refundStatus: "refunded",
+          updatedAt: FieldValue.serverTimestamp(),
+        });
+        await batch.commit();
+      } else if (status === "failed") {
+        await doc.ref.update({
+          status: "failed",
+          paymongoRefundStatus: status,
+          failureReason: "PayMongo could not complete the refund.",
+          updatedAt: FieldValue.serverTimestamp(),
+        });
+        await notifyUser(db, r.driverId, {
+          title: "Refund delayed",
+          body:
+            `Your ${peso(r.amountCentavos)} refund for ${r.establishmentName} ` +
+            "did not go through. SmartPark will send it again.",
+          data: { ticketId: doc.id, kind: "refund_failed" },
+        });
+      }
+    } catch (error) {
+      logger.warn(`Could not confirm refund ${doc.id}`, error);
+    }
+  }
+}
+
+/**
+ * Daily: a driver's request nobody decided within 3 days is approved and
+ * sent, so their money never waits on an admin without limit.
+ */
+async function approveOverdueRequests(db, secretKey, nowMs) {
+  const waiting = await db.collection(REFUNDS).where("status", "==", "requested").get();
+  for (const doc of waiting.docs) {
+    const r = doc.data();
+    if (!requestOverdue(r.requestedAt || r.createdAt, nowMs)) continue;
+    try {
+      const approved = await db.runTransaction(async (tx) => {
+        const snap = await tx.get(doc.ref);
+        if (snap.data()?.status !== "requested") return false;
+        tx.update(doc.ref, {
+          status: "approved",
+          decidedBy: "system",
+          decisionNote: `Approved automatically: not reviewed within ${REQUEST_AUTO_APPROVE_DAYS} days.`,
+          decidedAt: FieldValue.serverTimestamp(),
+          updatedAt: FieldValue.serverTimestamp(),
+        });
+        return true;
+      });
+      if (approved) await processRefund(db, doc.ref, secretKey);
+    } catch (error) {
+      logger.error(`Auto-approving refund ${doc.id} failed`, error);
+    }
+  }
 }
 
 // ---- Issuing ----------------------------------------------------------------
@@ -317,7 +420,8 @@ async function refundFacility(db, establishmentId, details, cause, secretKey) {
   }
   let refunded = 0;
   for (const ref of ready) {
-    if ((await processRefund(db, ref, secretKey)) === "refunded") refunded++;
+    const result = await processRefund(db, ref, secretKey);
+    if (result === "refunded" || result === "sent") refunded++;
   }
   logger.info(
     `Facility ${establishmentId} (${cause}): ${ready.length} refunds sent, ${refunded} refunded.`,
@@ -396,6 +500,7 @@ async function refundLongSuspensions(secretKey) {
       logger.error(`Suspension refunds failed for ${doc.id}`, error);
     }
   }
+  await approveOverdueRequests(db, secretKey, nowMs);
   // Retry refunds that failed for a passing reason (network, PayMongo down).
   const failed = await db.collection(REFUNDS).where("status", "==", "failed").limit(50).get();
   for (const doc of failed.docs) {
@@ -576,7 +681,9 @@ async function resolveRefundDispute(request) {
     }
     // Only a refund already sent has been added to the owner's balance.
     const owed =
-      r.status === "refunded" ? Math.max(0, r.ownerOwedCentavos ?? r.amountCentavos ?? 0) : 0;
+      r.charged || r.status === "refunded"
+        ? Math.max(0, r.ownerOwedCentavos ?? r.amountCentavos ?? 0)
+        : 0;
     tx.update(ref, {
       dispute,
       paidBy: "platform",
@@ -710,6 +817,10 @@ module.exports = {
   ownerOwesCentavos,
   disputeDenial,
   suspensionRefundDue,
+  requestOverdue,
+  isRefundSettled,
+  REQUEST_AUTO_APPROVE_DAYS,
+  confirmSentRefunds,
   recoveryFor,
   buildRefund,
   processRefund,
