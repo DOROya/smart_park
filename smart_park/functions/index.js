@@ -13,6 +13,7 @@ const checkout = require("./src/checkout");
 const gatePass = require("./src/gate_pass");
 const refunds = require("./src/refunds");
 const reminders = require("./src/reminders");
+const account = require("./src/account");
 const permits = require("./src/permits");
 const occupancy = require("./src/occupancy");
 const photoCompress = require("./src/photo_compress");
@@ -131,6 +132,9 @@ exports.disputeRefundCharge = onCall((request) => refunds.disputeRefundCharge(re
 exports.resolveRefundDispute = onCall((request) => refunds.resolveRefundDispute(request));
 
 exports.recordOwnerRepayment = onCall((request) => refunds.recordOwnerRepayment(request));
+
+// Deletes the caller's own account (see src/account.js).
+exports.deleteMyAccount = onCall((request) => account.deleteMyAccount(request));
 
 // Keeps establishment_occupancy/{id} in step with checked-in tickets.
 exports.updateOccupancy = onDocumentWritten("transactions/{transactionId}", async (event) => {
