@@ -12,7 +12,7 @@ import 'smartpark_ui.dart';
 import 'sp_export_sheet.dart';
 
 /// Week / Month / Quarter / Year selector with arrows to step through
-/// periods. Everything under it on a Finance tab follows the chosen range.
+/// periods. Everything under it on a Report tab follows the chosen range.
 class SpFinancePeriodBar extends StatelessWidget {
   const SpFinancePeriodBar({
     super.key,

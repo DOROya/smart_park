@@ -1,5 +1,6 @@
-// Parking checkout: the driver app asks the server to open a PayMongo
-// checkout, and only the server marks it paid. Transactions, payments,
+// Parking checkout: the server prices what the driver picked and opens the
+// PayMongo checkout (at the gate, see gate_pass.js), and only the server
+// marks it paid. Transactions, payments,
 // payment_splits and the daily stats are written here and nowhere else.
 
 const { getFirestore, FieldValue, Timestamp } = require("firebase-admin/firestore");
@@ -39,9 +40,11 @@ async function loadEstablishment(db, establishmentId) {
   return { ...(base.data() || {}), ...(details.data() || {}) };
 }
 
-async function createParkingCheckout(request, secretKey) {
-  const driverId = requireVerifiedUser(request.auth);
-  const data = request.data || {};
+/**
+ * Validates what the driver picked and prices it from the establishment's
+ * own rates. Returns the checkout record to store (no PayMongo session yet).
+ */
+async function priceCheckout(db, driverId, data) {
   const establishmentId = asString(data.establishmentId);
   const vehicleType = asString(data.vehicleType);
   const plan = asString(data.plan);
@@ -56,7 +59,6 @@ async function createParkingCheckout(request, secretKey) {
     throw new HttpsError("invalid-argument", "Enter a valid plate number.");
   }
 
-  const db = getFirestore();
   const establishment = await loadEstablishment(db, establishmentId);
   if (!establishment) {
     throw new HttpsError("not-found", "Parking establishment not found.");
@@ -64,7 +66,7 @@ async function createParkingCheckout(request, secretKey) {
   if (String(establishment.status || "").toLowerCase() !== "approved") {
     throw new HttpsError(
       "failed-precondition",
-      "This establishment is not accepting bookings yet.",
+      "This establishment is not accepting drivers right now.",
     );
   }
 
@@ -97,48 +99,10 @@ async function createParkingCheckout(request, secretKey) {
     amountCentavos,
     paymentMethod,
   );
-  const destinationAccountId = asString(establishment.ownerId) || establishmentId;
-  const establishmentName = asString(establishment.name) || "Parking Establishment";
-
-  const checkoutRef = db.collection(CHECKOUTS).doc();
-  // The ticket keeps the checkout's id so a retry can never create two.
-  const transactionId = checkoutRef.id;
-  const qrCode = JSON.stringify({
-    transactionId,
+  return {
     driverId,
     establishmentId,
-    vehicleType,
-    plan,
-    duration: priced.duration,
-    vehiclePlate: plateNumber,
-    generatedAt: new Date().toISOString(),
-  });
-
-  const session = await paymongo.createCheckoutSession(
-    secretKey,
-    paymongo.buildCheckoutPayload({
-      amountCentavos,
-      platformFeeCentavos,
-      description: `SmartPark ${establishmentName} - ${plan.toUpperCase()} ${vehicleType.toUpperCase()}`,
-      remarks: "SmartPark parking checkout",
-      destinationAccountId,
-      paymentMethod,
-      metadata: {
-        checkoutId: checkoutRef.id,
-        driverId,
-        establishmentId,
-        vehicleType,
-        plan,
-        duration: priced.duration,
-        amount: priced.amount,
-      },
-    }),
-  );
-
-  await checkoutRef.set({
-    driverId,
-    establishmentId,
-    establishmentName,
+    establishmentName: asString(establishment.name) || "Parking Establishment",
     ownerId: asString(establishment.ownerId),
     vehicleType,
     vehiclePlate: plateNumber,
@@ -151,27 +115,72 @@ async function createParkingCheckout(request, secretKey) {
     estimatedProcessorFeeCentavos,
     netToOwnerCentavos:
       amountCentavos - platformFeeCentavos - estimatedProcessorFeeCentavos,
-    destinationAccountId,
+    destinationAccountId: asString(establishment.ownerId) || establishmentId,
     slotSnapshot: establishment.slotCounts || {},
-    transactionId,
-    qrCode,
-    paymongo: {
-      sessionId: session.id,
-      checkoutUrl: session.checkoutUrl,
-      referenceNumber: session.referenceNumber,
-      status: session.status,
-    },
-    status: "pending",
-    createdAt: FieldValue.serverTimestamp(),
-    updatedAt: FieldValue.serverTimestamp(),
-  });
-
-  return {
-    checkoutId: checkoutRef.id,
-    checkoutUrl: session.checkoutUrl,
-    amount: priced.amount,
-    establishmentName,
   };
+}
+
+/** The QR payload; the ticket keeps the checkout's id, so it never changes. */
+function buildQrCode(checkoutId, c, generatedAt = new Date()) {
+  return JSON.stringify({
+    transactionId: checkoutId,
+    driverId: c.driverId,
+    establishmentId: c.establishmentId,
+    vehicleType: c.vehicleType,
+    plan: c.plan,
+    duration: c.duration,
+    vehiclePlate: c.vehiclePlate,
+    generatedAt: generatedAt.toISOString(),
+  });
+}
+
+/** The driver's name and email from their account, for the payment page. */
+async function driverBilling(db, driverId) {
+  try {
+    const user = (await db.collection("users").doc(driverId).get()).data() || {};
+    const name = `${asString(user.firstName)} ${asString(user.lastName)}`.trim();
+    return { name, email: asString(user.email) };
+  } catch (error) {
+    logger.warn(`Could not load billing details for ${driverId}`, error);
+    return null;
+  }
+}
+
+/**
+ * Opens the PayMongo checkout for a stored checkout record, with the
+ * driver's details pre-filled. If PayMongo rejects those details, it opens
+ * without them rather than not at all.
+ */
+async function openPaymongoSession(secretKey, checkoutId, c, db = getFirestore()) {
+  const payload = (billing) =>
+    paymongo.buildCheckoutPayload({
+      amountCentavos: c.amountCentavos,
+      platformFeeCentavos: c.platformFeeCentavos,
+      description: `SmartPark ${c.establishmentName} - ${c.plan.toUpperCase()} ${c.vehicleType.toUpperCase()}`,
+      remarks: "SmartPark parking checkout",
+      destinationAccountId: c.destinationAccountId,
+      paymentMethod: c.paymentMethod,
+      billing,
+      metadata: {
+        checkoutId,
+        driverId: c.driverId,
+        establishmentId: c.establishmentId,
+        vehicleType: c.vehicleType,
+        plan: c.plan,
+        duration: c.duration,
+        amount: c.amount,
+      },
+    });
+  const billing = await driverBilling(db, c.driverId);
+  if (!billing?.name || !billing?.email) {
+    return paymongo.createCheckoutSession(secretKey, payload(null));
+  }
+  try {
+    return await paymongo.createCheckoutSession(secretKey, payload(billing));
+  } catch (error) {
+    logger.warn(`Checkout ${checkoutId}: billing pre-fill rejected, retrying without`, error);
+    return paymongo.createCheckoutSession(secretKey, payload(null));
+  }
 }
 
 /**
@@ -220,6 +229,7 @@ async function finalizePaidCheckout(db, checkoutRef, session) {
       duration: c.duration,
       slotSnapshot: c.slotSnapshot || {},
       checkoutId: checkoutRef.id,
+      paidAtGate: c.kind === "gate_pass",
       createdAtClient: now,
       createdAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
@@ -277,6 +287,8 @@ async function finalizePaidCheckout(db, checkoutRef, session) {
     tx.update(checkoutRef, {
       status: "paid",
       paidAt: FieldValue.serverTimestamp(),
+      // Paid checkouts are kept; only unused temporary QRs are auto-deleted.
+      deleteAt: FieldValue.delete(),
       "paymongo.status": "paid",
       updatedAt: FieldValue.serverTimestamp(),
     });
@@ -297,7 +309,9 @@ async function confirmParkingCheckout(request, secretKey) {
   }
 
   let checkout = snap.data();
-  if (checkout.status === "pending") {
+  // A temporary QR is pending without a session for a moment while staff
+  // open the payment.
+  if (checkout.status === "pending" && checkout.paymongo?.sessionId) {
     const session = await paymongo.getCheckoutSession(
       secretKey,
       checkout.paymongo.sessionId,
@@ -334,9 +348,17 @@ async function reconcilePendingCheckouts(secretKey) {
 
   let paid = 0;
   let expired = 0;
+  // Required here, not at the top: gate_pass.js builds on this module.
+  const gatePass = require("./gate_pass");
+  let reverted = 0;
   for (const doc of pending.docs) {
     const c = doc.data();
     try {
+      if (gatePass.isPass(c) && !c.paymongo?.sessionId) {
+        // Staff are still opening the payment, or it failed to open.
+        if (await gatePass.reconcileGatePass(db, doc.ref, secretKey, c, Date.now())) reverted++;
+        continue;
+      }
       const session = await paymongo.getCheckoutSession(
         secretKey,
         c.paymongo.sessionId,
@@ -344,6 +366,11 @@ async function reconcilePendingCheckouts(secretKey) {
       if (paymongo.isSessionPaid(session)) {
         await finalizePaidCheckout(db, doc.ref, session);
         paid++;
+      } else if (gatePass.isPass(c)) {
+        // Unfinished gate payment: back to waiting once it times out.
+        const status = await gatePass.reconcileGatePass(db, doc.ref, secretKey, c, Date.now());
+        if (status === "paid") paid++;
+        else if (status) reverted++;
       } else if (c.createdAt && c.createdAt.toMillis() < cutoff.toMillis()) {
         await doc.ref.update({
           status: "expired",
@@ -355,11 +382,19 @@ async function reconcilePendingCheckouts(secretKey) {
       logger.warn(`Reconcile failed for checkout ${doc.id}`, error);
     }
   }
-  logger.info(`Reconciled checkouts: ${paid} paid, ${expired} expired.`);
+  logger.info(
+    `Reconciled checkouts: ${paid} paid, ${expired} expired, ${reverted} gate payments ended.`,
+  );
 }
 
 module.exports = {
-  createParkingCheckout,
+  CHECKOUTS,
+  asString,
+  requireVerifiedUser,
+  loadEstablishment,
+  priceCheckout,
+  buildQrCode,
+  openPaymongoSession,
   confirmParkingCheckout,
   reconcilePendingCheckouts,
   finalizePaidCheckout,

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -9,14 +11,12 @@ import '../../services/error_reporter.dart';
 import '../../services/operating_hours.dart';
 import '../../services/parking_checkout_service.dart';
 import '../../services/parking_pricing.dart' show facilityGraceMinutes;
-import '../../services/parking_receipt.dart' show ParkingReceipt;
 import '../../theme/app_theme.dart';
 import '../../utils/friendly_error.dart';
 import '../../widgets/smartpark_ui.dart';
 import '../../widgets/sp_image_gallery.dart';
 import '../../widgets/sp_network_image.dart';
-import 'driver_in_app_checkout_page.dart';
-import 'driver_paid_ticket_page.dart';
+import 'driver_parking_pass_page.dart';
 import 'driver_payment_page.dart';
 import 'driver_vehicle_selection_page.dart';
 import 'services/driver_establishment_service.dart';
@@ -815,7 +815,7 @@ class _EstablishmentDetailPageState extends State<EstablishmentDetailPage>
                   ),
                 ),
                 label: Text(
-                  _generatingTicket ? 'Preparing checkout...' : 'Park Here',
+                  _generatingTicket ? 'Preparing QR...' : 'Park Here',
                   style: const TextStyle(
                     fontWeight: FontWeight.w800,
                     fontSize: 15,
@@ -930,9 +930,10 @@ class _EstablishmentDetailPageState extends State<EstablishmentDetailPage>
         return false;
       }
 
-      // The server prices the package from the establishment's own rates
-      // and opens the PayMongo checkout; the app never sees the secret key.
-      final ParkingCheckout checkout = await _checkoutService.createCheckout(
+      // The server prices the package from the establishment's own rates.
+      // Nothing is charged now: the driver pays at the gate once staff
+      // confirm there is space.
+      final ParkingPass pass = await _checkoutService.createPass(
         establishmentId: widget.establishmentId,
         vehicleType: vehicleType,
         plateNumber: plateNumber,
@@ -942,73 +943,31 @@ class _EstablishmentDetailPageState extends State<EstablishmentDetailPage>
       );
 
       if (!mounted) {
-        return false;
-      }
-
-      await Navigator.of(context).push<dynamic>(
-        MaterialPageRoute<dynamic>(
-          builder: (_) => DriverInAppCheckoutPage(
-            establishmentName: checkout.establishmentName,
-            checkoutUrl: checkout.checkoutUrl,
-            checkPaid: () async => (await _checkoutService.confirmCheckout(
-              checkout.checkoutId,
-            )).isPaid,
-          ),
-        ),
-      );
-
-      if (!mounted) {
-        return false;
-      }
-
-      // Whatever the web view reported, only the server's answer counts.
-      final ParkingCheckoutStatus status = await _checkoutService.pollUntilPaid(
-        checkout.checkoutId,
-      );
-      if (!status.isPaid || status.qrCode == null) {
-        _showSnackBar(
-          'Payment was not confirmed. If you completed payment, your ticket '
-          'will appear in your tickets within a few minutes.',
-        );
-        return false;
-      }
-
-      if (!mounted) {
         return true;
       }
 
-      await Navigator.of(context).push<void>(
-        MaterialPageRoute<void>(
-          builder: (_) => DriverPaidTicketPage(
-            establishmentName: status.establishmentName,
-            amount: status.amount,
-            qrData: status.qrCode!,
-            vehicleType: vehicleType,
-            receipt: ParkingReceipt(
-              transactionId: status.transactionId,
-              facilityName: status.establishmentName,
-              amountCentavos: (status.amount * 100).round(),
-              paidAt: DateTime.now(),
-              paymentMethod: paymentMethod.apiType,
-              vehicleType: vehicleType,
-              plate: plateNumber,
-              plan: plan,
-              duration: duration,
-            ),
+      // The QR replaces the selection steps and this page, so Back goes
+      // straight to the dashboard. (The QR is also under Tickets.)
+      unawaited(
+        Navigator.of(context).pushAndRemoveUntil<void>(
+          MaterialPageRoute<void>(
+            builder: (_) => DriverParkingPassPage(checkoutId: pass.checkoutId),
           ),
+          (Route<dynamic> route) => route.isFirst,
         ),
       );
-
-      return true;
+      // Not true: the steps are already gone, and a "success" pop from the
+      // payment page would close the QR instead.
+      return false;
     } on FirebaseFunctionsException catch (error) {
       _showSnackBar(
-        friendlyError(error, fallback: 'Unable to process the payment.'),
+        friendlyError(error, fallback: 'Unable to make the temporary QR.'),
       );
       return false;
     } catch (error, stack) {
-      reportError(error, stack, reason: 'Parking payment failed');
+      reportError(error, stack, reason: 'Temporary QR failed');
       _showSnackBar(
-        friendlyError(error, fallback: 'Unable to process the payment.'),
+        friendlyError(error, fallback: 'Unable to make the temporary QR.'),
       );
       return false;
     } finally {

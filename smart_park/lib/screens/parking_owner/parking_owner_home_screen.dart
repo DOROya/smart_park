@@ -867,7 +867,7 @@ class _ParkingOwnerHomePageState extends State<ParkingOwnerHomePage>
           Icons.directions_car_rounded,
           'Activity',
         ),
-        (Icons.payments_outlined, Icons.payments_rounded, 'Finance'),
+        (Icons.assessment_outlined, Icons.assessment_rounded, 'Report'),
         (Icons.person_outlined, Icons.person_rounded, 'Profile'),
       ];
 

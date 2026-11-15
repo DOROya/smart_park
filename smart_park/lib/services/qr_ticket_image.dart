@@ -23,18 +23,37 @@ const PdfColor _accent = PdfColor.fromInt(0xFFF2C335);
 const PdfColor _accentSoft = PdfColor.fromInt(0xFFFFF4CF);
 const PdfColor _onInkMuted = PdfColor.fromInt(0xFFB4B8C2);
 
-/// Saves the ticket image to the gallery's SmartPark album.
-Future<void> saveQrTicketToGallery(ParkingReceipt ticket, String qrData) async {
-  await saveImageToGallery(await buildQrTicketPng(ticket, qrData));
+/// Saves the ticket image to the gallery's SmartPark album. With
+/// [payAtGateUntil] it is a temporary QR: unpaid, valid until then.
+Future<void> saveQrTicketToGallery(
+  ParkingReceipt ticket,
+  String qrData, {
+  DateTime? payAtGateUntil,
+}) async {
+  await saveImageToGallery(
+    await buildQrTicketPng(ticket, qrData, payAtGateUntil: payAtGateUntil),
+  );
 }
 
 /// The ticket as a PNG, about 1070 x 1610 px.
-Future<Uint8List> buildQrTicketPng(ParkingReceipt ticket, String qrData) async {
-  return parkingReceiptPng(await buildQrTicketPdf(ticket, qrData), dpi: 340);
+Future<Uint8List> buildQrTicketPng(
+  ParkingReceipt ticket,
+  String qrData, {
+  DateTime? payAtGateUntil,
+}) async {
+  return parkingReceiptPng(
+    await buildQrTicketPdf(ticket, qrData, payAtGateUntil: payAtGateUntil),
+    dpi: 340,
+  );
 }
 
 /// One 80 x 120 mm page: header, QR, plate and package.
-Future<Uint8List> buildQrTicketPdf(ParkingReceipt t, String qrData) async {
+Future<Uint8List> buildQrTicketPdf(
+  ParkingReceipt t,
+  String qrData, {
+  DateTime? payAtGateUntil,
+}) async {
+  final bool temporary = payAtGateUntil != null;
   final String facility = pdfSafeText(
     t.facilityName.isEmpty ? 'SmartPark facility' : t.facilityName,
   );
@@ -83,7 +102,7 @@ Future<Uint8List> buildQrTicketPdf(ParkingReceipt t, String qrData) async {
                     ),
                     pw.Spacer(),
                     pw.Text(
-                      'PARKING TICKET',
+                      temporary ? 'TEMPORARY QR' : 'PARKING TICKET',
                       style: pw.TextStyle(
                         fontSize: 6,
                         letterSpacing: 0.9,
@@ -103,7 +122,13 @@ Future<Uint8List> buildQrTicketPdf(ParkingReceipt t, String qrData) async {
                     color: PdfColors.white,
                   ),
                 ),
-                if (t.paidAt != null) ...<pw.Widget>[
+                if (temporary) ...<pw.Widget>[
+                  pw.SizedBox(height: 2),
+                  pw.Text(
+                    'Pay at the gate. Valid until ${_dateTime(payAtGateUntil)}',
+                    style: const pw.TextStyle(fontSize: 7, color: _onInkMuted),
+                  ),
+                ] else if (t.paidAt != null) ...<pw.Widget>[
                   pw.SizedBox(height: 2),
                   pw.Text(
                     'Paid ${_dateTime(t.paidAt!)}',
@@ -166,7 +191,11 @@ Future<Uint8List> buildQrTicketPdf(ParkingReceipt t, String qrData) async {
           ),
           if (t.amountCentavos > 0) ...<pw.Widget>[
             pw.SizedBox(height: 2),
-            small('${formatSalesPeso(t.amountCentavos)} paid'),
+            small(
+              temporary
+                  ? '${formatSalesPeso(t.amountCentavos)} due at the gate'
+                  : '${formatSalesPeso(t.amountCentavos)} paid',
+            ),
           ],
           pw.Spacer(),
           pw.Container(
@@ -178,10 +207,13 @@ Future<Uint8List> buildQrTicketPdf(ParkingReceipt t, String qrData) async {
             child: pw.Column(
               children: <pw.Widget>[
                 small(
-                  'Show this QR to the parking staff at the gate.',
+                  temporary
+                      ? 'Show this QR at the gate. You pay on your phone once '
+                            'staff confirm there is space.'
+                      : 'Show this QR to the parking staff at the gate.',
                   color: _text,
                 ),
-                if (hasId) ...<pw.Widget>[
+                if (hasId && !temporary) ...<pw.Widget>[
                   pw.SizedBox(height: 2),
                   small('Ticket ${t.number}'),
                 ],

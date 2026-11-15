@@ -1,18 +1,21 @@
 import 'package:cloud_functions/cloud_functions.dart';
 
-/// A PayMongo checkout opened by the `createParkingCheckout` Cloud Function.
-class ParkingCheckout {
-  const ParkingCheckout({
+/// A temporary QR made by the `createParkingPass` Cloud Function: the
+/// package is picked and priced, but it is paid only at the gate.
+class ParkingPass {
+  const ParkingPass({
     required this.checkoutId,
-    required this.checkoutUrl,
+    required this.qrCode,
     required this.amount,
     required this.establishmentName,
+    required this.expiresAt,
   });
 
   final String checkoutId;
-  final String checkoutUrl;
+  final String qrCode;
   final double amount;
   final String establishmentName;
+  final DateTime expiresAt;
 }
 
 /// Result of asking the server whether a checkout has been paid.
@@ -37,7 +40,7 @@ class ParkingCheckoutStatus {
   bool get isPaid => status == 'paid';
 }
 
-/// Talks to the checkout Cloud Functions. The PayMongo secret key and the
+/// Talks to the driver's checkout Cloud Functions. The PayMongo secret key and the
 /// price calculation live on the server; the app only picks what to buy.
 class ParkingCheckoutService {
   ParkingCheckoutService({FirebaseFunctions? functions})
@@ -46,7 +49,9 @@ class ParkingCheckoutService {
 
   final FirebaseFunctions _functions;
 
-  Future<ParkingCheckout> createCheckout({
+  /// Makes a temporary QR. Nothing is charged until staff start the
+  /// payment at the gate.
+  Future<ParkingPass> createPass({
     required String establishmentId,
     required String vehicleType,
     required String plateNumber,
@@ -55,7 +60,7 @@ class ParkingCheckoutService {
     required String paymentMethod,
   }) async {
     final HttpsCallableResult<dynamic> result = await _functions
-        .httpsCallable('createParkingCheckout')
+        .httpsCallable('createParkingPass')
         .call(<String, dynamic>{
           'establishmentId': establishmentId,
           'vehicleType': vehicleType,
@@ -65,12 +70,22 @@ class ParkingCheckoutService {
           'paymentMethod': paymentMethod,
         });
     final Map<String, dynamic> data = _asMap(result.data);
-    return ParkingCheckout(
+    return ParkingPass(
       checkoutId: data['checkoutId'] as String,
-      checkoutUrl: data['checkoutUrl'] as String,
+      qrCode: data['qrCode'] as String,
       amount: (data['amount'] as num).toDouble(),
       establishmentName: (data['establishmentName'] as String?) ?? '',
+      expiresAt: DateTime.fromMillisecondsSinceEpoch(
+        (data['expiresAt'] as num).toInt(),
+      ),
     );
+  }
+
+  /// Cancels a temporary QR that hasn't been paid.
+  Future<void> cancelPass(String checkoutId) async {
+    await _functions.httpsCallable('cancelParkingPass').call(<String, dynamic>{
+      'checkoutId': checkoutId,
+    });
   }
 
   /// Asks the server to check PayMongo; the server records the ticket and
@@ -114,5 +129,94 @@ class ParkingCheckoutService {
       );
     }
     return <String, dynamic>{};
+  }
+}
+
+/// A temporary QR as staff see it at the gate.
+class GatePass {
+  const GatePass({
+    required this.checkoutId,
+    required this.status,
+    required this.plate,
+    required this.vehicleType,
+    required this.plan,
+    required this.duration,
+    required this.amount,
+    required this.paymentMethod,
+    this.expiresAt,
+  });
+
+  factory GatePass.fromMap(Map<String, dynamic> m) => GatePass(
+    checkoutId: (m['checkoutId'] as String?) ?? '',
+    status: (m['status'] as String?) ?? '',
+    plate: (m['plate'] as String?) ?? '',
+    vehicleType: (m['vehicleType'] as String?) ?? '',
+    plan: (m['plan'] as String?) ?? '',
+    duration: ((m['duration'] as num?) ?? 0).toInt(),
+    amount: ((m['amount'] as num?) ?? 0).toDouble(),
+    paymentMethod: (m['paymentMethod'] as String?) ?? '',
+    expiresAt: m['expiresAt'] is num
+        ? DateTime.fromMillisecondsSinceEpoch((m['expiresAt'] as num).toInt())
+        : null,
+  );
+
+  final String checkoutId;
+
+  /// `awaiting_gate`, `pending` (paying now), `paid`, `cancelled` or
+  /// `expired`.
+  final String status;
+  final String plate;
+  final String vehicleType;
+  final String plan;
+  final int duration;
+  final double amount;
+  final String paymentMethod;
+  final DateTime? expiresAt;
+
+  /// Staff can take payment on it (or it is already being paid).
+  bool get usable => status == 'awaiting_gate' || status == 'pending';
+}
+
+/// Staff side of temporary QRs: find one, take payment, stop a payment.
+class GatePassService {
+  GatePassService({FirebaseFunctions? functions})
+    : _functions =
+          functions ?? FirebaseFunctions.instanceFor(region: 'asia-southeast1');
+
+  final FirebaseFunctions _functions;
+
+  /// The facility's temporary QR with this id, or the newest usable one for
+  /// [plate]; null when there is none.
+  Future<GatePass?> find({String? checkoutId, String? plate}) async {
+    final HttpsCallableResult<dynamic> result = await _functions
+        .httpsCallable('findGatePass')
+        .call(<String, dynamic>{'checkoutId': ?checkoutId, 'plate': ?plate});
+    final Map<String, dynamic> data = ParkingCheckoutService._asMap(
+      result.data,
+    );
+    return data['found'] == true ? GatePass.fromMap(data) : null;
+  }
+
+  /// Opens the payment on the driver's phone.
+  Future<void> startPayment(String checkoutId) async {
+    await _functions.httpsCallable('startGatePayment').call(<String, dynamic>{
+      'checkoutId': checkoutId,
+    });
+  }
+
+  /// `pending`, `paid`, `timed_out` or the pass's other status.
+  Future<String> checkPayment(String checkoutId) =>
+      _call('checkGatePayment', checkoutId);
+
+  /// Stops an unfinished payment. Returns `paid` if it went through first.
+  Future<String> cancelPayment(String checkoutId) =>
+      _call('cancelGatePayment', checkoutId);
+
+  Future<String> _call(String name, String checkoutId) async {
+    final HttpsCallableResult<dynamic> result = await _functions
+        .httpsCallable(name)
+        .call(<String, dynamic>{'checkoutId': checkoutId});
+    return (ParkingCheckoutService._asMap(result.data)['status'] as String?) ??
+        '';
   }
 }

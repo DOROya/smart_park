@@ -10,6 +10,7 @@ const { defineSecret } = require("firebase-functions/params");
 
 const authEmails = require("./src/auth_emails");
 const checkout = require("./src/checkout");
+const gatePass = require("./src/gate_pass");
 const occupancy = require("./src/occupancy");
 const photoCompress = require("./src/photo_compress");
 const staff = require("./src/staff");
@@ -38,10 +39,26 @@ exports.sendPasswordResetEmail = onCall(
     authEmails.sendPasswordResetEmail(request, GMAIL_APP_PASSWORD.value()),
 );
 
-exports.createParkingCheckout = onCall(
+// Temporary QRs: the driver pays only at the gate (see src/gate_pass.js).
+exports.createParkingPass = onCall((request) => gatePass.createParkingPass(request));
+
+exports.cancelParkingPass = onCall((request) => gatePass.cancelParkingPass(request));
+
+exports.findGatePass = onCall((request) => gatePass.findGatePass(request));
+
+exports.startGatePayment = onCall(
   { secrets: [PAYMONGO_SECRET_KEY] },
-  (request) =>
-    checkout.createParkingCheckout(request, PAYMONGO_SECRET_KEY.value()),
+  (request) => gatePass.startGatePayment(request, PAYMONGO_SECRET_KEY.value()),
+);
+
+exports.checkGatePayment = onCall(
+  { secrets: [PAYMONGO_SECRET_KEY] },
+  (request) => gatePass.checkGatePayment(request, PAYMONGO_SECRET_KEY.value()),
+);
+
+exports.cancelGatePayment = onCall(
+  { secrets: [PAYMONGO_SECRET_KEY] },
+  (request) => gatePass.cancelGatePayment(request, PAYMONGO_SECRET_KEY.value()),
 );
 
 exports.confirmParkingCheckout = onCall(

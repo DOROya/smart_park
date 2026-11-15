@@ -4,7 +4,12 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 import 'error_reporter.dart';
 import 'facility_status.dart';
+import 'parking_checkout_service.dart' show GatePass;
 import 'parking_pricing.dart';
+
+/// Looks up a temporary QR by its id or plate (the `findGatePass` function).
+typedef GatePassFinder =
+    Future<GatePass?> Function({String? checkoutId, String? plate});
 
 /// Result of a single gate scan shown to the staff member.
 class GateScanResult {
@@ -23,6 +28,7 @@ class GateScanResult {
     this.overtimeCollected = false,
     this.vehicleType,
     this.graceMinutes,
+    this.pass,
   });
 
   final String decision;
@@ -48,6 +54,13 @@ class GateScanResult {
 
   /// The facility's grace period on an exit; null for other scans.
   final int? graceMinutes;
+
+  /// The unpaid temporary QR that was scanned, when [isTemporary].
+  final GatePass? pass;
+
+  /// An unpaid temporary QR at entry: staff check for space, then take
+  /// payment on the driver's phone or turn them away.
+  bool get isTemporary => decision == 'TEMPORARY' && pass != null;
 
   bool get isAllowed => decision == 'ALLOWED';
   bool get isDenied => decision == 'DENIED';
@@ -75,6 +88,7 @@ class GateScanResult {
     overtimeCollected: overtimeCollected ?? this.overtimeCollected,
     vehicleType: vehicleType ?? this.vehicleType,
     graceMinutes: graceMinutes,
+    pass: pass,
   );
 
   /// This result after the overtime cash was marked collected.
@@ -227,12 +241,18 @@ bool isStaffRecordActive(Map<String, dynamic> data) => data['active'] != false;
 ///
 /// Holds a short re-scan cooldown, so keep one instance per gate screen.
 class GateScanService {
-  GateScanService({FirebaseFirestore? firestore, DateTime Function()? clock})
-    : _db = firestore ?? FirebaseFirestore.instance,
-      _now = clock ?? DateTime.now;
+  GateScanService({
+    FirebaseFirestore? firestore,
+    DateTime Function()? clock,
+    this._findPass,
+  }) : _db = firestore ?? FirebaseFirestore.instance,
+       _now = clock ?? DateTime.now;
 
   final FirebaseFirestore _db;
   final DateTime Function() _now;
+
+  /// Without it, temporary QRs are not looked up (they read as not found).
+  final GatePassFinder? _findPass;
 
   /// Guards against re-processing the same ticket while the camera keeps
   /// reporting it.
@@ -417,6 +437,25 @@ class GateScanService {
             return _ticketFacility(m) == facilityId && m['source'] != 'walk_in';
           })
           .toList();
+      // Entry with no ticket that can be used here: look for a temporary QR.
+      bool entryUsable(QueryDocumentSnapshot<Map<String, dynamic>> d) {
+        final Map<String, dynamic> m = d.data();
+        final String entry = _entryStatus(m);
+        return _status(m) == 'paid' &&
+            entry != 'checked_in' &&
+            entry != 'inside' &&
+            ticketHoursLeft(m) > 0;
+      }
+
+      if (mine.isEmpty || (gateMode == 'entry' && !mine.any(entryUsable))) {
+        final GateScanResult? temporary = await _temporaryResult(
+          staff: staff,
+          gateMode: gateMode,
+          timestamp: _now(),
+          plate: plate,
+        );
+        if (temporary != null) return temporary;
+      }
       if (mine.isEmpty) {
         await _logDeniedScan(
           staff: staff,
@@ -499,7 +538,8 @@ class GateScanService {
   }) async {
     final String ticketKey = '$gateMode|$transactionId';
     final DateTime now = _now();
-    if (_lastProcessedTicketKey == ticketKey &&
+    if ((_lastProcessedTicketKey == ticketKey ||
+            _lastProcessedTicketKey == 'pass|$transactionId') &&
         _lastProcessedAt != null &&
         now.difference(_lastProcessedAt!) < rescanCooldown) {
       return null;
@@ -515,6 +555,14 @@ class GateScanService {
         snap = null;
       }
       if (snap == null || !snap.exists) {
+        // Not a ticket yet: it may be an unpaid temporary QR.
+        final GateScanResult? temporary = await _temporaryResult(
+          staff: staff,
+          gateMode: gateMode,
+          timestamp: now,
+          checkoutId: transactionId,
+        );
+        if (temporary != null) return temporary;
         return _deny(
           staff: staff,
           scanType: gateMode,
@@ -1018,6 +1066,95 @@ class GateScanService {
   }
 
   /// Logs a denied scan and returns the matching result for the staff member.
+  /// The result for an unpaid temporary QR at this facility, or null when
+  /// there is none. Only entry can take payment; exit is denied.
+  Future<GateScanResult?> _temporaryResult({
+    required GateStaff staff,
+    required String gateMode,
+    required DateTime timestamp,
+    String? checkoutId,
+    String? plate,
+  }) async {
+    final GatePassFinder? find = _findPass;
+    if (find == null) return null;
+    final GatePass? pass = await find(checkoutId: checkoutId, plate: plate);
+    if (pass == null || pass.status == 'paid') return null;
+    final String passPlate = pass.plate.isEmpty ? (plate ?? '--') : pass.plate;
+    final String? denial = switch (pass.status) {
+      'expired' =>
+        'Temporary QR expired. Driver can make a new one or park as a walk-in.',
+      'cancelled' => 'The driver cancelled this temporary QR.',
+      _ when !pass.usable => 'This temporary QR can no longer be used.',
+      _ when gateMode == 'exit' => 'Temporary QR is not paid. Scan at entry.',
+      _ => null,
+    };
+    if (denial != null) {
+      return (await _deny(
+        staff: staff,
+        scanType: gateMode,
+        plate: passPlate,
+        transactionId: pass.checkoutId,
+        timestamp: timestamp,
+        logReason: 'Temporary QR (${pass.status}).',
+        reason: denial,
+      ))._copy(vehicleType: pass.vehicleType);
+    }
+    // Keeps the camera from re-reading it, without blocking the entry scan
+    // that admits it once paid.
+    _lastProcessedTicketKey = 'pass|${pass.checkoutId}';
+    _lastProcessedAt = timestamp;
+    return GateScanResult(
+      decision: 'TEMPORARY',
+      vehiclePlate: passPlate,
+      scanType: gateMode,
+      timestamp: timestamp,
+      transactionId: pass.checkoutId,
+      vehicleType: pass.vehicleType,
+      pass: pass,
+      reason: pass.status == 'pending'
+          ? "Payment in progress on the driver's phone."
+          : 'Temporary QR, not paid yet. If there is space, take payment. '
+                'If not, turn them away: nothing is charged.',
+    );
+  }
+
+  /// Records that staff turned a temporary QR away (no space). Nothing was
+  /// charged, and the QR stays valid until it expires.
+  Future<GateScanResult> turnAwayPass({
+    required GateStaff staff,
+    required GateScanResult temporary,
+  }) async {
+    return (await _deny(
+      staff: staff,
+      scanType: 'entry',
+      plate: temporary.vehiclePlate,
+      transactionId: temporary.transactionId ?? '',
+      timestamp: _now(),
+      logReason: 'Temporary QR turned away (no space).',
+      reason: 'Turned away. Nothing was charged.',
+    ))._copy(vehicleType: temporary.vehicleType);
+  }
+
+  /// Admits a temporary QR the driver just paid for at this gate.
+  Future<GateScanResult?> admitPaidPass({
+    required GateStaff staff,
+    required String transactionId,
+  }) async {
+    final String? facilityId = staff.facilityId;
+    if (facilityId == null || facilityId.isEmpty) return null;
+    // The rescan cooldown from the temporary QR must not swallow this.
+    if (_lastProcessedTicketKey == 'pass|$transactionId') {
+      _lastProcessedTicketKey = null;
+    }
+    return _verifyTicket(
+      staff: staff,
+      facilityId: facilityId,
+      gateMode: 'entry',
+      transactionId: transactionId,
+      payloadPlate: '--',
+    );
+  }
+
   Future<GateScanResult> _deny({
     required GateStaff staff,
     required String scanType,

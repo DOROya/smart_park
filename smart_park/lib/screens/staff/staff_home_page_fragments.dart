@@ -450,6 +450,15 @@ extension _StaffHomePageFragments on _StaffHomePageState {
     ];
     final Widget? result = _lastScanResult == null
         ? null
+        : _lastScanResult!.isTemporary
+        ? GatePassPanel(
+            // Keyed so a rescan of the same QR keeps the payment in progress.
+            key: ValueKey<String>('pass_${_lastScanResult!.transactionId}'),
+            result: _lastScanResult!,
+            passService: _passService,
+            onPaid: _admitPaidPass,
+            onTurnAway: _turnAwayPass,
+          )
         : GateResultCard(
             result: _lastScanResult!,
             marking: _markingOvertime,

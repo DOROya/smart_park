@@ -39,6 +39,7 @@ function buildCheckoutPayload({
   destinationAccountId,
   paymentMethod,
   metadata,
+  billing,
 }) {
   const methods = SUPPORTED_PAYMENT_METHODS.includes(paymentMethod)
     ? [paymentMethod]
@@ -58,6 +59,11 @@ function buildCheckoutPayload({
           },
         ],
         payment_method_types: methods,
+        // Pre-fills the payer's details so the driver only confirms at the
+        // gate. Left out unless both are known.
+        ...(billing?.name && billing?.email
+          ? { billing: { name: billing.name, email: billing.email } }
+          : {}),
         show_line_items: true,
         success_url: "https://smartpark.app/payment-success",
         cancel_url: "https://smartpark.app/payment-cancel",
@@ -97,6 +103,15 @@ async function getCheckoutSession(secretKey, sessionId) {
   return decoded.data || {};
 }
 
+/** Stops a checkout session from accepting payment. Fails if already paid. */
+async function expireCheckoutSession(secretKey, sessionId) {
+  await request(
+    secretKey,
+    "POST",
+    `/checkout_sessions/${encodeURIComponent(sessionId)}/expire`,
+  );
+}
+
 /** Mirrors the app's old `PayMongoCheckoutLink.isPaid`. */
 function isSessionPaid(session) {
   const attributes = session?.attributes || {};
@@ -121,6 +136,7 @@ module.exports = {
   buildCheckoutPayload,
   createCheckoutSession,
   getCheckoutSession,
+  expireCheckoutSession,
   isSessionPaid,
   paidPaymentMethod,
 };

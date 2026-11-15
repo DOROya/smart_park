@@ -4,6 +4,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:smart_park/services/gate_scan_service.dart';
+import 'package:smart_park/services/parking_checkout_service.dart'
+    show GatePass;
 import 'package:smart_park/services/parking_pricing.dart'
     show kDefaultGraceMinutes;
 
@@ -1005,6 +1007,122 @@ void main() {
       );
       expect(r!.isAllowed, isTrue);
       expect(r.transactionId, 't1');
+    });
+  });
+
+  group('temporary QRs', () {
+    late Map<String, GatePass> passes;
+    late List<String?> plateQueries;
+
+    GatePass pass(String id, {String status = 'awaiting_gate'}) => GatePass(
+      checkoutId: id,
+      status: status,
+      plate: 'TMP 1',
+      vehicleType: 'car',
+      plan: 'base',
+      duration: 0,
+      amount: 50,
+      paymentMethod: 'gcash',
+    );
+
+    setUp(() {
+      passes = <String, GatePass>{};
+      plateQueries = <String?>[];
+      service = GateScanService(
+        firestore: db,
+        clock: () => now,
+        findPass: ({String? checkoutId, String? plate}) async {
+          if (plate != null) {
+            plateQueries.add(plate);
+            return passes.values
+                .where((GatePass p) => p.plate == plate)
+                .firstOrNull;
+          }
+          return passes[checkoutId];
+        },
+      );
+    });
+
+    test('an unpaid QR at entry asks staff to take payment', () async {
+      passes['p1'] = pass('p1');
+      final GateScanResult? r = await scan(qr('p1', 'TMP 1'));
+      expect(r!.isTemporary, isTrue);
+      expect(r.pass!.amount, 50);
+      expect(r.vehicleType, 'car');
+      expect(await activityLogs(), isEmpty);
+    });
+
+    test('an unpaid QR cannot be used to exit', () async {
+      passes['p1'] = pass('p1');
+      final GateScanResult? r = await scan(qr('p1'), mode: 'exit');
+      expect(r!.isDenied, isTrue);
+      expect(r.reason, 'Temporary QR is not paid. Scan at entry.');
+    });
+
+    test('an expired QR is denied and points to walk-in', () async {
+      passes['p1'] = pass('p1', status: 'expired');
+      final GateScanResult? r = await scan(qr('p1'));
+      expect(r!.isDenied, isTrue);
+      expect(r.reason, contains('walk-in'));
+    });
+
+    test(
+      'plate lookup finds a temporary QR when no ticket is usable',
+      () async {
+        passes['p1'] = pass('p1');
+        await seedTicket('used', <String, dynamic>{
+          'vehiclePlate': 'TMP 1',
+          'entryStatus': 'checked_out',
+          'duration': 0,
+          'remainingHours': 0,
+        });
+        final GateScanResult? r = await service.lookupByPlate(
+          staff: staff,
+          gateMode: 'entry',
+          rawPlate: 'TMP 1',
+        );
+        expect(r!.isTemporary, isTrue);
+        expect(r.transactionId, 'p1');
+      },
+    );
+
+    test('plate lookup prefers a usable paid ticket', () async {
+      passes['p1'] = pass('p1');
+      await seedTicket('t1', <String, dynamic>{'vehiclePlate': 'TMP 1'});
+      final GateScanResult? r = await service.lookupByPlate(
+        staff: staff,
+        gateMode: 'entry',
+        rawPlate: 'TMP 1',
+      );
+      expect(r!.isAllowed, isTrue);
+      expect(r.transactionId, 't1');
+      expect(plateQueries, isEmpty);
+    });
+
+    test('once paid, the same QR is admitted as a ticket', () async {
+      passes['p1'] = pass('p1');
+      expect((await scan(qr('p1')))!.isTemporary, isTrue);
+      await seedTicket('p1', <String, dynamic>{'vehiclePlate': 'TMP 1'});
+      final GateScanResult? r = await service.admitPaidPass(
+        staff: staff,
+        transactionId: 'p1',
+      );
+      expect(r!.isAllowed, isTrue);
+      expect((await ticket('p1'))['entryStatus'], 'checked_in');
+    });
+
+    test('turning away logs it without charging', () async {
+      passes['p1'] = pass('p1');
+      final GateScanResult? temp = await scan(qr('p1'));
+      final GateScanResult r = await service.turnAwayPass(
+        staff: staff,
+        temporary: temp!,
+      );
+      expect(r.reason, 'Turned away. Nothing was charged.');
+      expect(
+        (await activityLogs()).single['decisionReason'],
+        'Temporary QR turned away (no space).',
+      );
     });
   });
 }

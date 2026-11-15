@@ -514,7 +514,7 @@ void main() {
   });
 }
 
-/// The period bar and card wired together, as on a Finance tab.
+/// The period bar and card wired together, as on a Report tab.
 class _Harness extends StatefulWidget {
   const _Harness({this.audience = SalesReportAudience.owner});
 

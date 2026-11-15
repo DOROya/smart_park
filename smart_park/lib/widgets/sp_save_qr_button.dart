@@ -16,10 +16,14 @@ class SpSaveQrButton extends StatefulWidget {
     required this.ticket,
     required this.qrData,
     this.prominent = false,
+    this.payAtGateUntil,
   });
 
   final ParkingReceipt ticket;
   final String qrData;
+
+  /// Saves it as a temporary QR (unpaid, valid until then).
+  final DateTime? payAtGateUntil;
 
   /// A full-width filled button (payment screen) instead of a compact text
   /// button (ticket cards).
@@ -36,7 +40,11 @@ class _SpSaveQrButtonState extends State<SpSaveQrButton> {
     if (_busy) return;
     setState(() => _busy = true);
     try {
-      await saveQrTicketToGallery(widget.ticket, widget.qrData);
+      await saveQrTicketToGallery(
+        widget.ticket,
+        widget.qrData,
+        payAtGateUntil: widget.payAtGateUntil,
+      );
       if (mounted) {
         showSpSaveResult(context, saved: 'QR ticket saved to your gallery.');
       }

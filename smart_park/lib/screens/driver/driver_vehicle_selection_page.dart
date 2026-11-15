@@ -212,46 +212,47 @@ class _DriverVehicleSelectionPageState
     final DriverVehicleOption vehicle = widget.vehicleOptions.firstWhere(
       (DriverVehicleOption option) => option.key == _selectedVehicleType,
     );
-    final DriverPackageSelection? packageSelection = await Navigator.of(context)
-        .push<DriverPackageSelection>(
-          MaterialPageRoute<DriverPackageSelection>(
-            builder: (_) => DriverPackageSelectionPage(
-              establishmentName: widget.establishmentName,
-              vehicleLabel: vehicle.label,
-              options: options,
-            ),
-          ),
-        );
-
-    if (packageSelection == null || !mounted) {
-      return;
-    }
-
-    final dynamic paymentResult = await Navigator.of(context).push(
-      MaterialPageRoute<dynamic>(
-        builder: (_) => DriverCheckoutPaymentPage(
+    // Step 3 opens on top of step 2, so Back from payment returns to the
+    // package choice rather than here.
+    late DriverPackageSelection packageSelection;
+    final Object? paymentResult = await Navigator.of(context).push<Object?>(
+      MaterialPageRoute<Object?>(
+        builder: (_) => DriverPackageSelectionPage(
           establishmentName: widget.establishmentName,
           vehicleLabel: vehicle.label,
-          // e.g. "Weekly Package · 2 weeks"; the base stay needs no duration.
-          plan: packageSelection.plan == 'base'
-              ? packageSelection.displayPlanLabel
-              : '${packageSelection.displayPlanLabel} · '
-                    '${packageSelection.displayDurationLabel}',
-          duration: packageSelection.duration,
-          amount: packageSelection.totalAmount,
-          isPayMongoConfigured: widget.isPayMongoConfigured,
-          onProcessPayment: widget.onProcessPayment != null
-              ? (DriverPaymentMethod method) {
-                  return widget.onProcessPayment!(
-                    vehicleType: _selectedVehicleType,
-                    plateNumber: plateNumber,
-                    plan: packageSelection.plan,
-                    duration: packageSelection.duration,
-                    amount: packageSelection.totalAmount,
-                    paymentMethod: method,
-                  );
-                }
-              : null,
+          options: options,
+          onContinue: (DriverPackageSelection selection) {
+            packageSelection = selection;
+            return Navigator.of(context).push<Object?>(
+              MaterialPageRoute<Object?>(
+                builder: (_) => DriverCheckoutPaymentPage(
+                  establishmentName: widget.establishmentName,
+                  vehicleLabel: vehicle.label,
+                  // e.g. "Weekly Package · 2 weeks"; the base stay needs no
+                  // duration.
+                  plan: selection.plan == 'base'
+                      ? selection.displayPlanLabel
+                      : '${selection.displayPlanLabel} · '
+                            '${selection.displayDurationLabel}',
+                  duration: selection.duration,
+                  amount: selection.totalAmount,
+                  isPayMongoConfigured: widget.isPayMongoConfigured,
+                  onProcessPayment: widget.onProcessPayment != null
+                      ? (DriverPaymentMethod method) {
+                          return widget.onProcessPayment!(
+                            vehicleType: _selectedVehicleType,
+                            plateNumber: plateNumber,
+                            plan: selection.plan,
+                            duration: selection.duration,
+                            amount: selection.totalAmount,
+                            paymentMethod: method,
+                          );
+                        }
+                      : null,
+                ),
+              ),
+            );
+          },
         ),
       ),
     );
