@@ -13,6 +13,7 @@ import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 
 import '../../models/facility_registration_data.dart';
 import '../../services/error_reporter.dart';
+import '../../services/parking_push.dart';
 import '../../services/facility_status.dart' show facilityRestrictionReasons;
 import '../../services/gate_scan_service.dart'
     show
@@ -37,6 +38,8 @@ import '../../widgets/smartpark_logo.dart';
 import '../../utils/friendly_error.dart';
 import '../../utils/staff_credentials.dart';
 import '../../widgets/smartpark_ui.dart';
+import '../../widgets/sp_vehicle_type.dart';
+import '../../widgets/sp_refunds_section.dart';
 import '../../widgets/sp_activity_details.dart';
 import '../../widgets/sp_activity_search.dart';
 import '../../widgets/sp_driver_report.dart';
@@ -93,6 +96,24 @@ class _ParkingOwnerHomePageState extends State<ParkingOwnerHomePage>
   void initState() {
     super.initState();
     _userFuture = _fetchUserDocument();
+    final String? uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid != null) {
+      // Refund, dispute and permit notices from the server.
+      unawaited(
+        ParkingPush.register(
+          uid,
+          onForeground: (String title, String body) {
+            if (!mounted) return;
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('$title\n$body'),
+                duration: const Duration(seconds: 8),
+              ),
+            );
+          },
+        ),
+      );
+    }
     unawaited(_migrateLegacyStaffDocs());
     unawaited(_migrateBusinessDocumentUrls());
   }
@@ -259,6 +280,8 @@ class _ParkingOwnerHomePageState extends State<ParkingOwnerHomePage>
 
   Future<void> _signOut() async {
     if (!await spConfirmSignOut(context)) return;
+    final String? uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid != null) await ParkingPush.unregister(uid);
     await FirebaseAuth.instance.signOut();
     if (!mounted) return;
     unawaited(

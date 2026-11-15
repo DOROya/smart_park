@@ -6,6 +6,7 @@ import '../../services/error_reporter.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/friendly_error.dart';
 import '../../widgets/smartpark_ui.dart';
+import '../../widgets/sp_vehicle_type.dart';
 
 /// Gate panel for drive-up customers without a SmartPark ticket.
 ///
@@ -36,6 +37,13 @@ class _WalkInPanelState extends State<WalkInPanel> {
   final TextEditingController _plateController = TextEditingController();
   bool _saving = false;
   final Set<String> _exiting = <String>{};
+
+  /// The facility's details, for any custom vehicle type (e.g. trucks).
+  late final Stream<DocumentSnapshot<Map<String, dynamic>>> _detailsStream =
+      FirebaseFirestore.instance
+          .collection('establishment_details')
+          .doc(widget.facilityId)
+          .snapshots();
 
   late final Stream<QuerySnapshot<Map<String, dynamic>>> _insideStream =
       FirebaseFirestore.instance
@@ -126,7 +134,7 @@ class _WalkInPanelState extends State<WalkInPanel> {
       await batch.commit();
       _plateController.clear();
       _showSnackBar(
-        'Walk-in ${vehicleType == 'motorcycle' ? 'motorcycle' : 'car'} '
+        'Walk-in ${spVehicleTypeLabel(vehicleType).toLowerCase()} '
         'checked in${plate.isEmpty ? '' : ' ($plate)'}.',
       );
     } catch (error, stack) {
@@ -236,20 +244,14 @@ class _WalkInPanelState extends State<WalkInPanel> {
   Widget _insideRow(QueryDocumentSnapshot<Map<String, dynamic>> ticket) {
     final Map<String, dynamic> data = ticket.data();
     final String plate = ((data['vehiclePlate'] as String?) ?? '').trim();
-    final bool motorcycle = data['vehicleType'] == 'motorcycle';
+    final String type = spVehicleTypeKey(data['vehicleType']);
     final DateTime? entryAt = spParseDateTime(data['entryAt']);
     final bool busy = _exiting.contains(ticket.id);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6),
       child: Row(
         children: [
-          Icon(
-            motorcycle
-                ? Icons.two_wheeler_rounded
-                : Icons.directions_car_rounded,
-            size: 20,
-            color: AppTheme.textDark,
-          ),
+          Icon(spVehicleTypeIcon(type), size: 20, color: AppTheme.textDark),
           const SizedBox(width: 10),
           Expanded(
             child: Column(
@@ -257,9 +259,7 @@ class _WalkInPanelState extends State<WalkInPanel> {
               children: [
                 Text(
                   plate.isEmpty
-                      ? (motorcycle
-                            ? 'Motorcycle (no plate)'
-                            : 'Car (no plate)')
+                      ? '${spVehicleTypeLabel(type)} (no plate)'
                       : plate,
                   style: TextStyle(
                     fontWeight: FontWeight.w700,
@@ -349,6 +349,31 @@ class _WalkInPanelState extends State<WalkInPanel> {
               const SizedBox(width: 10),
               _entryButton('motorcycle', Icons.two_wheeler_rounded, 'Motor in'),
             ],
+          ),
+          // A custom vehicle type the owner added, e.g. trucks.
+          StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+            stream: _detailsStream,
+            builder: (BuildContext context, snap) {
+              final List<String> others = spOtherVehicleSlots(
+                snap.data?.data()?['slotCounts'],
+              ).keys.toList();
+              if (others.isEmpty) return const SizedBox.shrink();
+              return Padding(
+                padding: const EdgeInsets.only(top: 10),
+                child: Row(
+                  children: [
+                    for (final String key in others) ...[
+                      if (key != others.first) const SizedBox(width: 10),
+                      _entryButton(
+                        key,
+                        spVehicleTypeIcon(key),
+                        '${spVehicleTypeLabel(key)} in',
+                      ),
+                    ],
+                  ],
+                ),
+              );
+            },
           ),
           const SizedBox(height: 14),
           StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(

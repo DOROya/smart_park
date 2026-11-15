@@ -8,6 +8,7 @@ import '../services/gate_scan_service.dart'
 import '../services/parking_pricing.dart';
 import '../services/sales_report.dart' show formatSalesPeso;
 import '../theme/app_theme.dart';
+import 'sp_vehicle_type.dart' show spVehicleTypeIcon, spVehicleTypeLabel;
 import '../utils/staff_credentials.dart';
 
 /// Shared dashboard building blocks so the staff and parking-owner screens
@@ -1274,7 +1275,11 @@ class SpEmptyState extends StatelessWidget {
 /// Live slot counts from `establishment_occupancy/{id}` (kept by the
 /// updateOccupancy Cloud Function): vehicles checked in, per type.
 class SpOccupancy {
-  const SpOccupancy({required this.car, required this.motorcycle});
+  const SpOccupancy({
+    required this.car,
+    required this.motorcycle,
+    this.others = const <String, int>{},
+  });
 
   static SpOccupancy? fromDoc(DocumentSnapshot<Map<String, dynamic>>? doc) {
     final Map<String, dynamic>? data = doc?.data();
@@ -1286,6 +1291,14 @@ class SpOccupancy {
     return SpOccupancy(
       car: ((map['car'] as num?) ?? 0).toInt(),
       motorcycle: ((map['motorcycle'] as num?) ?? 0).toInt(),
+      others: <String, int>{
+        for (final MapEntry<dynamic, dynamic> e in map.entries)
+          if (e.key is String &&
+              e.key != 'car' &&
+              e.key != 'motorcycle' &&
+              e.value is num)
+            e.key as String: (e.value as num).toInt(),
+      },
     );
   }
 
@@ -1299,9 +1312,17 @@ class SpOccupancy {
   final int car;
   final int motorcycle;
 
-  int get total => car + motorcycle;
+  /// Custom vehicle types, e.g. {truck: 1}.
+  final Map<String, int> others;
 
-  int of(String vehicleKey) => vehicleKey == 'motorcycle' ? motorcycle : car;
+  int get total =>
+      car + motorcycle + others.values.fold<int>(0, (int a, int b) => a + b);
+
+  int of(String vehicleKey) => switch (vehicleKey) {
+    'motorcycle' => motorcycle,
+    'car' => car,
+    _ => others[vehicleKey] ?? 0,
+  };
 }
 
 /// [SpSlotsCard] fed by the live occupancy doc. Until that doc exists (it is
@@ -1315,6 +1336,7 @@ class SpLiveSlotsCard extends StatelessWidget {
     required this.fallbackOccupied,
     this.carSlots = 0,
     this.motorcycleSlots = 0,
+    this.otherSlots = const <String, int>{},
   });
 
   final String establishmentId;
@@ -1322,6 +1344,9 @@ class SpLiveSlotsCard extends StatelessWidget {
   final int fallbackOccupied;
   final int carSlots;
   final int motorcycleSlots;
+
+  /// Custom vehicle types' slots, e.g. {truck: 2}.
+  final Map<String, int> otherSlots;
 
   @override
   Widget build(BuildContext context) {
@@ -1331,6 +1356,7 @@ class SpLiveSlotsCard extends StatelessWidget {
         occupied: fallbackOccupied,
         carSlots: carSlots,
         motorcycleSlots: motorcycleSlots,
+        otherSlots: otherSlots,
       );
     }
     return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
@@ -1348,6 +1374,8 @@ class SpLiveSlotsCard extends StatelessWidget {
               motorcycleSlots: motorcycleSlots,
               carOccupied: live?.car,
               motorcycleOccupied: live?.motorcycle,
+              otherSlots: otherSlots,
+              otherOccupied: live?.others,
             );
           },
     );
@@ -1366,6 +1394,8 @@ class SpSlotsCard extends StatelessWidget {
     this.motorcycleSlots = 0,
     this.carOccupied,
     this.motorcycleOccupied,
+    this.otherSlots = const <String, int>{},
+    this.otherOccupied,
   });
 
   final int totalSlots;
@@ -1374,6 +1404,10 @@ class SpSlotsCard extends StatelessWidget {
   final int motorcycleSlots;
   final int? carOccupied;
   final int? motorcycleOccupied;
+
+  /// Custom vehicle types: slots, and how many are parked when known.
+  final Map<String, int> otherSlots;
+  final Map<String, int>? otherOccupied;
 
   /// Below this card width the layout stacks.
   static const double _compactWidth = 320;
@@ -1520,6 +1554,20 @@ class SpSlotsCard extends StatelessWidget {
                       ),
                     ],
                   ),
+                  for (final MapEntry<String, int> e in otherSlots.entries)
+                    if (e.value > 0) ...[
+                      const SizedBox(height: 8),
+                      _typeChip(
+                        spVehicleTypeIcon(e.key),
+                        otherOccupied == null || compact
+                            ? spVehicleTypeLabel(e.key)
+                            : '${spVehicleTypeLabel(e.key)} occupied',
+                        e.value,
+                        occupiedOfType: otherOccupied == null
+                            ? null
+                            : (otherOccupied![e.key] ?? 0),
+                      ),
+                    ],
                 ],
               ],
             ),

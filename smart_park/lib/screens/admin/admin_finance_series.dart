@@ -52,8 +52,8 @@ extension _AdminFinanceSeries on _AdminHomePageState {
     );
   }
 
-  /// Commission per row of the Report tab: per day for a week or
-  /// month, per month for a quarter or year.
+  /// Commission per row of the Report tab: per day for a week, month or
+  /// short custom range, per month for a quarter, year or long range.
   _RevenueSeries _commissionSeries(SalesReport report) {
     final bool daily = report.breakdown == SalesBreakdown.daily;
     final bool week = report.range.period == FinancePeriod.week;

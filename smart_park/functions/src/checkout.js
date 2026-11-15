@@ -15,6 +15,7 @@ const {
 } = require("./pricing");
 const paymongo = require("./paymongo");
 const { dayKeyManila, dayStartManila } = require("./dates");
+const { settleRecoveryInTx } = require("./refunds");
 
 const CHECKOUTS = "parking_checkouts";
 
@@ -155,7 +156,8 @@ async function openPaymongoSession(secretKey, checkoutId, c, db = getFirestore()
   const payload = (billing) =>
     paymongo.buildCheckoutPayload({
       amountCentavos: c.amountCentavos,
-      platformFeeCentavos: c.platformFeeCentavos,
+      // Commission, plus any refund the owner is still paying back.
+      platformFeeCentavos: c.platformFeeCentavos + (c.refundRecoveryCentavos || 0),
       description: `SmartPark ${c.establishmentName} - ${c.plan.toUpperCase()} ${c.vehicleType.toUpperCase()}`,
       remarks: "SmartPark parking checkout",
       destinationAccountId: c.destinationAccountId,
@@ -205,8 +207,11 @@ async function finalizePaidCheckout(db, checkoutRef, session) {
       linkId: c.paymongo.sessionId,
       checkoutUrl: c.paymongo.checkoutUrl,
       referenceNumber: c.paymongo.referenceNumber,
+      // Refunds need the payment itself, not the checkout session.
+      paymentId: paymongo.paidPaymentId(session) || null,
       status: "paid",
     };
+    const recovery = c.refundRecoveryCentavos || 0;
     const paymentMethod = paymongo.paidPaymentMethod(session) || c.paymentMethod;
 
     tx.set(db.collection("transactions").doc(txId), {
@@ -255,7 +260,9 @@ async function finalizePaidCheckout(db, checkoutRef, session) {
       grossAmountCentavos: c.amountCentavos,
       platformFeeCentavos: c.platformFeeCentavos,
       estimatedProcessorFeeCentavos: c.estimatedProcessorFeeCentavos,
-      netToOwnerCentavos: c.netToOwnerCentavos,
+      netToOwnerCentavos: c.netToOwnerCentavos - recovery,
+      // Part of the owner's share that paid back a refund they owe.
+      refundRecoveryCentavos: recovery,
       destinationAccountId: c.destinationAccountId,
       paymentMethod,
       status: "paid",
@@ -284,6 +291,7 @@ async function finalizePaidCheckout(db, checkoutRef, session) {
       },
       { merge: true },
     );
+    settleRecoveryInTx(tx, db, c.ownerId, recovery, true);
     tx.update(checkoutRef, {
       status: "paid",
       paidAt: FieldValue.serverTimestamp(),

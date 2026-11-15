@@ -199,7 +199,13 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
                         .toInt();
                     final int motorcycleSlots =
                         ((slotCounts['motorcycle'] as num?) ?? 0).toInt();
-                    final int slotSum = carSlots + motorcycleSlots;
+                    final Map<String, int> otherSlots = spOtherVehicleSlots(
+                      slotCounts,
+                    );
+                    final int slotSum =
+                        carSlots +
+                        motorcycleSlots +
+                        otherSlots.values.fold<int>(0, (int a, int b) => a + b);
                     final int totalSlots = slotSum > 0
                         ? slotSum
                         : ((facility['availability'] as num?) ?? 0).toInt();
@@ -232,6 +238,7 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
                           fallbackOccupied: summary.insideNow,
                           carSlots: carSlots,
                           motorcycleSlots: motorcycleSlots,
+                          otherSlots: otherSlots,
                         ),
                         detailsCard: _buildFacilityDetailsCard(
                           establishmentId: establishmentId,
@@ -282,12 +289,8 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
                         const SizedBox(height: 16),
                         const SpSectionLabel('Right Now'),
                         const SizedBox(height: 10),
-                        SpDailyActivityTiles(
-                          summary: summary,
-                          insideOnly: true,
-                          onSeeEntriesAndExits: () =>
-                              setState(() => _selectedIndex = 2),
-                        ),
+                        // Entries and exits today, beside what is inside now.
+                        SpDailyActivityTiles(summary: summary),
                         const SizedBox(height: 16),
                         overstayCard,
                         if (!overtimeCash.isEmpty) ...[
@@ -301,6 +304,7 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
                           fallbackOccupied: summary.insideNow,
                           carSlots: carSlots,
                           motorcycleSlots: motorcycleSlots,
+                          otherSlots: otherSlots,
                         ),
                         const SizedBox(height: 16),
                         ParkingTrendsCard(facilityId: establishmentId),
@@ -392,11 +396,7 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
         const SizedBox(height: 20),
         const SpSectionLabel('Right Now'),
         const SizedBox(height: 10),
-        SpDailyActivityTiles(
-          summary: summary,
-          insideOnly: true,
-          onSeeEntriesAndExits: () => setState(() => _selectedIndex = 2),
-        ),
+        SpDailyActivityTiles(summary: summary, singleRow: true),
         const SizedBox(height: 20),
         SpTabletColumns(
           leftFlex: 3,
@@ -570,6 +570,15 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
             'Motorcycle Rate',
             _formatRateLine(rates['motorcycle']),
           ),
+          // A custom vehicle type the owner added, e.g. trucks.
+          for (final String key in spOtherVehicleSlots(
+            details['slotCounts'],
+          ).keys)
+            _buildDetailRow(
+              spVehicleTypeIcon(key),
+              '${spVehicleTypeLabel(key)} Rate',
+              _formatRateLine(rates[key]),
+            ),
           _buildDetailRow(
             Icons.more_time_rounded,
             'Overtime Grace Period',
@@ -1439,6 +1448,10 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
                 ownerId: ownerId,
                 formatShortDate: _formatShortDate,
               ),
+            if (!resolving && facilityId.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              SpRefundsSection.owner(ownerId: ownerId),
+            ],
           ],
         );
       },

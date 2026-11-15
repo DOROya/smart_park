@@ -10,6 +10,7 @@ import '../../../theme/app_theme.dart';
 import '../../../widgets/smartpark_ui.dart';
 import '../../../widgets/sp_loading.dart';
 import '../../../widgets/sp_network_image.dart';
+import '../../../widgets/sp_vehicle_type.dart';
 import '../services/driver_establishment_service.dart';
 
 class DriverHomeSection extends StatefulWidget {
@@ -875,6 +876,13 @@ class _DriverParkingCard extends StatelessWidget {
                                       live?.motorcycle,
                                       'motorcycle',
                                     ),
+                                  ),
+                                // A custom type the owner added.
+                                for (final MapEntry<String, int> e
+                                    in spOtherVehicleSlots(slotCounts).entries)
+                                  _infoChip(
+                                    spVehicleTypeIcon(e.key),
+                                    slots(e.value, live?.of(e.key), e.key),
                                   ),
                                 if (hours.isNotEmpty)
                                   _infoChip(Icons.schedule_rounded, hours),

@@ -13,16 +13,74 @@ String spVehicleTypeKey(Object? raw) {
   return type.isEmpty ? 'car' : type;
 }
 
+/// The two types every facility has; an owner may add one more (a truck,
+/// say), stored under its own key in `slotCounts` and `ratesByType`.
+const List<String> kStandardVehicleKeys = <String>['car', 'motorcycle'];
+
+/// "Truck" -> "truck", "Mini Bus" -> "mini_bus": the key a custom vehicle
+/// type is stored under.
+String spCustomVehicleKey(String name) => name
+    .trim()
+    .toLowerCase()
+    .replaceAll(RegExp(r'\s+'), '_')
+    .replaceAll(RegExp(r'[^a-z0-9_]'), '');
+
+/// "car" -> "Car", "mini_bus" -> "Mini Bus".
 String spVehicleTypeLabel(String key) => switch (key) {
   'car' => 'Car',
   'motorcycle' => 'Motorcycle',
   '' => 'Vehicle',
-  _ => '${key[0].toUpperCase()}${key.substring(1)}',
+  _ =>
+    key
+        .split('_')
+        .where((String w) => w.isNotEmpty)
+        .map((String w) => '${w[0].toUpperCase()}${w.substring(1)}')
+        .join(' '),
 };
 
-IconData spVehicleTypeIcon(String key) => key == 'motorcycle'
-    ? Icons.two_wheeler_rounded
-    : Icons.directions_car_rounded;
+/// Car and motorcycle icons; for a custom type, an icon guessed from its
+/// name (a truck, bus, van, bicycle...), else a neutral one.
+IconData spVehicleTypeIcon(String key) {
+  if (key == 'car') return Icons.directions_car_rounded;
+  if (key == 'motorcycle' || key == 'motor') return Icons.two_wheeler_rounded;
+  bool has(List<String> words) => words.any(key.contains);
+  if (has(<String>['truck', 'lorry', 'cargo'])) {
+    return Icons.local_shipping_rounded;
+  }
+  if (has(<String>['bus', 'jeep', 'coaster'])) {
+    return Icons.directions_bus_rounded;
+  }
+  if (has(<String>['van', 'shuttle'])) return Icons.airport_shuttle_rounded;
+  if (has(<String>['ebike', 'e_bike', 'scooter'])) {
+    return Icons.electric_bike_rounded;
+  }
+  if (has(<String>['bicycle', 'bike'])) return Icons.pedal_bike_rounded;
+  if (has(<String>['tricycle', 'trike'])) {
+    return Icons.electric_rickshaw_rounded;
+  }
+  return Icons.commute_rounded;
+}
+
+/// Vehicle types a facility takes: car and motorcycle, then any custom type
+/// the owner added (one with slots).
+List<String> spFacilityVehicleKeys(Object? slotCounts) => <String>[
+  ...kStandardVehicleKeys,
+  if (slotCounts is Map)
+    for (final MapEntry<dynamic, dynamic> e in slotCounts.entries)
+      if (e.key is String &&
+          !kStandardVehicleKeys.contains(e.key) &&
+          e.key != 'motor' &&
+          (e.value is num) &&
+          (e.value as num) > 0)
+        e.key as String,
+];
+
+/// Slots of the custom types only, e.g. {truck: 2}.
+Map<String, int> spOtherVehicleSlots(Object? slotCounts) => <String, int>{
+  for (final String key in spFacilityVehicleKeys(slotCounts))
+    if (!kStandardVehicleKeys.contains(key))
+      key: (((slotCounts as Map)[key] as num?) ?? 0).toInt(),
+};
 
 /// Fill and text colors, one pair per type. Fixed (not theme) colors so a
 /// motorcycle looks the same on every gate phone, and neither is the green
@@ -30,7 +88,8 @@ IconData spVehicleTypeIcon(String key) => key == 'motorcycle'
 (Color, Color) spVehicleTypeColors(String key) => switch (key) {
   'motorcycle' => (AppTheme.accent, AppTheme.onAccent),
   'car' => (const Color(0xFF2563EB), Colors.white),
-  _ => (AppTheme.textDark, AppTheme.onInk),
+  '' => (AppTheme.textDark, AppTheme.onInk),
+  _ => (const Color(0xFF7C3AED), Colors.white),
 };
 
 /// The sharing rule as drivers read it at purchase and on the ticket, for a

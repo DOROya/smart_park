@@ -338,6 +338,8 @@ class _CommissionsListContentState extends State<_CommissionsListContent>
       final double? r = salesChange(now, before);
       return r == null
           ? null
+          : range.period == FinancePeriod.custom
+          ? '${formatSalesChange(r)} vs previous ${range.days} days'
           : '${formatSalesChange(r)} vs last ${range.period.name}';
     }
 

@@ -19,6 +19,7 @@ import '../../../services/parking_pricing.dart'
 import '../../../services/parking_storage_service.dart';
 import '../../../theme/app_theme.dart';
 import '../../../widgets/sp_network_image.dart';
+import '../../../widgets/sp_vehicle_type.dart';
 import 'facility_review_status_banner.dart';
 
 class FacilityRegistrationPage extends StatefulWidget {
@@ -76,6 +77,26 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
 
   final TextEditingController _slotCarController = TextEditingController();
   final TextEditingController _slotMotorController = TextEditingController();
+
+  /// An optional extra vehicle type, e.g. trucks (rare, but some lots take
+  /// them). Off by default.
+  bool _customVehicleEnabled = false;
+
+  /// The key it was saved under, so turning it off (or renaming it) clears
+  /// the old slots instead of leaving them behind.
+  String? _savedCustomKey;
+  final TextEditingController _customNameController = TextEditingController();
+  final TextEditingController _rateCustomInitialController =
+      TextEditingController();
+  final TextEditingController _rateCustomSucceedingHourController =
+      TextEditingController();
+  final TextEditingController _rateCustomSucceedingDailyController =
+      TextEditingController();
+  final TextEditingController _rateCustomWeeklyController =
+      TextEditingController();
+  final TextEditingController _rateCustomMonthlyController =
+      TextEditingController();
+  final TextEditingController _slotCustomController = TextEditingController();
 
   bool _allowLongTermRates = false;
   int _graceMinutes = kDefaultGraceMinutes;
@@ -135,6 +156,14 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
 
     _slotCarController.dispose();
     _slotMotorController.dispose();
+
+    _customNameController.dispose();
+    _rateCustomInitialController.dispose();
+    _rateCustomSucceedingHourController.dispose();
+    _rateCustomSucceedingDailyController.dispose();
+    _rateCustomWeeklyController.dispose();
+    _rateCustomMonthlyController.dispose();
+    _slotCustomController.dispose();
     super.dispose();
   }
 
@@ -213,6 +242,23 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
         <String, dynamic>{};
     _slotCarController.text = ((slots['car'] as num?) ?? 0).toString();
     _slotMotorController.text = ((slots['motorcycle'] as num?) ?? 0).toString();
+
+    final Map<String, int> custom = spOtherVehicleSlots(slots);
+    if (custom.isNotEmpty) {
+      final String key = custom.keys.first;
+      _customVehicleEnabled = true;
+      _savedCustomKey = key;
+      _customNameController.text = spVehicleTypeLabel(key);
+      _slotCustomController.text = '${custom[key]}';
+      seedVehicleRates(
+        rates[key],
+        _rateCustomInitialController,
+        _rateCustomSucceedingHourController,
+        _rateCustomSucceedingDailyController,
+        _rateCustomWeeklyController,
+        _rateCustomMonthlyController,
+      );
+    }
 
     final GeoPoint? point = data['location'] as GeoPoint?;
     final num? legacyLat = data['latitude'] as num?;
@@ -376,7 +422,21 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
     _rateCarMonthlyController,
     _rateMotorWeeklyController,
     _rateMotorMonthlyController,
+    if (_customVehicleEnabled) ...<TextEditingController>[
+      _rateCustomWeeklyController,
+      _rateCustomMonthlyController,
+    ],
   ].any((TextEditingController c) => c.text.trim().isNotEmpty);
+
+  String? _customNameValidator(String? value) {
+    final String key = spCustomVehicleKey(value ?? '');
+    if (key.isEmpty) return 'Name the vehicle type, e.g. Truck';
+    if (key.length > 20) return 'Keep the name under 20 letters';
+    if (kStandardVehicleKeys.contains(key) || key == 'motor' || key == 'suv') {
+      return 'Cars and motorcycles are already included';
+    }
+    return null;
+  }
 
   String? _slotValidator(String? value, String label) {
     final String text = value?.trim() ?? '';
@@ -630,10 +690,24 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
           _rateMotorWeeklyController,
           _rateMotorMonthlyController,
         ),
+        if (_customVehicleEnabled)
+          spCustomVehicleKey(_customNameController.text): buildVehicleRateMap(
+            _rateCustomInitialController,
+            _rateCustomSucceedingHourController,
+            _rateCustomSucceedingDailyController,
+            _rateCustomWeeklyController,
+            _rateCustomMonthlyController,
+          ),
       },
       slots: <String, int>{
         'car': int.parse(_slotCarController.text.trim()),
         'motorcycle': int.parse(_slotMotorController.text.trim()),
+        // A removed or renamed custom type keeps 0 slots, so it disappears.
+        ?_savedCustomKey: 0,
+        if (_customVehicleEnabled)
+          spCustomVehicleKey(_customNameController.text): int.parse(
+            _slotCustomController.text.trim(),
+          ),
       },
       location: _selectedLocation!,
       gracePeriodMinutes: _graceMinutes,
@@ -1348,6 +1422,81 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
     );
   }
 
+  String _customLabel() {
+    final String key = spCustomVehicleKey(_customNameController.text);
+    return key.isEmpty ? 'Other Vehicle' : spVehicleTypeLabel(key);
+  }
+
+  /// The optional extra vehicle type: a switch, then its name, rates and
+  /// slots.
+  Widget _buildCustomVehicle() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Material(
+          color: AppTheme.surfaceAlt,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppTheme.radius),
+            side: BorderSide(color: AppTheme.border),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: SwitchListTile(
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 12,
+              vertical: 4,
+            ),
+            activeThumbColor: AppTheme.accent,
+            title: Text(
+              'Accept Another Vehicle Type',
+              style: TextStyle(
+                color: AppTheme.textDark,
+                fontWeight: FontWeight.w700,
+                fontSize: 13,
+              ),
+            ),
+            subtitle: Text(
+              'Off by default. Turn on if you also take a type that is '
+              'not a car or motorcycle, and name it.',
+              style: TextStyle(color: AppTheme.textMuted, fontSize: 11),
+            ),
+            value: _customVehicleEnabled,
+            onChanged: (bool val) =>
+                setState(() => _customVehicleEnabled = val),
+          ),
+        ),
+        if (_customVehicleEnabled) ...[
+          const SizedBox(height: 12),
+          _doubleFields(
+            first: _buildInputField(
+              label: 'Vehicle Type Name',
+              hint: 'e.g. Truck',
+              controller: _customNameController,
+              validator: _customNameValidator,
+            ),
+            second: _buildInputField(
+              label: 'Slots',
+              hint: '0',
+              controller: _slotCustomController,
+              keyboardType: TextInputType.number,
+              validator: (String? value) =>
+                  _slotValidator(value, 'a slot count'),
+            ),
+          ),
+          const SizedBox(height: 12),
+          _buildVehicleRateGroup(
+            title: '${_customLabel()} Rates',
+            icon: spVehicleTypeIcon(
+              spCustomVehicleKey(_customNameController.text),
+            ),
+            initialCtrl: _rateCustomInitialController,
+            succHCtrl: _rateCustomSucceedingHourController,
+            succDCtrl: _rateCustomSucceedingDailyController,
+          ),
+        ],
+      ],
+    );
+  }
+
   Widget _buildRatesAndSlots() {
     return _sectionCard(
       title: 'Rates and Capacity',
@@ -1371,6 +1520,8 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
             succHCtrl: _rateMotorSucceedingHourController,
             succDCtrl: _rateMotorSucceedingDailyController,
           ),
+          const SizedBox(height: 16),
+          _buildCustomVehicle(),
           const SizedBox(height: 16),
           // Material (not a coloured Container) so the tile's ink splash
           // paints on this background instead of being hidden behind it.
@@ -1443,6 +1594,25 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
                 keyboardType: TextInputType.number,
               ),
             ),
+            if (_customVehicleEnabled) ...[
+              const SizedBox(height: 10),
+              _doubleFields(
+                first: _buildInputField(
+                  label: '${_customLabel()} Weekly Rate (₱)',
+                  hint: 'blank = not offered',
+                  validator: _optionalAmountValidator,
+                  controller: _rateCustomWeeklyController,
+                  keyboardType: TextInputType.number,
+                ),
+                second: _buildInputField(
+                  label: '${_customLabel()} Monthly Rate (₱)',
+                  hint: 'blank = not offered',
+                  validator: _optionalAmountValidator,
+                  controller: _rateCustomMonthlyController,
+                  keyboardType: TextInputType.number,
+                ),
+              ),
+            ],
           ],
           const SizedBox(height: 16),
           _buildGracePeriodField(),

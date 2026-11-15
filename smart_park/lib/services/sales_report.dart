@@ -3,8 +3,12 @@
 /// printed report. Amounts are kept in centavos so totals add up exactly.
 library;
 
-/// The period the Finance tabs show.
-enum FinancePeriod { week, month, quarter, year }
+/// The period the Report tabs show. [custom] is any span of days the user
+/// picks, e.g. October 20 to November 20.
+enum FinancePeriod { week, month, quarter, year, custom }
+
+/// Longest custom range still broken down per day; longer ones go per month.
+const int kCustomDailyMaxDays = 62;
 
 /// How a report's rows are cut: per day (week, month) or per month
 /// (quarter, year).
@@ -37,9 +41,31 @@ const List<String> kSalesWeekdays = <String>[
 
 String _shortMonth(int month) => kSalesMonthNames[month - 1].substring(0, 3);
 
-/// One calendar week (Monday to Sunday), month, quarter or year.
+/// One calendar week (Monday to Sunday), month, quarter or year, or a
+/// custom span of days.
 class FinanceRange {
-  const FinanceRange._(this.period, this.start);
+  const FinanceRange._(this.period, this.start, [this._customEnd]);
+
+  /// Every day from [first] to [last], both included (swapped if reversed).
+  factory FinanceRange.custom(DateTime first, DateTime last) {
+    DateTime a = DateTime(first.year, first.month, first.day);
+    DateTime b = DateTime(last.year, last.month, last.day);
+    if (b.isBefore(a)) (a, b) = (b, a);
+    return FinanceRange._(
+      FinancePeriod.custom,
+      a,
+      DateTime(b.year, b.month, b.day + 1),
+    );
+  }
+
+  final DateTime? _customEnd;
+
+  /// Number of days in the range.
+  int get days => DateTime.utc(
+    end.year,
+    end.month,
+    end.day,
+  ).difference(DateTime.utc(start.year, start.month, start.day)).inDays;
 
   /// The [period] that contains [day].
   factory FinanceRange.containing(FinancePeriod period, DateTime day) {
@@ -55,6 +81,11 @@ class FinanceRange {
         DateTime(d.year, ((d.month - 1) ~/ 3) * 3 + 1),
       ),
       FinancePeriod.year => FinanceRange._(period, DateTime(d.year)),
+      // The 30 days ending on [day].
+      FinancePeriod.custom => FinanceRange.custom(
+        DateTime(d.year, d.month, d.day - 29),
+        d,
+      ),
     };
   }
 
@@ -69,6 +100,7 @@ class FinanceRange {
     FinancePeriod.month => DateTime(start.year, start.month + 1),
     FinancePeriod.quarter => DateTime(start.year, start.month + 3),
     FinancePeriod.year => DateTime(start.year + 1),
+    FinancePeriod.custom => _customEnd!,
   };
 
   /// Last day of the range.
@@ -76,10 +108,14 @@ class FinanceRange {
 
   bool contains(DateTime t) => !t.isBefore(start) && t.isBefore(end);
 
-  SalesBreakdown get breakdown =>
-      period == FinancePeriod.week || period == FinancePeriod.month
-      ? SalesBreakdown.daily
-      : SalesBreakdown.monthly;
+  SalesBreakdown get breakdown => switch (period) {
+    FinancePeriod.week || FinancePeriod.month => SalesBreakdown.daily,
+    FinancePeriod.custom =>
+      days <= kCustomDailyMaxDays
+          ? SalesBreakdown.daily
+          : SalesBreakdown.monthly,
+    _ => SalesBreakdown.monthly,
+  };
 
   /// The same kind of range [delta] steps later (or earlier, if negative).
   FinanceRange step(int delta) => switch (period) {
@@ -96,12 +132,18 @@ class FinanceRange {
       DateTime(start.year, start.month + 3 * delta),
     ),
     FinancePeriod.year => FinanceRange._(period, DateTime(start.year + delta)),
+    // The same number of days, just before or after.
+    FinancePeriod.custom => FinanceRange.custom(
+      DateTime(start.year, start.month, start.day + days * delta),
+      DateTime(lastDay.year, lastDay.month, lastDay.day + days * delta),
+    ),
   };
 
   /// e.g. "Nov 2 - 8, 2026", "November 2026", "Q4 2026", "2026".
   String get label {
     switch (period) {
       case FinancePeriod.week:
+      case FinancePeriod.custom:
         return salesDateSpan(start, lastDay);
       case FinancePeriod.month:
         return '${kSalesMonthNames[start.month - 1]} ${start.year}';
@@ -123,6 +165,7 @@ class FinanceRange {
     FinancePeriod.month => 'Monthly',
     FinancePeriod.quarter => 'Quarterly',
     FinancePeriod.year => 'Annual',
+    FinancePeriod.custom => '',
   };
 
   /// Short slug for file names, e.g. "2026-11", "2026-Q4", "2026-11-02".
@@ -134,15 +177,21 @@ class FinanceRange {
       FinancePeriod.month => '${start.year}-${two(start.month)}',
       FinancePeriod.quarter => '${start.year}-Q${(start.month - 1) ~/ 3 + 1}',
       FinancePeriod.year => '${start.year}',
+      FinancePeriod.custom =>
+        '${start.year}-${two(start.month)}-${two(start.day)}_to_'
+            '${lastDay.year}-${two(lastDay.month)}-${two(lastDay.day)}',
     };
   }
 
   @override
   bool operator ==(Object other) =>
-      other is FinanceRange && other.period == period && other.start == start;
+      other is FinanceRange &&
+      other.period == period &&
+      other.start == start &&
+      other.end == end;
 
   @override
-  int get hashCode => Object.hash(period, start);
+  int get hashCode => Object.hash(period, start, end);
 }
 
 /// One sale (or one day's pre-summed sales) dated [at].

@@ -53,6 +53,44 @@ FinanceRange rangeOf(FinancePeriod p, DateTime d) =>
     FinanceRange.containing(p, d);
 
 void main() {
+  group('custom range', () {
+    test('covers every day from the first to the last', () {
+      final FinanceRange r = FinanceRange.custom(
+        DateTime(2026, 10, 20),
+        DateTime(2026, 11, 20),
+      );
+      expect(r.days, 32);
+      expect(r.label, 'Oct 20 - Nov 20, 2026');
+      expect(r.contains(DateTime(2026, 11, 20, 23)), isTrue);
+      expect(r.contains(DateTime(2026, 11, 21)), isFalse);
+      expect(r.breakdown, SalesBreakdown.daily);
+      expect(r.slug, '2026-10-20_to_2026-11-20');
+    });
+
+    test('steps by its own length and swaps reversed dates', () {
+      final FinanceRange r = FinanceRange.custom(
+        DateTime(2026, 11, 10),
+        DateTime(2026, 11, 1),
+      );
+      expect(r.start, DateTime(2026, 11, 1));
+      expect(r.step(-1).label, 'Oct 22 - 31, 2026');
+    });
+
+    test('long ranges are broken down per month', () {
+      final FinanceRange r = FinanceRange.custom(
+        DateTime(2026, 1, 15),
+        DateTime(2026, 6, 15),
+      );
+      expect(r.breakdown, SalesBreakdown.monthly);
+      final SalesReport report = SalesReport.forRange(
+        <SalesEntry>[],
+        r,
+        now: DateTime(2026, 7, 1),
+      );
+      expect(report.rows.length, 6);
+    });
+  });
+
   group('FinanceRange', () {
     test('a week runs Monday to Sunday', () {
       final FinanceRange week = rangeOf(FinancePeriod.week, now);

@@ -7,7 +7,9 @@ import 'package:flutter/material.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
 import '../../../services/facility_status.dart';
+import '../../../content/terms_content.dart' show kSupportEmail;
 import '../../../services/parking_pricing.dart';
+import '../../../services/parking_refunds.dart';
 import '../../../services/parking_receipt.dart';
 import '../../../services/ticket_plate.dart';
 import '../../../theme/app_theme.dart';
@@ -173,11 +175,25 @@ class _DriverTicketHistorySectionState extends State<DriverTicketHistorySection>
                       'facility_details_${facilityIds.join(',')}',
                       () => _facilityDetailsStream(facilityIds),
                     ),
-              builder: (BuildContext context, facilitySnapshot) => _buildList(
-                snapshot,
-                tickets,
-                facilitySnapshot.data ?? const <String, Map<String, dynamic>>{},
-              ),
+              builder: (BuildContext context, facilitySnapshot) =>
+                  // Refunds for tickets at facilities SmartPark pulled.
+                  StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                    stream: cachedStream(
+                      'refunds_$uid',
+                      () => FirebaseFirestore.instance
+                          .collection('refunds')
+                          .where('driverId', isEqualTo: uid)
+                          .snapshots(),
+                    ),
+                    builder: (BuildContext context, refundSnapshot) =>
+                        _buildList(
+                          snapshot,
+                          tickets,
+                          facilitySnapshot.data ??
+                              const <String, Map<String, dynamic>>{},
+                          refundsByTicket(refundSnapshot.data),
+                        ),
+                  ),
             );
           },
     );
@@ -187,6 +203,7 @@ class _DriverTicketHistorySectionState extends State<DriverTicketHistorySection>
     AsyncSnapshot<QuerySnapshot<Map<String, dynamic>>> snapshot,
     List<QueryDocumentSnapshot<Map<String, dynamic>>> tickets,
     Map<String, Map<String, dynamic>> facilities,
+    Map<String, ParkingRefund> refunds,
   ) {
     final List<QueryDocumentSnapshot<Map<String, dynamic>>> active =
         <QueryDocumentSnapshot<Map<String, dynamic>>>[];
@@ -282,6 +299,7 @@ class _DriverTicketHistorySectionState extends State<DriverTicketHistorySection>
               _InvalidTicketCard(
                 doc: doc,
                 facility: facilities[_ticketFacilityId(doc.data())],
+                refund: refunds[doc.id],
               ),
           ],
           if (past.isNotEmpty) ...[
@@ -529,19 +547,13 @@ Stream<Map<String, Map<String, dynamic>>> _facilityDetailsStream(
     : (verb: 'suspended', undo: 'reinstated');
 
 String _vehicleLabel(Map<String, dynamic> data) {
-  final String type = ((data['vehicleType'] as String?) ?? '').toLowerCase();
-  return switch (type) {
-    'car' => 'Car',
-    'motorcycle' => 'Motorcycle',
-    '' => 'Vehicle',
-    _ => '${type[0].toUpperCase()}${type.substring(1)}',
-  };
+  return spVehicleTypeLabel(
+    ((data['vehicleType'] as String?) ?? '').trim().toLowerCase(),
+  );
 }
 
 IconData _vehicleIcon(Map<String, dynamic> data) =>
-    ((data['vehicleType'] as String?) ?? '').toLowerCase() == 'motorcycle'
-    ? Icons.two_wheeler_rounded
-    : Icons.directions_car_rounded;
+    spVehicleTypeIcon(spVehicleTypeKey(data['vehicleType']));
 
 String _planLabel(Map<String, dynamic> data) {
   final String plan = ((data['plan'] as String?) ?? '').trim();
@@ -1096,10 +1108,11 @@ class _NoticeStrip extends StatelessWidget {
 /// and what happens to the time left. The QR is withheld, since no gate will
 /// take it.
 class _InvalidTicketCard extends StatefulWidget {
-  const _InvalidTicketCard({required this.doc, this.facility});
+  const _InvalidTicketCard({required this.doc, this.facility, this.refund});
 
   final QueryDocumentSnapshot<Map<String, dynamic>> doc;
   final Map<String, dynamic>? facility;
+  final ParkingRefund? refund;
 
   @override
   State<_InvalidTicketCard> createState() => _InvalidTicketCardState();
@@ -1289,19 +1302,16 @@ class _InvalidTicketCardState extends State<_InvalidTicketCard> {
                               style: const TextStyle(fontSize: 12, height: 1.4),
                             ),
                           ],
-                          const SizedBox(height: 8),
-                          Text(
-                            'Your ${formatParkingHours(hoursLeft)} of parking '
-                            'time stay on the ticket. It becomes valid again '
-                            'if the facility is $undo.',
-                            style: TextStyle(
-                              fontSize: 12,
-                              height: 1.4,
-                              color: AppTheme.textSecondary,
-                            ),
-                          ),
                         ],
                       ),
+                    ),
+                    const SizedBox(height: 10),
+                    _RefundPanel(
+                      ticketId: widget.doc.id,
+                      ticket: data,
+                      facility: facility,
+                      refund: widget.refund,
+                      undo: undo,
                     ),
                     const SizedBox(height: 10),
                     Wrap(
@@ -1357,6 +1367,214 @@ class _InvalidTicketCardState extends State<_InvalidTicketCard> {
   }
 }
 
+/// What happens to the money on a ticket at a pulled facility: a refund on
+/// its way, or (while suspended) the automatic date and a way to ask now.
+class _RefundPanel extends StatefulWidget {
+  const _RefundPanel({
+    required this.ticketId,
+    required this.ticket,
+    required this.facility,
+    required this.refund,
+    required this.undo,
+  });
+
+  final String ticketId;
+  final Map<String, dynamic> ticket;
+  final Map<String, dynamic>? facility;
+  final ParkingRefund? refund;
+
+  /// "reinstated" or "reactivated".
+  final String undo;
+
+  @override
+  State<_RefundPanel> createState() => _RefundPanelState();
+}
+
+class _RefundPanelState extends State<_RefundPanel> {
+  bool _requesting = false;
+
+  Future<void> _request(int amountCentavos) async {
+    final bool? ok = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) => AlertDialog(
+        title: const Text('Request a refund?'),
+        content: Text(
+          'You get ${spPeso(amountCentavos / 100)} back for the unused hours, '
+          'to the account you paid with. A SmartPark admin reviews requests '
+          'first. The ticket can no longer be used once refunded.',
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Not now'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Request refund'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    setState(() => _requesting = true);
+    try {
+      await ParkingRefundService().request(widget.ticketId);
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              friendlyError(error, fallback: 'Could not request a refund.'),
+            ),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _requesting = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ParkingRefund? refund = widget.refund;
+    final bool suspended = facilityStatus(widget.facility) == 'suspended';
+    final int amount =
+        refund?.amountCentavos ?? estimatedRefundCentavos(widget.ticket);
+    final String peso = spPeso(amount / 100);
+    final DateTime? autoDate = suspensionRefundDate(
+      widget.facility?['suspendedAt'],
+    );
+    final String hours = formatParkingHours(ticketHoursLeft(widget.ticket));
+    final String autoWhen = autoDate == null
+        ? 'If it stays suspended for $kSuspensionRefundDays days'
+        : 'If it is still suspended on ${spFormatDate(autoDate)}';
+
+    final (
+      IconData icon,
+      Color color,
+      String title,
+      String body,
+    ) = switch (refund?.status) {
+      'requested' => (
+        Icons.hourglass_top_rounded,
+        spInsideColor,
+        'Refund of $peso requested',
+        'A SmartPark admin will review it. You will see the result here.',
+      ),
+      'approved' || 'processing' => (
+        Icons.sync_rounded,
+        spInsideColor,
+        'Refund of $peso on its way',
+        'It goes back to the account you paid with. Card refunds can '
+            'take several days to show.',
+      ),
+      'refunded' => (
+        Icons.check_circle_rounded,
+        spEntryColor,
+        '$peso refunded',
+        'Sent back to the account you paid with.',
+      ),
+      'failed' => (
+        Icons.error_outline_rounded,
+        spDeniedColor,
+        'Refund of $peso not sent yet',
+        'SmartPark will try again. If it does not arrive, email '
+            '$kSupportEmail with ticket #${widget.ticketId}.',
+      ),
+      'rejected' => (
+        Icons.cancel_outlined,
+        spDeniedColor,
+        'Refund request not approved',
+        '${refund!.decisionNote.isEmpty ? '' : '${refund.decisionNote} '}'
+            'Your $hours stay on the ticket. $autoWhen, you still get '
+            '$peso back automatically.',
+      ),
+      _ when !suspended => (
+        Icons.sync_rounded,
+        spInsideColor,
+        'Refund of $peso being prepared',
+        'The facility was closed, so the unused hours are refunded '
+            'automatically.',
+      ),
+      _ => (
+        Icons.schedule_rounded,
+        spInsideColor,
+        'Your $hours stay on the ticket',
+        'It works again if the facility is ${widget.undo}. $autoWhen, '
+            'you get $peso back automatically. You can also ask for it '
+            'now.',
+      ),
+    };
+    final bool canRequest =
+        suspended &&
+        amount > 0 &&
+        (refund == null || refund.isRejected) &&
+        !_isParked(widget.ticket);
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(AppTheme.radius),
+        border: Border.all(color: color.withValues(alpha: 0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Icon(icon, size: 18, color: color),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  title,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                    color: AppTheme.textDark,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            body,
+            style: TextStyle(
+              fontSize: 12,
+              height: 1.4,
+              color: AppTheme.textSecondary,
+            ),
+          ),
+          if (canRequest) ...<Widget>[
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: _requesting ? null : () => _request(amount),
+                icon: const Icon(Icons.currency_exchange_rounded, size: 18),
+                label: Text(
+                  _requesting
+                      ? 'Requesting...'
+                      : refund == null
+                      ? 'Request refund now ($peso)'
+                      : 'Request again ($peso)',
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+bool _isParked(Map<String, dynamic> ticket) {
+  final String entry = ((ticket['entryStatus'] as String?) ?? '').toLowerCase();
+  return entry == 'checked_in' || entry == 'inside';
+}
+
 class _PastTicketRow extends StatelessWidget {
   const _PastTicketRow({required this.doc});
 
@@ -1366,8 +1584,16 @@ class _PastTicketRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final Map<String, dynamic> data = doc.data();
     final _TicketState state = _ticketState(data);
-    final (String stateLabel, Color stateColor, IconData stateIcon) =
-        _stateStyle(state);
+    var (String stateLabel, Color stateColor, IconData stateIcon) = _stateStyle(
+      state,
+    );
+    // A ticket SmartPark refunded when its facility was pulled.
+    if (data['refundStatus'] == 'refunded') {
+      final int refunded = ((data['refundedCentavos'] as num?) ?? 0).toInt();
+      stateLabel = 'Refunded ${spPeso(refunded / 100)}';
+      stateColor = spEntryColor;
+      stateIcon = Icons.currency_exchange_rounded;
+    }
     final String name = ((data['establishmentName'] as String?) ?? '').trim();
     final double amount = ((data['amount'] as num?) ?? 0).toDouble();
     final int overtimeHours = ((data['overtimeHours'] as num?) ?? 0).toInt();

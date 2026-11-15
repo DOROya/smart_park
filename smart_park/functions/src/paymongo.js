@@ -122,6 +122,35 @@ function isSessionPaid(session) {
   );
 }
 
+/** Id of the payment that settled a checkout session, if any. */
+function paidPaymentId(session) {
+  const payments = session?.attributes?.payments;
+  if (!Array.isArray(payments)) return null;
+  const paid = payments.find(
+    (p) => String(p?.attributes?.status || "").toLowerCase() === "paid",
+  );
+  return paid?.id || null;
+}
+
+/** Refunds part (or all) of a payment. Returns { id, status }. */
+async function createRefund(secretKey, { paymentId, amountCentavos, notes, metadata }) {
+  const decoded = await request(secretKey, "POST", "/refunds", {
+    data: {
+      attributes: {
+        amount: amountCentavos,
+        payment_id: paymentId,
+        // "others" is the one reason both PayMongo's guide and reference list.
+        reason: "others",
+        notes: notes ? String(notes).slice(0, 255) : undefined,
+        metadata,
+      },
+    },
+  });
+  const data = decoded.data || {};
+  if (!data.id) throw new Error("PayMongo response is missing the refund.");
+  return { id: data.id, status: data.attributes?.status || "pending" };
+}
+
 /** Payment method PayMongo actually charged, if it reports one. */
 function paidPaymentMethod(session) {
   const payments = session?.attributes?.payments;
@@ -138,5 +167,7 @@ module.exports = {
   getCheckoutSession,
   expireCheckoutSession,
   isSessionPaid,
+  paidPaymentId,
+  createRefund,
   paidPaymentMethod,
 };

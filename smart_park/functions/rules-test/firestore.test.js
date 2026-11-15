@@ -603,3 +603,19 @@ test("an owner of a suspended facility can ask for review but not lift it", asyn
   }));
   await assertFails(updateDoc(doc(otherOwner(), "establishment_details/est1"), { appealMessage: "x" }));
 });
+
+test("refunds are read-only, and only for the driver, owner or an admin", async () => {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), "refunds/tx1"), { driverId: "driver1", ownerId: "owner1", status: "refunded" });
+    await setDoc(doc(ctx.firestore(), "owner_refund_balances/owner1"), { owedCentavos: 100 });
+  });
+  await assertSucceeds(getDoc(doc(driver(), "refunds/tx1")));
+  await assertSucceeds(getDoc(doc(owner(), "refunds/tx1")));
+  await assertSucceeds(getDoc(doc(admin(), "refunds/tx1")));
+  await assertFails(getDoc(doc(otherOwner(), "refunds/tx1")));
+  await assertFails(updateDoc(doc(driver(), "refunds/tx1"), { status: "approved" }));
+  await assertFails(setDoc(doc(admin(), "refunds/tx9"), { driverId: "driver1" }));
+  await assertSucceeds(getDoc(doc(owner(), "owner_refund_balances/owner1")));
+  await assertFails(getDoc(doc(otherOwner(), "owner_refund_balances/owner1")));
+  await assertFails(updateDoc(doc(owner(), "owner_refund_balances/owner1"), { owedCentavos: 0 }));
+});

@@ -1,0 +1,727 @@
+// Refunds when SmartPark pulls a facility. Drivers pay at the gate, so only
+// paid tickets with hours left can be stranded. The driver always gets the
+// unused share of the price back; who covers it (and PayMongo's fee) depends
+// on why the facility was pulled:
+//   - documents the admin approved turned out invalid -> SmartPark
+//   - anything else -> the owner, recovered from their next online sales
+//
+// When refunds happen:
+//   - deactivated: automatically, for every ticket with hours left
+//   - suspended: the driver may request one (an admin approves it), and
+//     after 14 days still suspended it is automatic
+//   - a vehicle parked when this happens is refunded after it exits
+//
+// refunds/{ticketId} statuses: requested -> processing -> refunded | failed,
+// requested -> rejected, awaiting_exit -> processing.
+
+const { getFirestore, FieldValue, Timestamp } = require("firebase-admin/firestore");
+const { HttpsError } = require("firebase-functions/v2/https");
+const { logger } = require("firebase-functions");
+
+const paymongo = require("./paymongo");
+const { platformFeeCentavosFor } = require("./pricing");
+const { notifyUser, peso } = require("./notify");
+
+const REFUNDS = "refunds";
+const BALANCES = "owner_refund_balances";
+const SUSPENSION_REFUND_DAYS = 14;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** Restriction reasons that mean the admin approved bad documents. */
+const ADMIN_FAULT_REASONS = ["Invalid business permit", "Incomplete or false documents"];
+
+/** Share of each recovery-paying sale that goes to paying refunds back. */
+const RECOVERY_SHARE = 0.5;
+
+// Mirrors includedStayHours in lib/services/parking_pricing.dart.
+const BASE_STAY_HOURS = 2;
+const HOURS_PER_WEEK = 168;
+const HOURS_PER_MONTH = 720;
+
+function includedStayHours(plan, duration) {
+  const n = Number(duration) >= 1 ? Math.floor(Number(duration)) : 1;
+  switch (String(plan || "base").trim().toLowerCase()) {
+    case "extended":
+      return BASE_STAY_HOURS + n;
+    case "daily":
+      return 24 * n;
+    case "weekly":
+      return HOURS_PER_WEEK * n;
+    case "monthly":
+      return HOURS_PER_MONTH * n;
+    default:
+      return BASE_STAY_HOURS;
+  }
+}
+
+/** Mirrors ticketHoursLeft in lib/services/parking_pricing.dart. */
+function hoursLeft(ticket) {
+  if (typeof ticket.remainingHours === "number") return Math.max(0, Math.floor(ticket.remainingHours));
+  const entry = String(ticket.entryStatus || "").toLowerCase();
+  if (entry === "checked_out" || entry === "exited") return 0;
+  return includedStayHours(ticket.plan, ticket.duration);
+}
+
+function isParked(ticket) {
+  const entry = String(ticket.entryStatus || "").toLowerCase();
+  return entry === "checked_in" || entry === "inside";
+}
+
+/** Online-paid tickets only: walk-ins never went through PayMongo. */
+function isRefundable(ticket) {
+  return ticket.status === "paid" && ticket.source !== "walk_in" && Boolean(ticket.paymongo);
+}
+
+/** The unused share of what was paid, in centavos (rounded down). */
+function refundCentavos(ticket, unused = hoursLeft(ticket)) {
+  const total = includedStayHours(ticket.plan, ticket.duration);
+  const paid = Math.round(Number(ticket.amount || 0) * 100);
+  if (total <= 0 || unused <= 0 || paid <= 0) return 0;
+  return Math.min(paid, Math.floor((paid * Math.min(unused, total)) / total));
+}
+
+/** Who covers a refund, from the reasons the facility was pulled. */
+function paidByFor(reasons) {
+  const list = Array.isArray(reasons) ? reasons : [];
+  return list.some((r) => ADMIN_FAULT_REASONS.includes(r)) ? "platform" : "owner";
+}
+
+function facilityStatusOf(details) {
+  return String(details?.status || "").trim().toLowerCase();
+}
+
+function millis(value) {
+  if (!value) return null;
+  if (typeof value.toMillis === "function") return value.toMillis();
+  return typeof value === "number" ? value : null;
+}
+
+/**
+ * What an owner repays for a refund they cover: the refund less SmartPark's
+ * own commission on it, which SmartPark gives back.
+ */
+function ownerOwesCentavos(refundedCentavos) {
+  const amount = Math.max(0, Math.floor(refundedCentavos || 0));
+  return amount - platformFeeCentavosFor(amount);
+}
+
+/** Whether a suspension started at [suspendedAt] is due for refunds. */
+function suspensionRefundDue(suspendedAt, nowMs) {
+  const start = millis(suspendedAt);
+  return start !== null && nowMs - start >= SUSPENSION_REFUND_DAYS * DAY_MS;
+}
+
+/** How much of an owner's debt one sale may repay, in centavos. */
+function recoveryFor(owedCentavos, netToOwnerCentavos) {
+  const owed = Math.max(0, Math.floor(owedCentavos || 0));
+  const cap = Math.floor(Math.max(0, netToOwnerCentavos || 0) * RECOVERY_SHARE);
+  return Math.min(owed, cap);
+}
+
+/** The refund record for a ticket, before it is saved. */
+function buildRefund(ticketId, ticket, details, cause, status) {
+  const unused = hoursLeft(ticket);
+  const reasons = Array.isArray(details?.restrictionReasons) ? details.restrictionReasons : [];
+  return {
+    ticketId,
+    driverId: ticket.driverId || "",
+    establishmentId: ticket.establishmentId || "",
+    establishmentName: ticket.establishmentName || details?.name || "",
+    ownerId: ticket.ownerId || details?.ownerId || "",
+    vehiclePlate: ticket.vehiclePlate || "",
+    vehicleType: ticket.vehicleType || "",
+    plan: ticket.plan || "",
+    duration: ticket.duration || 0,
+    ticketAmountCentavos: Math.round(Number(ticket.amount || 0) * 100),
+    totalHours: includedStayHours(ticket.plan, ticket.duration),
+    unusedHours: unused,
+    amountCentavos: refundCentavos(ticket, unused),
+    cause,
+    restrictionReasons: reasons,
+    paidBy: paidByFor(reasons),
+    status,
+  };
+}
+
+// ---- PayMongo ---------------------------------------------------------------
+
+/** The PayMongo payment id behind a ticket, from the ticket or its session. */
+async function paymentIdFor(secretKey, ticket) {
+  if (ticket.paymongo?.paymentId) return ticket.paymongo.paymentId;
+  const sessionId = ticket.paymongo?.linkId || ticket.paymongo?.sessionId;
+  if (!sessionId) return null;
+  const session = await paymongo.getCheckoutSession(secretKey, sessionId);
+  return paymongo.paidPaymentId(session);
+}
+
+/**
+ * Sends a refund that is ready (or re-sends a failed one). Claims it first so
+ * two runs can never pay it twice.
+ */
+async function processRefund(db, refundRef, secretKey, actor = "system") {
+  const claimed = await db.runTransaction(async (tx) => {
+    const snap = await tx.get(refundRef);
+    const r = snap.data();
+    if (!snap.exists || !["approved", "failed", "awaiting_exit"].includes(r.status)) {
+      return null;
+    }
+    const ticketSnap = await tx.get(db.collection("transactions").doc(r.ticketId));
+    const ticket = ticketSnap.data() || {};
+    // Hours may have changed (a parked vehicle has since left).
+    const unused = hoursLeft(ticket);
+    const amountCentavos = refundCentavos(ticket, unused);
+    tx.update(refundRef, {
+      status: "processing",
+      unusedHours: unused,
+      amountCentavos,
+      processedBy: actor,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    return { ...r, unusedHours: unused, amountCentavos, ticket };
+  });
+  if (!claimed) return null;
+
+  if (claimed.amountCentavos <= 0) {
+    await refundRef.update({
+      status: "refunded",
+      note: "No unused hours left to refund.",
+      refundedAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    return "refunded";
+  }
+
+  let refund;
+  try {
+    const paymentId = await paymentIdFor(secretKey, claimed.ticket);
+    if (!paymentId) throw new Error("No PayMongo payment found for this ticket.");
+    refund = await paymongo.createRefund(secretKey, {
+      paymentId,
+      amountCentavos: claimed.amountCentavos,
+      notes: `SmartPark: ${claimed.establishmentName} was ${claimed.cause === "deactivated" ? "deactivated" : "suspended"}.`,
+      metadata: { ticketId: claimed.ticketId, cause: claimed.cause, paidBy: claimed.paidBy },
+    });
+  } catch (error) {
+    logger.warn(`Refund for ticket ${claimed.ticketId} failed`, error);
+    await refundRef.update({
+      status: "failed",
+      failureReason: String(error.message || error).slice(0, 300),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    // Told once; the daily retries after that are silent.
+    if (!claimed.retries) {
+      await notifyUser(db, claimed.driverId, {
+        title: "Refund delayed",
+        body:
+          `Your ${peso(claimed.amountCentavos)} refund for ${claimed.establishmentName} ` +
+          "could not be sent yet. SmartPark will try again.",
+        data: { ticketId: claimed.ticketId, kind: "refund_failed" },
+      });
+    }
+    return "failed";
+  }
+
+  const ownerPays = claimed.paidBy === "owner" && Boolean(claimed.ownerId);
+  const owed = ownerPays ? ownerOwesCentavos(claimed.amountCentavos) : 0;
+  const batch = db.batch();
+  batch.update(refundRef, {
+    status: "refunded",
+    ownerOwedCentavos: owed,
+    paymongoRefundId: refund.id,
+    paymongoRefundStatus: refund.status,
+    failureReason: FieldValue.delete(),
+    refundedAt: FieldValue.serverTimestamp(),
+    updatedAt: FieldValue.serverTimestamp(),
+  });
+  // The refunded hours can no longer be used.
+  batch.update(db.collection("transactions").doc(claimed.ticketId), {
+    remainingHours: 0,
+    refundStatus: "refunded",
+    refundedCentavos: claimed.amountCentavos,
+    updatedAt: FieldValue.serverTimestamp(),
+  });
+  if (ownerPays) {
+    batch.set(
+      db.collection(BALANCES).doc(claimed.ownerId),
+      {
+        ownerId: claimed.ownerId,
+        owedCentavos: FieldValue.increment(owed),
+        refundedCentavos: FieldValue.increment(owed),
+        updatedAt: FieldValue.serverTimestamp(),
+      },
+      { merge: true },
+    );
+  }
+  batch.set(
+    db.collection("stats").doc("refunds"),
+    {
+      ownerCentavos: FieldValue.increment(owed),
+      platformCentavos: FieldValue.increment(claimed.amountCentavos - owed),
+      count: FieldValue.increment(1),
+      updatedAt: FieldValue.serverTimestamp(),
+    },
+    { merge: true },
+  );
+  await batch.commit();
+  await notifyUser(db, claimed.driverId, {
+    title: "Refund sent",
+    body:
+      `${peso(claimed.amountCentavos)} for your unused hours at ` +
+      `${claimed.establishmentName} is on its way back to the account you paid with.`,
+    data: { ticketId: claimed.ticketId, kind: "refund_sent" },
+  });
+  if (ownerPays) {
+    await notifyUser(db, claimed.ownerId, {
+      title: "A refund was charged to you",
+      body:
+        `${peso(claimed.amountCentavos)} was refunded to a driver at ` +
+        `${claimed.establishmentName}. ${peso(owed)} will come out of your later ` +
+        "online sales. You can dispute it in your Report tab.",
+      data: { ticketId: claimed.ticketId, kind: "refund_charged" },
+    });
+  }
+  return "refunded";
+}
+
+// ---- Issuing ----------------------------------------------------------------
+
+/**
+ * Refunds every eligible ticket at a facility for [cause], without approval.
+ * Parked vehicles get an awaiting_exit refund, sent when they leave. Pending
+ * driver requests are sent too: the automatic refund supersedes them.
+ */
+async function refundFacility(db, establishmentId, details, cause, secretKey) {
+  const tickets = await db
+    .collection("transactions")
+    .where("establishmentId", "==", establishmentId)
+    .where("status", "==", "paid")
+    .get();
+  const ready = [];
+  for (const doc of tickets.docs) {
+    const ticket = doc.data();
+    if (!isRefundable(ticket) || hoursLeft(ticket) <= 0) continue;
+    const ref = db.collection(REFUNDS).doc(doc.id);
+    const status = isParked(ticket) ? "awaiting_exit" : "approved";
+    const created = await db.runTransaction(async (tx) => {
+      const existing = await tx.get(ref);
+      const old = existing.data();
+      if (existing.exists && !["requested", "rejected"].includes(old.status)) return false;
+      tx.set(ref, {
+        ...buildRefund(doc.id, ticket, details, cause, status),
+        createdAt: old?.createdAt || FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+      return true;
+    });
+    if (created && status === "approved") ready.push(ref);
+  }
+  let refunded = 0;
+  for (const ref of ready) {
+    if ((await processRefund(db, ref, secretKey)) === "refunded") refunded++;
+  }
+  logger.info(
+    `Facility ${establishmentId} (${cause}): ${ready.length} refunds sent, ${refunded} refunded.`,
+  );
+}
+
+/** Firestore trigger on establishment_details: suspension clock + deactivation. */
+async function onFacilityStatusChange(establishmentId, before, after, secretKey) {
+  const was = facilityStatusOf(before);
+  const now = facilityStatusOf(after);
+  if (was === now || !after) return;
+  const db = getFirestore();
+  const ref = db.collection("establishment_details").doc(establishmentId);
+  if (now === "suspended") {
+    await ref.set({ suspendedAt: FieldValue.serverTimestamp() }, { merge: true });
+  } else if (was === "suspended") {
+    await ref.set({ suspendedAt: FieldValue.delete() }, { merge: true });
+  }
+  if (now === "deactivated") {
+    await refundFacility(db, establishmentId, after, "deactivated", secretKey);
+  }
+  if (was === "suspended" && now === "approved") {
+    await closeOpenRequests(db, establishmentId);
+  }
+}
+
+const REINSTATED_NOTE = "The facility was reinstated, so your ticket can be used again.";
+
+/**
+ * A reinstated facility's tickets work again, so refund requests nobody
+ * decided yet are closed instead of staying approvable.
+ */
+async function closeOpenRequests(db, establishmentId) {
+  const open = await db
+    .collection(REFUNDS)
+    .where("establishmentId", "==", establishmentId)
+    .where("status", "==", "requested")
+    .get();
+  for (const doc of open.docs) {
+    const closed = await db.runTransaction(async (tx) => {
+      const snap = await tx.get(doc.ref);
+      if (snap.data()?.status !== "requested") return false;
+      tx.update(doc.ref, {
+        status: "rejected",
+        decidedBy: "system",
+        decisionNote: REINSTATED_NOTE,
+        decidedAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+      return true;
+    });
+    if (!closed) continue;
+    const r = doc.data();
+    await notifyUser(db, r.driverId, {
+      title: "Refund request closed",
+      body: `${r.establishmentName} is open again. ${REINSTATED_NOTE}`,
+      data: { ticketId: doc.id, kind: "refund_closed" },
+    });
+  }
+}
+
+/** Daily: refunds tickets at facilities suspended for 14 days or more. */
+async function refundLongSuspensions(secretKey) {
+  const db = getFirestore();
+  const suspended = await db
+    .collection("establishment_details")
+    .where("status", "==", "suspended")
+    .get();
+  const nowMs = Date.now();
+  for (const doc of suspended.docs) {
+    const details = doc.data();
+    if (!suspensionRefundDue(details.suspendedAt, nowMs)) continue;
+    try {
+      await refundFacility(db, doc.id, details, "suspended_14_days", secretKey);
+    } catch (error) {
+      logger.error(`Suspension refunds failed for ${doc.id}`, error);
+    }
+  }
+  // Retry refunds that failed for a passing reason (network, PayMongo down).
+  const failed = await db.collection(REFUNDS).where("status", "==", "failed").limit(50).get();
+  for (const doc of failed.docs) {
+    const r = doc.data();
+    const age = nowMs - (millis(r.updatedAt) || nowMs);
+    if (r.retries >= 3 || age < DAY_MS / 2) continue;
+    await doc.ref.update({ retries: FieldValue.increment(1) });
+    await processRefund(db, doc.ref, secretKey);
+  }
+}
+
+/** Ticket trigger: a parked vehicle at a pulled facility has left. */
+async function onTicketExit(ticketId, before, after, secretKey) {
+  if (!after || isParked(after) || !before || !isParked(before)) return;
+  const db = getFirestore();
+  const ref = db.collection(REFUNDS).doc(ticketId);
+  const snap = await ref.get();
+  if (snap.exists && snap.data().status === "awaiting_exit") {
+    await processRefund(db, ref, secretKey);
+  }
+}
+
+// ---- Callables --------------------------------------------------------------
+
+/** Driver: asks for a refund on a ticket at a suspended facility. */
+async function requestRefund(request) {
+  const uid = request.auth?.uid;
+  if (!uid) throw new HttpsError("unauthenticated", "Please sign in again.");
+  const ticketId = String(request.data?.ticketId || "").trim();
+  const db = getFirestore();
+  const ticketSnap = await db.collection("transactions").doc(ticketId || "-").get();
+  const ticket = ticketSnap.data();
+  if (!ticketSnap.exists || ticket.driverId !== uid) {
+    throw new HttpsError("not-found", "Ticket not found.");
+  }
+  const detailsSnap = await db.collection("establishment_details").doc(ticket.establishmentId).get();
+  const details = detailsSnap.data() || {};
+  if (facilityStatusOf(details) !== "suspended") {
+    throw new HttpsError("failed-precondition", "Refunds are only for tickets at a suspended facility.");
+  }
+  if (!isRefundable(ticket) || hoursLeft(ticket) <= 0) {
+    throw new HttpsError("failed-precondition", "This ticket has no unused hours to refund.");
+  }
+  if (isParked(ticket)) {
+    throw new HttpsError("failed-precondition", "Exit the facility first, then request the refund.");
+  }
+  const ref = db.collection(REFUNDS).doc(ticketId);
+  return db.runTransaction(async (tx) => {
+    const existing = await tx.get(ref);
+    if (existing.exists && existing.data().status !== "rejected") {
+      return { status: existing.data().status };
+    }
+    tx.set(ref, {
+      ...buildRefund(ticketId, ticket, details, "driver_request", "requested"),
+      requestedAt: FieldValue.serverTimestamp(),
+      createdAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    return { status: "requested" };
+  });
+}
+
+/** Admin: approves (and sends) or rejects a driver's refund request. */
+async function decideRefund(request, secretKey) {
+  const uid = request.auth?.uid;
+  if (!uid) throw new HttpsError("unauthenticated", "Please sign in again.");
+  const db = getFirestore();
+  const caller = await db.collection("users").doc(uid).get();
+  if (caller.data()?.role !== "admin") throw new HttpsError("permission-denied", "Admins only.");
+  const ticketId = String(request.data?.ticketId || "").trim();
+  const approve = request.data?.approve === true;
+  const note = String(request.data?.note || "").trim().slice(0, 300);
+  const ref = db.collection(REFUNDS).doc(ticketId || "-");
+
+  const decided = await db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    const r = snap.data();
+    if (!snap.exists) throw new HttpsError("not-found", "Refund not found.");
+    // Failed ones can be retried from the same screen.
+    if (!["requested", "failed"].includes(r.status)) return r.status;
+    tx.update(ref, {
+      status: approve ? "approved" : "rejected",
+      decidedBy: uid,
+      decidedAt: FieldValue.serverTimestamp(),
+      ...(note ? { decisionNote: note } : {}),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    return approve ? "approved" : "rejected";
+  });
+  if (decided === "rejected") {
+    const r = (await ref.get()).data() || {};
+    await notifyUser(db, r.driverId, {
+      title: "Refund request declined",
+      body:
+        `Your refund request for ${r.establishmentName} was not approved.` +
+        (note ? ` ${note}` : "") +
+        " Your hours stay on the ticket.",
+      data: { ticketId, kind: "refund_rejected" },
+    });
+  }
+  if (decided !== "approved") return { status: decided };
+  return { status: (await processRefund(db, ref, secretKey, uid)) || "processing" };
+}
+
+// ---- Owner disputes and direct repayment --------------------------------------
+
+async function requireAdmin(db, auth) {
+  if (!auth?.uid) throw new HttpsError("unauthenticated", "Please sign in again.");
+  const caller = await db.collection("users").doc(auth.uid).get();
+  if (caller.data()?.role !== "admin") throw new HttpsError("permission-denied", "Admins only.");
+  return auth.uid;
+}
+
+/** Why an owner can't dispute this refund's charge, or null when they can. */
+function disputeDenial(refund, ownerId) {
+  if (!refund || refund.ownerId !== ownerId) return ["not-found", "Refund not found."];
+  if (refund.paidBy !== "owner") {
+    return ["failed-precondition", "This refund is not charged to you."];
+  }
+  if (refund.dispute) {
+    return ["failed-precondition", "You already disputed this refund."];
+  }
+  return null;
+}
+
+/** Owner: says a refund should not be charged to them, and why. */
+async function disputeRefundCharge(request) {
+  const uid = request.auth?.uid;
+  if (!uid) throw new HttpsError("unauthenticated", "Please sign in again.");
+  const ticketId = String(request.data?.ticketId || "").trim();
+  const message = String(request.data?.message || "").trim().slice(0, 500);
+  if (message.length < 10) {
+    throw new HttpsError("invalid-argument", "Explain why in a sentence or two.");
+  }
+  const db = getFirestore();
+  const ref = db.collection(REFUNDS).doc(ticketId || "-");
+  await db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    const denial = disputeDenial(snap.data(), uid);
+    if (denial) throw new HttpsError(...denial);
+    tx.update(ref, {
+      dispute: { status: "open", message, createdAt: Timestamp.now() },
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+  });
+  return { status: "open" };
+}
+
+/**
+ * Admin: upholds an owner's dispute (SmartPark takes over the charge and the
+ * owner's balance drops by what they owed for it) or turns it down.
+ */
+async function resolveRefundDispute(request) {
+  const db = getFirestore();
+  const adminId = await requireAdmin(db, request.auth);
+  const ticketId = String(request.data?.ticketId || "").trim();
+  const uphold = request.data?.uphold === true;
+  const note = String(request.data?.note || "").trim().slice(0, 300);
+  const ref = db.collection(REFUNDS).doc(ticketId || "-");
+
+  const resolved = await db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    const r = snap.data();
+    if (!snap.exists) throw new HttpsError("not-found", "Refund not found.");
+    if (r.dispute?.status !== "open") {
+      throw new HttpsError("failed-precondition", "This refund has no open dispute.");
+    }
+    const dispute = {
+      ...r.dispute,
+      status: uphold ? "upheld" : "rejected",
+      resolvedBy: adminId,
+      resolvedAt: Timestamp.now(),
+      ...(note ? { note } : {}),
+    };
+    if (!uphold) {
+      tx.update(ref, { dispute, updatedAt: FieldValue.serverTimestamp() });
+      return r;
+    }
+    // Only a refund already sent has been added to the owner's balance.
+    const owed =
+      r.status === "refunded" ? Math.max(0, r.ownerOwedCentavos ?? r.amountCentavos ?? 0) : 0;
+    tx.update(ref, {
+      dispute,
+      paidBy: "platform",
+      ownerOwedCentavos: 0,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    if (owed > 0) {
+      // May go below zero when part was already repaid: that is credit,
+      // which later charges use up first.
+      tx.set(
+        db.collection(BALANCES).doc(r.ownerId),
+        {
+          owedCentavos: FieldValue.increment(-owed),
+          refundedCentavos: FieldValue.increment(-owed),
+          updatedAt: FieldValue.serverTimestamp(),
+        },
+        { merge: true },
+      );
+      tx.set(
+        db.collection("stats").doc("refunds"),
+        {
+          ownerCentavos: FieldValue.increment(-owed),
+          platformCentavos: FieldValue.increment(owed),
+          updatedAt: FieldValue.serverTimestamp(),
+        },
+        { merge: true },
+      );
+    }
+    return r;
+  });
+  await notifyUser(db, resolved.ownerId, {
+    title: uphold ? "Refund dispute upheld" : "Refund dispute turned down",
+    body: uphold
+      ? `SmartPark now covers the ${peso(resolved.amountCentavos)} refund at ${resolved.establishmentName}.`
+      : `The ${peso(resolved.amountCentavos)} refund at ${resolved.establishmentName} stays charged to you.` +
+        (note ? ` ${note}` : ""),
+    data: { ticketId, kind: "refund_dispute" },
+  });
+  return { status: uphold ? "upheld" : "rejected" };
+}
+
+/**
+ * Admin: records money an owner paid SmartPark directly toward their refund
+ * balance (asked for when a facility has no later sales to recover it from).
+ */
+async function recordOwnerRepayment(request) {
+  const db = getFirestore();
+  const adminId = await requireAdmin(db, request.auth);
+  const ownerId = String(request.data?.ownerId || "").trim();
+  const centavos = Math.floor(Number(request.data?.amountCentavos));
+  if (!ownerId || !(centavos > 0)) {
+    throw new HttpsError("invalid-argument", "Enter the amount received.");
+  }
+  const ref = db.collection(BALANCES).doc(ownerId);
+  const left = await db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    const owed = Math.max(0, snap.data()?.owedCentavos || 0);
+    if (centavos > owed) {
+      throw new HttpsError("failed-precondition", `Only ${peso(owed)} is still owed.`);
+    }
+    tx.update(ref, {
+      owedCentavos: FieldValue.increment(-centavos),
+      recoveredCentavos: FieldValue.increment(centavos),
+      directPaidCentavos: FieldValue.increment(centavos),
+      lastDirectPaymentAt: FieldValue.serverTimestamp(),
+      lastDirectPaymentBy: adminId,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    return owed - centavos;
+  });
+  await notifyUser(db, ownerId, {
+    title: "Payment recorded",
+    body: `SmartPark recorded your ${peso(centavos)} payment. ${peso(left)} is left on your refund balance.`,
+    data: { kind: "refund_repayment" },
+  });
+  return { owedCentavos: left };
+}
+
+// ---- Owner recovery (used by checkout) ---------------------------------------
+
+/**
+ * Reserves part of an owner's refund debt to come out of this sale's split.
+ * Returns the centavos reserved (0 when nothing is owed).
+ */
+async function reserveRecovery(db, ownerId, netToOwnerCentavos) {
+  if (!ownerId) return 0;
+  const ref = db.collection(BALANCES).doc(ownerId);
+  return db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    const amount = recoveryFor(snap.data()?.owedCentavos, netToOwnerCentavos);
+    if (amount <= 0) return 0;
+    tx.update(ref, {
+      owedCentavos: FieldValue.increment(-amount),
+      reservedCentavos: FieldValue.increment(amount),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    return amount;
+  });
+}
+
+/** A reserved recovery was paid (in the split) or released (payment ended). */
+function settleRecoveryInTx(tx, db, ownerId, amount, paid) {
+  if (!ownerId || !(amount > 0)) return;
+  tx.set(
+    db.collection(BALANCES).doc(ownerId),
+    {
+      reservedCentavos: FieldValue.increment(-amount),
+      ...(paid
+        ? { recoveredCentavos: FieldValue.increment(amount) }
+        : { owedCentavos: FieldValue.increment(amount) }),
+      updatedAt: FieldValue.serverTimestamp(),
+    },
+    { merge: true },
+  );
+}
+
+async function releaseRecovery(db, ownerId, amount) {
+  if (!ownerId || !(amount > 0)) return;
+  await db.runTransaction(async (tx) => settleRecoveryInTx(tx, db, ownerId, amount, false));
+}
+
+module.exports = {
+  REFUNDS,
+  BALANCES,
+  ADMIN_FAULT_REASONS,
+  SUSPENSION_REFUND_DAYS,
+  includedStayHours,
+  hoursLeft,
+  refundCentavos,
+  paidByFor,
+  ownerOwesCentavos,
+  disputeDenial,
+  suspensionRefundDue,
+  recoveryFor,
+  buildRefund,
+  processRefund,
+  onFacilityStatusChange,
+  refundLongSuspensions,
+  onTicketExit,
+  requestRefund,
+  decideRefund,
+  disputeRefundCharge,
+  resolveRefundDispute,
+  recordOwnerRepayment,
+  reserveRecovery,
+  settleRecoveryInTx,
+  releaseRecovery,
+};

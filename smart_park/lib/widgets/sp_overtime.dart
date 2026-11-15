@@ -8,6 +8,7 @@ import '../services/gate_scan_service.dart'
 import '../services/parking_pricing.dart';
 import '../theme/app_theme.dart';
 import 'smartpark_ui.dart';
+import 'sp_vehicle_type.dart';
 
 // Callers that only import this file still get the shared formatter.
 export 'smartpark_ui.dart' show spPeso;
@@ -694,9 +695,7 @@ class SpParkedStayRow extends StatelessWidget {
       child: Row(
         children: <Widget>[
           Icon(
-            stay.vehicleType == 'motorcycle'
-                ? Icons.two_wheeler_rounded
-                : Icons.directions_car_filled_rounded,
+            spVehicleTypeIcon(spVehicleTypeKey(stay.vehicleType)),
             size: 20,
             color: color,
           ),

@@ -82,8 +82,15 @@ class FacilityRegistrationData {
   }
 
   String get rateSummary {
-    return 'Car: ${_formatRateVal(rates['car'])}, '
-        'Motorcycle: ${_formatRateVal(rates['motorcycle'])}';
+    return <String>[
+      'Car: ${_formatRateVal(rates['car'])}',
+      'Motorcycle: ${_formatRateVal(rates['motorcycle'])}',
+      // A custom type, e.g. "Truck: ...".
+      for (final String key in rates.keys)
+        if (key != 'car' && key != 'motorcycle')
+          '${key[0].toUpperCase()}${key.substring(1).replaceAll('_', ' ')}: '
+              '${_formatRateVal(rates[key])}',
+    ].join(', ');
   }
 
   Map<String, dynamic> toEstablishmentFirestore({
@@ -110,9 +117,12 @@ class FacilityRegistrationData {
   Map<String, dynamic> toEstablishmentDetailsFirestore({
     required String establishmentId,
   }) {
+    // Car and motorcycle always, plus any custom type (e.g. truck).
     final Map<String, dynamic> normalizedSlots = <String, dynamic>{
       'car': slots['car'] ?? 0,
       'motorcycle': slots['motorcycle'] ?? 0,
+      for (final MapEntry<String, int> e in slots.entries)
+        if (e.key != 'car' && e.key != 'motorcycle') e.key: e.value,
     };
 
     return <String, dynamic>{

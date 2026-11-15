@@ -481,6 +481,8 @@ extension _AdminHomePageFragments on _AdminHomePageState {
         chart,
         const SizedBox(height: 20),
         salesReport,
+        const SizedBox(height: 20),
+        const SpRefundsSection.admin(),
       ];
     }
 
@@ -500,6 +502,8 @@ extension _AdminHomePageFragments on _AdminHomePageState {
       chart,
       const SizedBox(height: 16),
       salesReport,
+      const SizedBox(height: 16),
+      const SpRefundsSection.admin(),
     ];
   }
 

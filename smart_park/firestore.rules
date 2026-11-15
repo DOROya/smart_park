@@ -303,7 +303,9 @@ service cloud.firestore {
         d.status == 'walk_in' &&
         d.entryStatus == 'checked_in' &&
         d.entryStaffId == uid() &&
-        d.vehicleType in ['car', 'motorcycle'] &&
+        // Car, motorcycle, or a custom type the owner added (e.g. truck).
+        d.vehicleType is string &&
+        d.vehicleType.size() > 0 && d.vehicleType.size() <= 20 &&
         d.keys().hasOnly([
           'establishmentId', 'ownerId', 'source', 'status', 'entryStatus',
           'entryAt', 'entryStaffId', 'entryLogId', 'vehicleType',
@@ -429,6 +431,21 @@ service cloud.firestore {
 
     match /stats_daily/{day} {
       allow read: if isAdmin();
+      allow write: if false;
+    }
+
+    // Refunds when SmartPark pulls a facility. Written only by the server;
+    // drivers see theirs, owners see their facilities', admins see all.
+    match /refunds/{ticketId} {
+      allow read: if isAdmin() ||
+        (signedIn() &&
+          (resource.data.driverId == uid() || resource.data.ownerId == uid()));
+      allow write: if false;
+    }
+
+    // What an owner still owes SmartPark for refunds they cover.
+    match /owner_refund_balances/{ownerId} {
+      allow read: if isAdmin() || (signedIn() && ownerId == uid());
       allow write: if false;
     }
 

@@ -630,6 +630,10 @@ pw.Widget _trendChart({
     if (report.range.period == FinancePeriod.week) {
       return '${salesWeekday(start)} ${start.day}';
     }
+    // A custom range can cross months, so the day alone is ambiguous.
+    if (report.range.period == FinancePeriod.custom) {
+      return '${kSalesMonthNames[start.month - 1].substring(0, 3)} ${start.day}';
+    }
     return '${start.day}';
   }
 

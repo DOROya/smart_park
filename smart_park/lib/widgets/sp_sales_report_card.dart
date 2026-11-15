@@ -11,8 +11,9 @@ import '../theme/app_theme.dart';
 import 'smartpark_ui.dart';
 import 'sp_export_sheet.dart';
 
-/// Week / Month / Quarter / Year selector with arrows to step through
-/// periods. Everything under it on a Report tab follows the chosen range.
+/// Week / Month / Quarter / Year / Custom selector with arrows to step
+/// through periods. Everything under it on a Report tab follows the chosen
+/// range. Custom opens a calendar to pick any start and end date.
 class SpFinancePeriodBar extends StatelessWidget {
   const SpFinancePeriodBar({
     super.key,
@@ -38,6 +39,10 @@ class SpFinancePeriodBar extends StatelessWidget {
     DateTime today,
     FinanceRange first,
   ) async {
+    if (range.period == FinancePeriod.custom) {
+      await _pickCustom(context, today);
+      return;
+    }
     if (range.period == FinancePeriod.week) {
       final DateTime? day = await showDatePicker(
         context: context,
@@ -67,11 +72,38 @@ class SpFinancePeriodBar extends StatelessWidget {
     if (picked != null && picked != range) onChanged(picked);
   }
 
+  /// A start and end date, e.g. October 20 to November 20.
+  Future<void> _pickCustom(BuildContext context, DateTime today) async {
+    final DateTime last = DateTime(today.year, today.month, today.day);
+    final DateTime firstAllowed = earliest != null && earliest!.isBefore(last)
+        ? DateTime(earliest!.year - 1, earliest!.month, earliest!.day)
+        : DateTime(last.year - 2, last.month, last.day);
+    final bool current = range.period == FinancePeriod.custom;
+    final DateTimeRange? picked = await showDateRangePicker(
+      context: context,
+      firstDate: firstAllowed,
+      lastDate: last,
+      initialDateRange: current && !range.lastDay.isAfter(last)
+          ? DateTimeRange(start: range.start, end: range.lastDay)
+          : DateTimeRange(
+              start: DateTime(last.year, last.month - 1, last.day),
+              end: last,
+            ),
+      helpText: 'Choose the first and last day',
+      saveText: 'Show',
+    );
+    if (picked != null) {
+      onChanged(FinanceRange.custom(picked.start, picked.end));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final DateTime today = now ?? DateTime.now();
+    final bool custom = range.period == FinancePeriod.custom;
     final FinanceRange first = FinanceRange.containing(
-      range.period,
+      // Custom ranges step by their own length; only their start matters.
+      custom ? FinancePeriod.week : range.period,
       earliest != null && earliest!.isBefore(today) ? earliest! : today,
     );
     final bool canGoBack = range.start.isAfter(first.start);
@@ -88,11 +120,16 @@ class SpFinancePeriodBar extends StatelessWidget {
             (FinancePeriod.month, 'Month'),
             (FinancePeriod.quarter, 'Quarter'),
             (FinancePeriod.year, 'Year'),
+            (FinancePeriod.custom, 'Custom'),
           ],
           selected: range.period,
           // Land on the latest part of what is showing (today, if it is
           // in view), but never before the first sale.
           onChanged: (FinancePeriod p) {
+            if (p == FinancePeriod.custom) {
+              _pickCustom(context, today);
+              return;
+            }
             DateTime anchor = range.contains(today) ? today : range.lastDay;
             if (earliest != null && anchor.isBefore(earliest!)) {
               anchor = earliest!;
@@ -104,14 +141,18 @@ class SpFinancePeriodBar extends StatelessWidget {
         Row(
           children: [
             IconButton(
-              tooltip: 'Previous ${range.period.name}',
+              tooltip: custom
+                  ? 'Previous ${range.days} days'
+                  : 'Previous ${range.period.name}',
               onPressed: canGoBack ? () => onChanged(range.step(-1)) : null,
               icon: const Icon(Icons.chevron_left_rounded),
             ),
             Expanded(
               // Tap the period to jump straight to another one.
               child: Tooltip(
-                message: 'Choose a ${range.period.name}',
+                message: custom
+                    ? 'Choose the dates'
+                    : 'Choose a ${range.period.name}',
                 child: InkWell(
                   borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
                   onTap: () => _pick(context, today, first),
@@ -139,9 +180,9 @@ class SpFinancePeriodBar extends StatelessWidget {
                             ),
                           ],
                         ),
-                        if (range.months.isNotEmpty)
+                        if (range.months.isNotEmpty || custom)
                           Text(
-                            range.months,
+                            custom ? '${range.days} days' : range.months,
                             style: TextStyle(
                               fontSize: 12,
                               color: AppTheme.textMuted,
@@ -154,7 +195,9 @@ class SpFinancePeriodBar extends StatelessWidget {
               ),
             ),
             IconButton(
-              tooltip: 'Next ${range.period.name}',
+              tooltip: custom
+                  ? 'Next ${range.days} days'
+                  : 'Next ${range.period.name}',
               onPressed: canGoForward ? () => onChanged(range.step(1)) : null,
               icon: const Icon(Icons.chevron_right_rounded),
             ),

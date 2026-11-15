@@ -120,11 +120,17 @@ class ParkingReceipt {
     final String other => '${other[0].toUpperCase()}${other.substring(1)}',
   };
 
+  /// "Car", "Motorcycle", or a custom type such as "Mini Bus".
   String get vehicleLabel => switch (vehicleType.toLowerCase()) {
     '' => 'Vehicle',
     'car' => 'Car',
     'motorcycle' => 'Motorcycle',
-    final String other => '${other[0].toUpperCase()}${other.substring(1)}',
+    final String other =>
+      other
+          .split('_')
+          .where((String w) => w.isNotEmpty)
+          .map((String w) => '${w[0].toUpperCase()}${w.substring(1)}')
+          .join(' '),
   };
 
   /// e.g. "Base package (2 hrs)", "Extended (2 hrs + 3 hrs)", "2 days".
