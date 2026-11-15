@@ -14,6 +14,7 @@ import '../driver/driver_home_page.dart';
 import '../parking_owner/parking_owner_home_screen.dart';
 import '../staff/staff_home_page.dart';
 import 'sign_in_screen.dart';
+import 'terms_update_gate.dart';
 
 class RoleBasedHomePage extends StatefulWidget {
   const RoleBasedHomePage({super.key});
@@ -413,8 +414,12 @@ class _RoleBasedHomePageState extends State<RoleBasedHomePage> {
 
         final String role = snapshot.data!;
 
+        // Everyone but admins accepts the current terms before going on.
         if (role == 'Driver') {
-          return DriverHomePage(role: role);
+          return TermsUpdateGate(
+            role: role,
+            child: DriverHomePage(role: role),
+          );
         }
 
         if (role == 'admin') {
@@ -422,11 +427,14 @@ class _RoleBasedHomePageState extends State<RoleBasedHomePage> {
         }
 
         if (role == 'Parking Owner') {
-          return ParkingOwnerHomePage(role: role);
+          return TermsUpdateGate(
+            role: role,
+            child: ParkingOwnerHomePage(role: role),
+          );
         }
 
         if (role == 'staff') {
-          return const StaffHomePage();
+          return TermsUpdateGate(role: role, child: const StaffHomePage());
         }
 
         return const Scaffold(

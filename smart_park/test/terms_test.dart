@@ -12,10 +12,16 @@ String allText(String role) => termsFor(
 
 void main() {
   group('terms content', () {
-    test('drivers and owners each get every section, numbered in order', () {
-      for (final String role in <String>[kDriverRole, kParkingOwnerRole]) {
+    test('every role gets its sections, numbered in order', () {
+      expect(termsFor(kDriverRole), hasLength(12));
+      expect(termsFor(kParkingOwnerRole), hasLength(12));
+      expect(termsFor(kStaffRole), hasLength(8));
+      for (final String role in <String>[
+        kDriverRole,
+        kParkingOwnerRole,
+        kStaffRole,
+      ]) {
         final List<TermsSection> sections = termsFor(role);
-        expect(sections, hasLength(10));
         for (int i = 0; i < sections.length; i++) {
           expect(sections[i].title, startsWith('${i + 1}. '));
           expect(sections[i].points, isNotEmpty);
@@ -48,6 +54,38 @@ void main() {
       for (final String role in <String>[kDriverRole, kParkingOwnerRole]) {
         expect(allText(role), contains(kSupportEmail));
       }
+    });
+
+    test('cover who runs SmartPark, age, liability and disputes', () {
+      for (final String role in <String>[
+        kDriverRole,
+        kParkingOwnerRole,
+        kStaffRole,
+      ]) {
+        final String text = allText(role);
+        expect(text, contains(kOperatorName));
+        expect(text, contains('Responsibility and Liability'));
+        expect(text, contains('laws of the Republic of the Philippines'));
+        expect(text, contains('National Privacy Commission'));
+        expect(text, contains('asks you to accept it before you continue'));
+      }
+      final String driver = allText(kDriverRole);
+      expect(driver, contains('at least 18 years old'));
+      expect(driver, contains('but not your email address'));
+      expect(driver, contains('keeps the old one'));
+      expect(driver, contains('contest it there'));
+      expect(driver, contains('report a facility'));
+      final String owner = allText(kParkingOwnerRole);
+      expect(owner, contains('You are the seller of the parking'));
+      expect(owner, contains('dispute it from the refund'));
+      expect(owner, contains('due within 15 days'));
+      expect(owner, contains('gives back its own commission'));
+      expect(owner, contains('Post a notice at your gate'));
+    });
+
+    test('the version is the date the terms were last changed', () {
+      expect(kTermsVersion, '2026-11-15');
+      expect(kTermsUpdatedLabel, 'November 15, 2026');
     });
   });
 

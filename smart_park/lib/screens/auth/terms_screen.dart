@@ -122,8 +122,8 @@ class _TermsScreenState extends State<TermsScreen> {
               },
               activeColor: AppTheme.accentText,
               title: const Text(
-                'I have read and agree to the Terms and Conditions and the '
-                'Privacy Notice.',
+                'I am 18 or older, and I have read and agree to the Terms '
+                'and Conditions and the Privacy Notice.',
                 style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600),
               ),
               controlAffinity: ListTileControlAffinity.leading,
