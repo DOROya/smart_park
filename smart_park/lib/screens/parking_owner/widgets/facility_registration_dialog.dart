@@ -18,6 +18,7 @@ import '../../../services/parking_pricing.dart'
         kGracePeriodOptions;
 import '../../../services/parking_storage_service.dart';
 import '../../../theme/app_theme.dart';
+import '../../../widgets/smartpark_ui.dart' show spFormatDate;
 import '../../../widgets/sp_network_image.dart';
 import '../../../widgets/sp_vehicle_type.dart';
 import 'facility_review_status_banner.dart';
@@ -117,6 +118,7 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
 
   final List<String> _existingDocumentUrls = <String>[];
   final List<String> _removedDocumentUrls = <String>[];
+  DateTime? _permitExpiresAt;
   final List<File> _newDocumentFiles = <File>[];
 
   int get _totalDocumentCount =>
@@ -283,6 +285,25 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
     _existingDocumentUrls
       ..clear()
       ..addAll(documentUrls.whereType<String>());
+    final Object? permitExpiry = data['permitExpiresAt'];
+    _permitExpiresAt = permitExpiry is Timestamp ? permitExpiry.toDate() : null;
+  }
+
+  Future<void> _pickPermitExpiry() async {
+    final DateTime now = DateTime.now();
+    final DateTime today = DateTime(now.year, now.month, now.day);
+    final DateTime? current = _permitExpiresAt;
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      // Business permits are renewed yearly, so default to the year's end.
+      initialDate: current != null && !current.isBefore(today)
+          ? current
+          : DateTime(today.year, 12, 31),
+      firstDate: today,
+      lastDate: DateTime(today.year + 5, 12, 31),
+      helpText: 'Business permit expiry date',
+    );
+    if (picked != null && mounted) setState(() => _permitExpiresAt = picked);
   }
 
   Future<void> _initializeMapCenter() async {
@@ -632,6 +653,14 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
       return;
     }
 
+    // Asked for with new or changed documents; a facility registered before
+    // this was collected can still save its other details.
+    if (_permitExpiresAt == null &&
+        (_facilityData == null || _documentsChanged)) {
+      _showSnackBar('Set the date your business permit expires.');
+      return;
+    }
+
     if (_reviewStatus == 'approved' && _documentsChanged) {
       if (!await _confirmReapproval() || !mounted) {
         return;
@@ -717,6 +746,7 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
       keepDocumentUrls: List<String>.from(_existingDocumentUrls),
       newDocumentFiles: List<File>.from(_newDocumentFiles),
       removedDocumentUrls: List<String>.from(_removedDocumentUrls),
+      permitExpiresAt: _permitExpiresAt,
     );
 
     if (widget.onSave == null) {
@@ -1313,7 +1343,72 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
               fontWeight: FontWeight.w600,
             ),
           ),
+          const SizedBox(height: 12),
+          _buildPermitExpiry(),
         ],
+      ),
+    );
+  }
+
+  /// When the business permit lapses. SmartPark reminds the owner 30 days
+  /// before, and a permit that expires after approval is the owner's to
+  /// renew.
+  Widget _buildPermitExpiry() {
+    final DateTime? expiry = _permitExpiresAt;
+    final bool expired = expiry != null && expiry.isBefore(DateTime.now());
+    return InkWell(
+      onTap: _saving ? null : _pickPermitExpiry,
+      borderRadius: BorderRadius.circular(AppTheme.radius),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: AppTheme.surfaceAlt,
+          borderRadius: BorderRadius.circular(AppTheme.radius),
+          border: Border.all(
+            color: expired ? AppTheme.danger : AppTheme.border,
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              Icons.event_rounded,
+              size: 20,
+              color: expired ? AppTheme.danger : AppTheme.textMuted,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Business permit expires',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: AppTheme.textMuted,
+                    ),
+                  ),
+                  Text(
+                    expiry == null
+                        ? 'Tap to set the date'
+                        : '${spFormatDate(expiry)}${expired ? ' (expired)' : ''}',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: expired ? AppTheme.danger : AppTheme.textDark,
+                    ),
+                  ),
+                  Text(
+                    'SmartPark reminds you 30 days before. Upload the '
+                    'renewed permit before it lapses.',
+                    style: TextStyle(fontSize: 11, color: AppTheme.textMuted),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

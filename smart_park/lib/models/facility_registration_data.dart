@@ -22,6 +22,7 @@ class FacilityRegistrationData {
     this.keepDocumentUrls = const <String>[],
     this.newDocumentFiles = const <File>[],
     this.removedDocumentUrls = const <String>[],
+    this.permitExpiresAt,
   });
 
   final String name;
@@ -40,6 +41,11 @@ class FacilityRegistrationData {
   final List<String> keepDocumentUrls;
   final List<File> newDocumentFiles;
   final List<String> removedDocumentUrls;
+
+  /// The day the business permit among the documents lapses. Kept with the
+  /// private documents (`establishment_private.permitExpiresAt`) so the
+  /// admin sees it and the owner is reminded before it passes.
+  final DateTime? permitExpiresAt;
 
   bool get documentsChanged =>
       newDocumentFiles.isNotEmpty || removedDocumentUrls.isNotEmpty;

@@ -13,6 +13,7 @@ const checkout = require("./src/checkout");
 const gatePass = require("./src/gate_pass");
 const refunds = require("./src/refunds");
 const reminders = require("./src/reminders");
+const permits = require("./src/permits");
 const occupancy = require("./src/occupancy");
 const photoCompress = require("./src/photo_compress");
 const staff = require("./src/staff");
@@ -103,7 +104,11 @@ exports.refundOnExit = onDocumentWritten(
 
 exports.refundLongSuspensions = onSchedule(
   { schedule: "every day 06:00", timeZone: "Asia/Manila", secrets: [PAYMONGO_SECRET_KEY] },
-  () => refunds.refundLongSuspensions(PAYMONGO_SECRET_KEY.value()),
+  async () => {
+    await refunds.refundLongSuspensions(PAYMONGO_SECRET_KEY.value());
+    // Same daily run: tell owners whose business permit is about to lapse.
+    await permits.remindExpiringPermits();
+  },
 );
 
 // Push reminders before parked drivers' paid time runs out (src/reminders.js).
