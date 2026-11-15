@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 import 'error_reporter.dart';
 import 'facility_status.dart';
+import 'operating_hours.dart';
 import 'parking_checkout_service.dart' show GatePass;
 import 'parking_pricing.dart';
 
@@ -28,6 +29,7 @@ class GateScanResult {
     this.overtimeCollected = false,
     this.vehicleType,
     this.graceMinutes,
+    this.closed,
     this.pass,
   });
 
@@ -54,6 +56,10 @@ class GateScanResult {
 
   /// The facility's grace period on an exit; null for other scans.
   final int? graceMinutes;
+
+  /// Time past the paid time during which the facility was closed, which
+  /// is not charged as overtime; null for other scans.
+  final Duration? closed;
 
   /// The unpaid temporary QR that was scanned, when [isTemporary].
   final GatePass? pass;
@@ -88,6 +94,7 @@ class GateScanResult {
     overtimeCollected: overtimeCollected ?? this.overtimeCollected,
     vehicleType: vehicleType ?? this.vehicleType,
     graceMinutes: graceMinutes,
+    closed: closed,
     pass: pass,
   );
 
@@ -854,12 +861,16 @@ class GateScanService {
     // Overtime starts after the hours left on the ticket and the facility's
     // grace period. The rest stays on the ticket for the next visit.
     final int paidHours = ticketHoursLeft(ticket);
-    final int extraHours = overtimeHours(
-      elapsed,
-      paidHours,
-      graceMinutes: grace,
+    // Overtime does not run while the facility is closed: the driver can't
+    // leave then, so closed time past the paid time is not charged.
+    final Duration closed = closedTimeBetween(
+      entryTime.add(Duration(hours: paidHours)),
+      scannedAt,
+      await _loadHours(facilityId),
     );
-    final bool graced = withinGrace(elapsed, paidHours, graceMinutes: grace);
+    final Duration clock = closed >= elapsed ? Duration.zero : elapsed - closed;
+    final int extraHours = overtimeHours(clock, paidHours, graceMinutes: grace);
+    final bool graced = withinGrace(clock, paidHours, graceMinutes: grace);
     final int deducted = hoursDeducted(elapsed, paidHours);
     final int hoursLeft = paidHours - deducted;
     final double amount = rate == null ? 0 : extraHours * rate;
@@ -882,6 +893,7 @@ class GateScanService {
       'exitStaffId': staff.staffId,
       'exitLogId': exitRef.id,
       'staySeconds': elapsed.inSeconds,
+      'closedSeconds': closed.inSeconds,
       'remainingHours': hoursLeft,
       'overtimeHours': extraHours,
       'overtimeRate': rate,
@@ -898,10 +910,13 @@ class GateScanService {
           ? (cashDue ? 'Overtime: collect cash.' : 'Overtime: rate missing.')
           : graced
           ? 'Within the ${formatGracePeriod(grace)}.'
+          : deducted == 0 && paidHours > 0
+          ? 'Left within $kTurnaroundMinutes minutes: no hours used.'
           : 'Within paid time.',
       'isActive': false,
       'transactionId': transactionId,
       'elapsedSeconds': elapsed.inSeconds,
+      'closedSeconds': closed.inSeconds,
       'billableHours': deducted + extraHours,
       'hoursDeducted': deducted,
       'remainingHours': hoursLeft,
@@ -939,10 +954,13 @@ class GateScanService {
       overtimeAmount: amount,
       activityLogId: exitRef.id,
       graceMinutes: grace,
+      closed: closed,
       reason: extraHours > 0
           ? (cashDue ? 'Overtime: collect cash first.' : 'Overtime: confirm.')
           : graced
           ? 'Within the ${formatGracePeriod(grace)}. No overtime. Release.'
+          : deducted == 0 && paidHours > 0
+          ? 'Left within $kTurnaroundMinutes minutes. No hours used. Release.'
           : hoursLeft > 0
           ? 'Within paid time. ${_hoursText(hoursLeft)} left on ticket. '
                 'Release.'
@@ -1036,6 +1054,25 @@ class GateScanService {
       );
     }
     return null;
+  }
+
+  /// The facility's opening hours (on `establishments`), for overtime.
+  /// Unset when they can't be read, which charges overtime as before.
+  Future<OperatingHours> _loadHours(String facilityId) async {
+    try {
+      final DocumentSnapshot<Map<String, dynamic>> facility = await _db
+          .collection('establishments')
+          .doc(facilityId)
+          .get();
+      return OperatingHours.parse(facility.data() ?? <String, dynamic>{});
+    } catch (error, stack) {
+      reportError(
+        error,
+        stack,
+        reason: 'Loading facility hours for exit scan failed',
+      );
+    }
+    return const OperatingHours();
   }
 
   static Map<String, dynamic>? _ratesOf(Map<String, dynamic>? details) {

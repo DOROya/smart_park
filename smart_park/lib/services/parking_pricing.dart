@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'operating_hours.dart';
+
 /// Package pricing and overtime rules shared by the driver's package picker
 /// and the staff gate. The checkout Cloud Function (functions/src/pricing.js)
 /// prices packages the same way; keep the two in step.
@@ -207,12 +209,57 @@ bool withinGrace(Duration elapsed, int paidHours, {int graceMinutes = 0}) =>
     elapsed.inMinutes > paidHours * 60 &&
     overtimeHours(elapsed, paidHours, graceMinutes: graceMinutes) == 0;
 
+/// A visit this short uses no hours: the driver drove in, found no space
+/// (a ticket is not a reservation) and left again.
+const int kTurnaroundMinutes = 10;
+
 /// Hours an exit takes off a ticket with [paidHours] left: the hours
-/// stayed, at least the base stay, never more than what is left.
+/// stayed, at least the base stay, never more than what is left. Leaving
+/// within [kTurnaroundMinutes] takes none.
 int hoursDeducted(Duration elapsed, int paidHours) {
+  if (elapsed.inMinutes <= kTurnaroundMinutes) return 0;
   final int stayed = stayHours(elapsed);
   final int used = stayed < kBaseStayHours ? kBaseStayHours : stayed;
   return used < paidHours ? used : paidHours;
+}
+
+/// How long the facility was closed between [from] and [to], by whole
+/// minutes. Zero for a facility open all day or with no hours set.
+Duration closedTimeBetween(DateTime from, DateTime to, OperatingHours hours) {
+  if (!to.isAfter(from) ||
+      hours.allDay ||
+      !hours.isSet ||
+      hours.openMinutes == hours.closeMinutes) {
+    return Duration.zero;
+  }
+  int closed = 0;
+  for (
+    DateTime t = from;
+    t.isBefore(to);
+    t = t.add(const Duration(minutes: 1))
+  ) {
+    if (!hours.isOpenAt(t)) closed++;
+  }
+  return Duration(minutes: closed);
+}
+
+/// A stay as overtime counts it. Overtime does not run while the facility
+/// is closed, since the driver cannot leave then: closed time after the
+/// [paidHours] is taken out of the stay.
+Duration overtimeClock(
+  DateTime entryAt,
+  DateTime leftAt,
+  int paidHours,
+  OperatingHours hours,
+) {
+  final Duration elapsed = leftAt.difference(entryAt);
+  if (elapsed.isNegative) return Duration.zero;
+  final Duration closed = closedTimeBetween(
+    entryAt.add(Duration(hours: paidHours)),
+    leftAt,
+    hours,
+  );
+  return closed >= elapsed ? Duration.zero : elapsed - closed;
 }
 
 /// When overtime starts for a stay that began at [entryAt]: the first
