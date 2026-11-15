@@ -11,6 +11,8 @@ const { defineSecret } = require("firebase-functions/params");
 const authEmails = require("./src/auth_emails");
 const checkout = require("./src/checkout");
 const gatePass = require("./src/gate_pass");
+const refunds = require("./src/refunds");
+const reminders = require("./src/reminders");
 const occupancy = require("./src/occupancy");
 const photoCompress = require("./src/photo_compress");
 const staff = require("./src/staff");
@@ -75,6 +77,55 @@ exports.reconcilePendingCheckouts = onSchedule(
   },
   () => checkout.reconcilePendingCheckouts(PAYMONGO_SECRET_KEY.value()),
 );
+
+// Refunds when SmartPark pulls a facility (see src/refunds.js).
+exports.onFacilityStatusChange = onDocumentWritten(
+  { document: "establishment_details/{establishmentId}", secrets: [PAYMONGO_SECRET_KEY] },
+  (event) =>
+    refunds.onFacilityStatusChange(
+      event.params.establishmentId,
+      event.data?.before?.data(),
+      event.data?.after?.data(),
+      PAYMONGO_SECRET_KEY.value(),
+    ),
+);
+
+exports.refundOnExit = onDocumentWritten(
+  { document: "transactions/{transactionId}", secrets: [PAYMONGO_SECRET_KEY] },
+  (event) =>
+    refunds.onTicketExit(
+      event.params.transactionId,
+      event.data?.before?.data(),
+      event.data?.after?.data(),
+      PAYMONGO_SECRET_KEY.value(),
+    ),
+);
+
+exports.refundLongSuspensions = onSchedule(
+  { schedule: "every day 06:00", timeZone: "Asia/Manila", secrets: [PAYMONGO_SECRET_KEY] },
+  () => refunds.refundLongSuspensions(PAYMONGO_SECRET_KEY.value()),
+);
+
+// Push reminders before parked drivers' paid time runs out (src/reminders.js).
+exports.sendParkingReminders = onSchedule(
+  { schedule: "every 5 minutes", timeZone: "Asia/Manila" },
+  () => reminders.sendParkingReminders(),
+);
+
+exports.requestRefund = onCall((request) => refunds.requestRefund(request));
+
+exports.decideRefund = onCall(
+  { secrets: [PAYMONGO_SECRET_KEY] },
+  (request) => refunds.decideRefund(request, PAYMONGO_SECRET_KEY.value()),
+);
+
+// Owners may dispute a refund charged to them; admins decide, and record
+// balances owners pay directly.
+exports.disputeRefundCharge = onCall((request) => refunds.disputeRefundCharge(request));
+
+exports.resolveRefundDispute = onCall((request) => refunds.resolveRefundDispute(request));
+
+exports.recordOwnerRepayment = onCall((request) => refunds.recordOwnerRepayment(request));
 
 // Keeps establishment_occupancy/{id} in step with checked-in tickets.
 exports.updateOccupancy = onDocumentWritten("transactions/{transactionId}", async (event) => {

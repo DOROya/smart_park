@@ -100,7 +100,16 @@ extension _StaffHomePageFragments on _StaffHomePageState {
                             .toInt();
                         final int motorcycleSlots =
                             ((slotCounts['motorcycle'] as num?) ?? 0).toInt();
-                        final int slotSum = carSlots + motorcycleSlots;
+                        final Map<String, int> otherSlots = spOtherVehicleSlots(
+                          slotCounts,
+                        );
+                        final int slotSum =
+                            carSlots +
+                            motorcycleSlots +
+                            otherSlots.values.fold<int>(
+                              0,
+                              (int a, int b) => a + b,
+                            );
                         final int totalSlots = slotSum > 0
                             ? slotSum
                             : ((facility['availability'] as num?) ?? 0).toInt();
@@ -158,6 +167,7 @@ extension _StaffHomePageFragments on _StaffHomePageState {
                           fallbackOccupied: summary.insideNow,
                           carSlots: carSlots,
                           motorcycleSlots: motorcycleSlots,
+                          otherSlots: otherSlots,
                         );
                         final List<Widget> recentScans = <Widget>[
                           SpSectionLabel(

@@ -500,6 +500,15 @@ extension _AdminFacilityReview on _AdminHomePageState {
                     AppTheme.success,
                     motorcycles,
                   ),
+                  // A custom type the owner added, e.g. trucks.
+                  for (final MapEntry<String, int> e in spOtherVehicleSlots(
+                    data['slotCounts'],
+                  ).entries)
+                    slot(
+                      spVehicleTypeIcon(e.key),
+                      const Color(0xFF7C3AED),
+                      e.value,
+                    ),
                 ],
               ),
             ),
@@ -637,6 +646,18 @@ extension _AdminFacilityReview on _AdminHomePageState {
                       ),
                       const SizedBox(width: 3),
                       Text('$motorcycles', style: meta),
+                      for (final MapEntry<String, int> e in spOtherVehicleSlots(
+                        data['slotCounts'],
+                      ).entries) ...[
+                        const SizedBox(width: 10),
+                        Icon(
+                          spVehicleTypeIcon(e.key),
+                          size: 14,
+                          color: const Color(0xFF7C3AED),
+                        ),
+                        const SizedBox(width: 3),
+                        Text('${e.value}', style: meta),
+                      ],
                       if (submittedAt != null) ...[
                         Text('  ·  ', style: meta),
                         Flexible(

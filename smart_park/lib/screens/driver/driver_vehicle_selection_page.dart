@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../../services/parking_pricing.dart';
@@ -86,10 +87,105 @@ class _DriverVehicleSelectionPageState
   late String _selectedVehicleType;
   final TextEditingController _plateNumberController = TextEditingController();
 
+  /// Plates the driver used before, newest first, with their vehicle type.
+  List<({String plate, String type})> _recentPlates =
+      <({String plate, String type})>[];
+
   @override
   void initState() {
     super.initState();
     _selectedVehicleType = widget.vehicleOptions.first.key;
+    _plateNumberController.addListener(() => setState(() {}));
+    _loadRecentPlates();
+  }
+
+  /// Reads the plates on the driver's own tickets, so a regular can tap one
+  /// instead of typing it every time.
+  Future<void> _loadRecentPlates() async {
+    try {
+      final String? uid = FirebaseAuth.instance.currentUser?.uid;
+      if (uid == null) return;
+      final QuerySnapshot<Map<String, dynamic>> snap = await FirebaseFirestore
+          .instance
+          .collection('transactions')
+          .where('driverId', isEqualTo: uid)
+          .get();
+      final List<QueryDocumentSnapshot<Map<String, dynamic>>> docs =
+          snap.docs.toList()..sort((a, b) {
+            final Object? ta = a.data()['createdAt'];
+            final Object? tb = b.data()['createdAt'];
+            return (tb is Timestamp ? tb.millisecondsSinceEpoch : 0).compareTo(
+              ta is Timestamp ? ta.millisecondsSinceEpoch : 0,
+            );
+          });
+      final Set<String> seen = <String>{};
+      final List<({String plate, String type})> plates =
+          <({String plate, String type})>[];
+      for (final QueryDocumentSnapshot<Map<String, dynamic>> d in docs) {
+        final String plate = ((d.data()['vehiclePlate'] as String?) ?? '')
+            .trim()
+            .toUpperCase();
+        final String type = ((d.data()['vehicleType'] as String?) ?? 'car')
+            .trim()
+            .toLowerCase();
+        if (plate.isEmpty || !seen.add('$type|$plate')) continue;
+        plates.add((plate: plate, type: type));
+        if (plates.length >= 12) break;
+      }
+      if (mounted) setState(() => _recentPlates = plates);
+    } catch (_) {
+      // History is only a shortcut; typing still works.
+    }
+  }
+
+  Widget _buildRecentPlates() {
+    final String typed = _plateNumberController.text.trim().toUpperCase();
+    final List<String> plates = <String>[
+      for (final ({String plate, String type}) p in _recentPlates)
+        if (p.type == _selectedVehicleType) p.plate,
+    ].take(6).toList();
+    if (plates.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Recently used',
+            style: TextStyle(
+              color: AppTheme.textMuted,
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final String plate in plates)
+                ChoiceChip(
+                  label: Text(
+                    plate,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.8,
+                    ),
+                  ),
+                  avatar: const Icon(Icons.history_rounded, size: 16),
+                  selected: plate == typed,
+                  onSelected: (_) {
+                    _plateNumberController.text = plate;
+                    _plateNumberController.selection = TextSelection.collapsed(
+                      offset: plate.length,
+                    );
+                  },
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -527,6 +623,7 @@ class _DriverVehicleSelectionPageState
                         ),
                       ),
                     ),
+                    _buildRecentPlates(),
                   ],
                 ),
               ),

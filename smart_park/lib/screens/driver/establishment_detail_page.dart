@@ -14,6 +14,7 @@ import '../../services/parking_pricing.dart' show facilityGraceMinutes;
 import '../../theme/app_theme.dart';
 import '../../utils/friendly_error.dart';
 import '../../widgets/smartpark_ui.dart';
+import '../../widgets/sp_vehicle_type.dart';
 import '../../widgets/sp_image_gallery.dart';
 import '../../widgets/sp_network_image.dart';
 import 'driver_parking_pass_page.dart';
@@ -69,8 +70,15 @@ class _EstablishmentDetailPageState extends State<EstablishmentDetailPage>
   }
 
   List<String> _vehicleKeys(Map<String, dynamic> slotCounts) {
+    // Car and motorcycle, plus a custom type only while it has slots (a
+    // removed one is kept at 0).
     return slotCounts.entries
-        .where((MapEntry<String, dynamic> entry) => entry.value is num)
+        .where(
+          (MapEntry<String, dynamic> entry) =>
+              entry.value is num &&
+              (kStandardVehicleKeys.contains(entry.key) ||
+                  (entry.value as num) > 0),
+        )
         .map((MapEntry<String, dynamic> entry) => entry.key)
         .toList();
   }
@@ -102,19 +110,11 @@ class _EstablishmentDetailPageState extends State<EstablishmentDetailPage>
   }
 
   String _vehicleLabel(String key) {
-    return switch (key) {
-      'car' => 'Car / SUV',
-      'motorcycle' => 'Motorcycle',
-      _ => '${key[0].toUpperCase()}${key.substring(1)}',
-    };
+    return spVehicleTypeLabel(key);
   }
 
   IconData _vehicleIcon(String key) {
-    return switch (key) {
-      'car' => Icons.directions_car_rounded,
-      'motorcycle' => Icons.two_wheeler_rounded,
-      _ => Icons.local_parking_rounded,
-    };
+    return spVehicleTypeIcon(key);
   }
 
   int _vehicleCount(Map<String, dynamic> values, String key) {

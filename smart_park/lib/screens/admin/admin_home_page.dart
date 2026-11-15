@@ -15,6 +15,10 @@ import '../../theme/app_theme.dart';
 import '../../widgets/smartpark_logo.dart';
 import '../../utils/friendly_error.dart';
 import '../../widgets/smartpark_ui.dart';
+import '../../widgets/sp_vehicle_type.dart';
+import '../../widgets/sp_refunds_section.dart';
+import '../../services/parking_refunds.dart'
+    show kAdminFaultReasons, kSuspensionRefundDays;
 import '../../widgets/sp_image_gallery.dart';
 import '../../widgets/sp_network_image.dart';
 import '../../widgets/sp_profile_view.dart';
@@ -377,10 +381,7 @@ class _AdminHomePageState extends State<AdminHomePage>
     final (IconData icon, String label) = switch (vehicleKey) {
       'car' => (Icons.directions_car_rounded, 'Car'),
       'motorcycle' => (Icons.two_wheeler_rounded, 'Motorcycle'),
-      _ => (
-        Icons.local_parking_rounded,
-        '${vehicleKey[0].toUpperCase()}${vehicleKey.substring(1)}',
-      ),
+      _ => (spVehicleTypeIcon(vehicleKey), spVehicleTypeLabel(vehicleKey)),
     };
     final List<(String, double)> lines = <(String, double)>[
       if (rates.initial > 0) ('First $spBaseStayLabel', rates.initial),
@@ -934,6 +935,20 @@ class _AdminHomePageState extends State<AdminHomePage>
                           'drivers will see their tickets for it as invalid. '
                           'Vehicles already inside can still exit. You can '
                           'reactivate it later.',
+              ),
+              const SizedBox(height: 10),
+              // Who covers the refunds follows from the reasons picked.
+              Text(
+                '${suspend ? 'Unused hours on paid tickets are refunded if it '
+                          'stays suspended for $kSuspensionRefundDays days, or '
+                          'sooner if a driver asks and you approve.' : 'Unused hours on paid tickets are refunded '
+                          'automatically.'} '
+                '${reasons.any(kAdminFaultReasons.contains) ? 'SmartPark covers these refunds, since the documents were approved by SmartPark.' : 'The owner covers these refunds from their next sales.'}',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: AppTheme.textDark,
+                ),
               ),
             ],
           ),

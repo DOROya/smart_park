@@ -16,6 +16,7 @@ import '../../widgets/smartpark_logo.dart';
 import '../../theme/theme_controller.dart';
 import '../../utils/friendly_error.dart';
 import '../../widgets/smartpark_ui.dart';
+import '../../widgets/sp_vehicle_type.dart';
 import '../../widgets/sp_activity_details.dart';
 import '../../widgets/sp_activity_search.dart';
 import '../../widgets/sp_driver_report.dart' show showFlagIncidentDialog;

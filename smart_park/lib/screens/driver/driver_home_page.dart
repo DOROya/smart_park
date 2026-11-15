@@ -7,6 +7,7 @@ import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
+import '../../services/parking_push.dart';
 import '../../services/permission_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/smartpark_logo.dart';
@@ -16,6 +17,7 @@ import '../auth/sign_in_screen.dart';
 import 'establishment_detail_page.dart';
 import 'services/driver_establishment_service.dart';
 import 'widgets/driver_home_section.dart';
+import 'widgets/driver_notification_settings_card.dart';
 import 'widgets/driver_ticket_history_section.dart';
 import 'widgets/driver_warning_watcher.dart';
 
@@ -66,6 +68,21 @@ class _DriverHomePageState extends State<DriverHomePage>
     final String? uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid != null) {
       _warnings = DriverWarningWatcher(() => context, uid)..start();
+      // Parking reminders from the server; shown in-app while open.
+      unawaited(
+        ParkingPush.register(
+          uid,
+          onForeground: (String title, String body) {
+            if (!mounted) return;
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('$title\n$body'),
+                duration: const Duration(seconds: 8),
+              ),
+            );
+          },
+        ),
+      );
     }
     WidgetsBinding.instance.addObserver(this);
     _searchController.addListener(_onSearchChanged);
@@ -334,6 +351,8 @@ class _DriverHomePageState extends State<DriverHomePage>
 
   Future<void> _signOut() async {
     if (!await spConfirmSignOut(context)) return;
+    final String? uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid != null) await ParkingPush.unregister(uid);
     await FirebaseAuth.instance.signOut();
     if (!mounted) {
       return;
@@ -401,6 +420,8 @@ class _DriverHomePageState extends State<DriverHomePage>
           extraCards: <Widget>[
             if (FirebaseAuth.instance.currentUser?.uid case final String uid)
               DriverNoticesCard(driverId: uid),
+            if (FirebaseAuth.instance.currentUser?.uid case final String uid)
+              DriverNotificationSettingsCard(driverId: uid),
           ],
           firstNameController: _profileFirstNameController,
           lastNameController: _profileLastNameController,

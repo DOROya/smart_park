@@ -17,7 +17,9 @@ enum SalesReportAudience {
 /// e.g. "Monthly Sales Report" or "Quarterly Commission Report".
 String salesReportTitle(SalesReport report, SalesReportAudience audience) =>
     '${report.range.adjective} '
-    '${audience == SalesReportAudience.owner ? 'Sales' : 'Commission'} Report';
+            '${audience == SalesReportAudience.owner ? 'Sales' : 'Commission'} '
+            'Report'
+        .trim();
 
 /// e.g. "November 2026", or "Q4 2026 (Oct - Dec)" for a quarter.
 String salesReportPeriod(SalesReport report) => report.range.months.isEmpty

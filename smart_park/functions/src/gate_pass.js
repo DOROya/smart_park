@@ -13,6 +13,7 @@ const { HttpsError } = require("firebase-functions/v2/https");
 const { logger } = require("firebase-functions");
 
 const paymongo = require("./paymongo");
+const { reserveRecovery, releaseRecovery } = require("./refunds");
 const {
   CHECKOUTS,
   asString,
@@ -120,7 +121,8 @@ async function expireSessionQuietly(secretKey, sessionId) {
  * instead of lost. Returns the new status.
  */
 async function endGatePayment(db, ref, secretKey, c) {
-  const sessionId = c.paymongo?.sessionId;
+  const fresh = (await ref.get()).data() || c;
+  const sessionId = fresh.paymongo?.sessionId;
   if (sessionId) {
     await expireSessionQuietly(secretKey, sessionId);
     const session = await paymongo.getCheckoutSession(secretKey, sessionId);
@@ -130,7 +132,10 @@ async function endGatePayment(db, ref, secretKey, c) {
     }
   }
   const status = isExpired(c, Date.now()) ? "expired" : "awaiting_gate";
+  // Unpaid: the owner's refund debt set aside for this sale goes back.
+  await releaseRecovery(db, fresh.ownerId, fresh.refundRecoveryCentavos || 0);
   await ref.update({
+    refundRecoveryCentavos: FieldValue.delete(),
     status,
     paymongo: FieldValue.delete(),
     gatePaymentStartedAt: FieldValue.delete(),
@@ -275,7 +280,13 @@ async function startGatePayment(request, secretKey) {
     if (String(establishment?.status || "").toLowerCase() !== "approved") {
       throw new HttpsError("failed-precondition", "This facility is not accepting drivers right now.");
     }
-    session = await openPaymongoSession(secretKey, ref.id, claimed.c);
+    // An owner who owes refunds pays part back from this sale.
+    const recovery = await reserveRecovery(db, claimed.c.ownerId, claimed.c.netToOwnerCentavos);
+    if (recovery > 0) await ref.update({ refundRecoveryCentavos: recovery });
+    session = await openPaymongoSession(secretKey, ref.id, {
+      ...claimed.c,
+      refundRecoveryCentavos: recovery,
+    });
   } catch (error) {
     await endGatePayment(db, ref, secretKey, claimed.c);
     if (error instanceof HttpsError) throw error;
