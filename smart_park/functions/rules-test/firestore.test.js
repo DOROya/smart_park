@@ -543,6 +543,54 @@ test("drivers read their own warnings and may only mark them read", async () => 
   await assertFails(deleteDoc(doc(driver(), "driver_warnings/w1")));
 });
 
+test("a driver contests their own warning once; admins withdraw it", async () => {
+  await env.withSecurityRulesDisabled((ctx) =>
+    setDoc(doc(ctx.firestore(), "driver_warnings/w1"), {
+      driverId: "driver1", message: "Please pay overtime.", acknowledgedAt: null,
+    }));
+  const contest = { contestMessage: "I paid at the exit.", contestedAt: serverTimestamp() };
+  await assertFails(updateDoc(doc(otherDriver(), "driver_warnings/w1"), contest));
+  await assertFails(updateDoc(doc(driver(), "driver_warnings/w1"), { ...contest, contestMessage: "" }));
+  await assertFails(updateDoc(doc(driver(), "driver_warnings/w1"), { ...contest, contestMessage: "x".repeat(501) }));
+  await assertFails(updateDoc(doc(driver(), "driver_warnings/w1"), { ...contest, message: "edited" }));
+  await assertSucceeds(updateDoc(doc(driver(), "driver_warnings/w1"), contest));
+  // Once only, but marking it read still works afterwards.
+  await assertFails(updateDoc(doc(driver(), "driver_warnings/w1"), { ...contest, contestMessage: "Again." }));
+  await assertSucceeds(updateDoc(doc(driver(), "driver_warnings/w1"), { acknowledgedAt: serverTimestamp() }));
+  await assertSucceeds(updateDoc(doc(admin(), "driver_warnings/w1"), { contestStatus: "rejected" }));
+  await assertSucceeds(deleteDoc(doc(admin(), "driver_warnings/w1")));
+});
+
+const facilityReportOf = (over = {}) => ({
+  driverId: "driver1", establishmentId: "est1", establishmentName: "Lot 1",
+  transactionId: "tx1", reasons: ["Refused a valid ticket"], reason: "Refused a valid ticket",
+  details: "", status: "open", ...over,
+});
+
+test("drivers report a facility only from their own ticket for it", async () => {
+  await assertSucceeds(setDoc(doc(driver(), "facility_reports/f1"), facilityReportOf()));
+  // Someone else's ticket, a ticket for another facility, another driver's
+  // name, a pre-decided status or an essay are all refused.
+  await assertFails(setDoc(doc(otherDriver(), "facility_reports/f2"), facilityReportOf({ driverId: "driver2" })));
+  await assertFails(setDoc(doc(driver(), "facility_reports/f3"), facilityReportOf({ establishmentId: "est2" })));
+  await assertFails(setDoc(doc(driver(), "facility_reports/f4"), facilityReportOf({ driverId: "driver2" })));
+  await assertFails(setDoc(doc(driver(), "facility_reports/f5"), facilityReportOf({ status: "resolved" })));
+  await assertFails(setDoc(doc(driver(), "facility_reports/f6"), facilityReportOf({ details: "x".repeat(1001) })));
+  await assertFails(setDoc(doc(driver(), "facility_reports/f7"), facilityReportOf({ reasons: [] })));
+});
+
+test("the facility never sees who reported it; admins review", async () => {
+  await env.withSecurityRulesDisabled((ctx) =>
+    setDoc(doc(ctx.firestore(), "facility_reports/f1"), facilityReportOf()));
+  await assertSucceeds(getDoc(doc(driver(), "facility_reports/f1")));
+  await assertFails(getDoc(doc(owner(), "facility_reports/f1")));
+  await assertFails(getDoc(doc(staff(), "facility_reports/f1")));
+  await assertFails(getDoc(doc(otherDriver(), "facility_reports/f1")));
+  await assertFails(updateDoc(doc(driver(), "facility_reports/f1"), { status: "resolved" }));
+  await assertSucceeds(updateDoc(doc(admin(), "facility_reports/f1"), { status: "resolved" }));
+  await assertFails(deleteDoc(doc(admin(), "facility_reports/f1")));
+});
+
 test("a suspended facility refuses check-ins and walk-ins but not exits", async () => {
   await env.withSecurityRulesDisabled((ctx) =>
     setDoc(doc(ctx.firestore(), "establishment_details/est1"), { status: "suspended" }));

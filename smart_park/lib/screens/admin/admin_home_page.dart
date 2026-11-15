@@ -26,6 +26,7 @@ import '../../widgets/sp_reason_dropdowns.dart';
 import '../../widgets/sp_sales_report_card.dart';
 import '../auth/sign_in_screen.dart';
 import 'admin_driver_reports.dart';
+import 'admin_facility_reports.dart';
 
 part 'admin_home_page_fragments.dart';
 part 'admin_facility_review.dart';
