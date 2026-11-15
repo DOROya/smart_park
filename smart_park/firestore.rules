@@ -407,8 +407,38 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // A driver reports a facility from one of their own tickets for it, so
+    // reports can't be invented. Only admins review them; owners never read
+    // them, so the facility is not told who reported it.
+    match /facility_reports/{reportId} {
+      allow read: if isAdmin() ||
+        (signedIn() && resource.data.driverId == uid());
+      allow create: if isVerifiedOrStaff() &&
+        request.resource.data.driverId == uid() &&
+        request.resource.data.status == 'open' &&
+        reasonsOk(request.resource.data) &&
+        request.resource.data.get('details', '') is string &&
+        request.resource.data.get('details', '').size() <= 1000 &&
+        exists(transactionPath(request.resource.data.transactionId)) &&
+        get(transactionPath(request.resource.data.transactionId)).data.driverId == uid() &&
+        get(transactionPath(request.resource.data.transactionId)).data.establishmentId ==
+          request.resource.data.establishmentId;
+      allow update: if isAdmin();
+      allow delete: if false;
+    }
+
+    // A driver may contest a warning once, with a short message.
+    function warningContestOk() {
+      let d = request.resource.data;
+      return resource.data.get('contestedAt', null) == null &&
+        d.contestMessage is string &&
+        d.contestMessage.size() > 0 && d.contestMessage.size() <= 500 &&
+        d.contestedAt == request.time;
+    }
+
     // Admins warn drivers; a driver reads their own warnings and may only
-    // mark them as read.
+    // mark them as read or contest them. An admin who agrees deletes the
+    // warning; one who does not records why.
     match /driver_warnings/{warningId} {
       allow read: if isAdmin() ||
         (signedIn() && resource.data.driverId == uid());
@@ -416,7 +446,10 @@ service cloud.firestore {
       allow update: if isAdmin() ||
         (signedIn() && resource.data.driverId == uid() &&
           request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly(['acknowledgedAt']));
+            .hasOnly(['acknowledgedAt', 'contestMessage', 'contestedAt']) &&
+          (!request.resource.data.diff(resource.data).affectedKeys()
+              .hasAny(['contestMessage', 'contestedAt']) ||
+            warningContestOk()));
     }
 
     match /payment_splits/{splitId} {

@@ -147,6 +147,60 @@ Future<void> dismissDriverReport({
   });
 }
 
+/// The driver says warning [warningId] is wrong, once, in their own words.
+/// An admin then withdraws it or keeps it.
+Future<void> contestDriverWarning(
+  String warningId,
+  String message, {
+  FirebaseFirestore? firestore,
+}) {
+  final FirebaseFirestore db = firestore ?? FirebaseFirestore.instance;
+  return db.collection('driver_warnings').doc(warningId).update(
+    <String, dynamic>{
+      'contestMessage': message.trim(),
+      'contestedAt': FieldValue.serverTimestamp(),
+    },
+  );
+}
+
+/// How a driver's contest of a warning stands: '' (not contested), open or
+/// rejected. An upheld contest deletes the warning.
+String warningContestStatus(Map<String, dynamic> warning) {
+  if (warning['contestedAt'] == null &&
+      ((warning['contestMessage'] as String?) ?? '').isEmpty) {
+    return '';
+  }
+  return warning['contestStatus'] == 'rejected' ? 'rejected' : 'open';
+}
+
+/// Admin agrees with the driver: the warning is withdrawn for good.
+Future<void> withdrawDriverWarning(
+  String warningId, {
+  FirebaseFirestore? firestore,
+}) {
+  final FirebaseFirestore db = firestore ?? FirebaseFirestore.instance;
+  return db.collection('driver_warnings').doc(warningId).delete();
+}
+
+/// Admin keeps the warning and tells the driver why.
+Future<void> rejectWarningContest({
+  required String adminId,
+  required String warningId,
+  String note = '',
+  FirebaseFirestore? firestore,
+}) {
+  final FirebaseFirestore db = firestore ?? FirebaseFirestore.instance;
+  return db
+      .collection('driver_warnings')
+      .doc(warningId)
+      .update(<String, dynamic>{
+        'contestStatus': 'rejected',
+        'contestNote': note.trim(),
+        'contestReviewedBy': adminId,
+        'contestReviewedAt': FieldValue.serverTimestamp(),
+      });
+}
+
 /// The driver confirms they read warning [warningId].
 Future<void> acknowledgeDriverWarning(
   String warningId, {

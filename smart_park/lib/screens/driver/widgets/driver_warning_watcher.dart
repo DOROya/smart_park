@@ -207,7 +207,8 @@ class _DriverNoticesCardState extends State<DriverNoticesCard> {
         final List<Map<String, dynamic>> notices =
             (snapshot.data?.docs ??
                     <QueryDocumentSnapshot<Map<String, dynamic>>>[])
-                .map((d) => d.data())
+                // The id lets a notice be contested.
+                .map((d) => <String, dynamic>{...d.data(), 'id': d.id})
                 .toList()
               ..sort(
                 (a, b) => (spParseDateTime(b['createdAt']) ?? DateTime.now())
@@ -258,6 +259,106 @@ class _NoticeRow extends StatefulWidget {
 
 class _NoticeRowState extends State<_NoticeRow> {
   bool _expanded = false;
+  bool _sending = false;
+
+  Future<void> _contest() async {
+    final TextEditingController controller = TextEditingController();
+    final bool? ok = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) => AlertDialog(
+        title: const Text('Contest this warning'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            const Text(
+              'Tell SmartPark why this warning is wrong. An administrator '
+              'reviews it and may withdraw the warning. You can contest a '
+              'warning once.',
+              style: TextStyle(fontSize: 13, height: 1.4),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: controller,
+              maxLength: 500,
+              maxLines: 4,
+              autofocus: true,
+              decoration: const InputDecoration(
+                labelText: 'What really happened',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Send'),
+          ),
+        ],
+      ),
+    );
+    final String message = controller.text.trim();
+    controller.dispose();
+    if (ok != true || !mounted) return;
+    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+    if (message.isEmpty) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Write why the warning is wrong.')),
+      );
+      return;
+    }
+    setState(() => _sending = true);
+    try {
+      await contestDriverWarning(widget.notice['id'] as String, message);
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Sent. SmartPark will review it.')),
+      );
+    } catch (_) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Could not send. Try again.')),
+      );
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
+  }
+
+  /// Where the driver's contest stands, or the button to start one.
+  Widget _contestPart() {
+    final Map<String, dynamic> notice = widget.notice;
+    final String status = warningContestStatus(notice);
+    if (status.isEmpty) {
+      if (notice['id'] is! String) return const SizedBox.shrink();
+      return Align(
+        alignment: Alignment.centerLeft,
+        child: TextButton(
+          onPressed: _sending ? null : _contest,
+          style: TextButton.styleFrom(
+            padding: EdgeInsets.zero,
+            visualDensity: VisualDensity.compact,
+          ),
+          child: Text(_sending ? 'Sending...' : 'Contest this warning'),
+        ),
+      );
+    }
+    final String note = ((notice['contestNote'] as String?) ?? '').trim();
+    return Text(
+      status == 'open'
+          ? 'You contested this warning. SmartPark is reviewing it.'
+          : 'SmartPark reviewed your contest and kept the warning.'
+                '${note.isEmpty ? '' : ' $note'}',
+      style: TextStyle(
+        fontSize: 12,
+        height: 1.4,
+        fontWeight: FontWeight.w600,
+        color: AppTheme.textDark,
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -349,6 +450,7 @@ class _NoticeRowState extends State<_NoticeRow> {
                       ),
                     ),
                   ],
+                  if (_expanded) ...[const SizedBox(height: 8), _contestPart()],
                   if (!_expanded) ...[
                     const SizedBox(height: 4),
                     Text(

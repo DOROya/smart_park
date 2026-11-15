@@ -8,6 +8,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 
 import '../../../services/facility_status.dart';
 import '../../../content/terms_content.dart' show kSupportEmail;
+import '../../../widgets/sp_facility_report.dart';
 import '../../../services/parking_pricing.dart';
 import '../../../services/parking_refunds.dart';
 import '../../../services/parking_receipt.dart';
@@ -474,8 +475,14 @@ bool _isPaid(_TicketState state) =>
     state == _TicketState.completed;
 
 /// Shares the ticket's receipt from the data already on screen, so it works
-/// offline and always matches the card.
-Widget _receiptButton(QueryDocumentSnapshot<Map<String, dynamic>> doc) =>
+/// offline and always matches the card. Beside it, the driver can report the
+/// ticket's facility to SmartPark.
+Widget _receiptButton(QueryDocumentSnapshot<Map<String, dynamic>> doc) => Wrap(
+  alignment: WrapAlignment.end,
+  crossAxisAlignment: WrapCrossAlignment.center,
+  spacing: 4,
+  children: <Widget>[
+    SpReportFacilityButton(ticketId: doc.id, ticket: doc.data()),
     SpReceiptButton(
       onExport: (ReceiptFormat format, bool save, Rect? origin) =>
           exportParkingReceiptAs(
@@ -484,7 +491,9 @@ Widget _receiptButton(QueryDocumentSnapshot<Map<String, dynamic>> doc) =>
             save: save,
             origin: origin,
           ),
-    );
+    ),
+  ],
+);
 
 bool _hasTimeLeft(_TicketState state) =>
     state == _TicketState.ready || state == _TicketState.parked;
