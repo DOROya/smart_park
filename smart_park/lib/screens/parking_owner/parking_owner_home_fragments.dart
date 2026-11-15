@@ -280,6 +280,7 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
                               details,
                             ),
                             appealedAt: spParseDateTime(details['appealedAt']),
+                            notice: ComplianceNotice.of(details),
                             onAskForReview: () => showFacilityAppealDialog(
                               context,
                               establishmentId: establishmentId,
@@ -387,6 +388,7 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
             rejectionReason: details['rejectionReason'] as String?,
             restrictionReasons: facilityRestrictionReasons(details),
             appealedAt: spParseDateTime(details['appealedAt']),
+            notice: ComplianceNotice.of(details),
             onAskForReview: () => showFacilityAppealDialog(
               context,
               establishmentId: establishmentId,

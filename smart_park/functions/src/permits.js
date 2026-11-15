@@ -71,4 +71,40 @@ async function remindExpiringPermits() {
   }
 }
 
-module.exports = { REMIND_DAYS_BEFORE, permitNotice, remindExpiringPermits };
+/**
+ * Whether the notice on [after] is one the owner has not been told about:
+ * newly issued, or issued again with a new date.
+ */
+function isNewComplianceNotice(before, after) {
+  const notice = after?.complianceNotice;
+  if (!notice) return false;
+  const previous = before?.complianceNotice;
+  return !previous || millis(previous.issuedAt) !== millis(notice.issuedAt);
+}
+
+/**
+ * Trigger on establishment_details: tells the owner when an admin gives
+ * them notice to fix something before a suspension.
+ */
+async function notifyComplianceNotice(establishmentId, before, after) {
+  if (!isNewComplianceNotice(before, after)) return;
+  const notice = after.complianceNotice;
+  const db = getFirestore();
+  const base = (await db.collection("establishments").doc(establishmentId).get()).data() || {};
+  const reasons = Array.isArray(notice.reasons) ? notice.reasons.join(", ") : "";
+  await notifyUser(db, base.ownerId, {
+    title: "Notice from SmartPark",
+    body:
+      `${base.name || "Your facility"} must fix this by ${manilaDate(millis(notice.dueAt))}` +
+      `${reasons ? `: ${reasons}` : ""}. It may be suspended if it is not fixed.`,
+    data: { establishmentId, kind: "compliance_notice" },
+  });
+}
+
+module.exports = {
+  REMIND_DAYS_BEFORE,
+  permitNotice,
+  remindExpiringPermits,
+  isNewComplianceNotice,
+  notifyComplianceNotice,
+};

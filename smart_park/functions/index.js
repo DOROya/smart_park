@@ -87,13 +87,18 @@ exports.reconcilePendingCheckouts = onSchedule(
 // Refunds when SmartPark pulls a facility (see src/refunds.js).
 exports.onFacilityStatusChange = onDocumentWritten(
   { document: "establishment_details/{establishmentId}", secrets: [PAYMONGO_SECRET_KEY] },
-  (event) =>
-    refunds.onFacilityStatusChange(
+  async (event) => {
+    const before = event.data?.before?.data();
+    const after = event.data?.after?.data();
+    // A notice to fix something before a suspension reaches the owner's phone.
+    await permits.notifyComplianceNotice(event.params.establishmentId, before, after);
+    await refunds.onFacilityStatusChange(
       event.params.establishmentId,
-      event.data?.before?.data(),
-      event.data?.after?.data(),
+      before,
+      after,
       PAYMONGO_SECRET_KEY.value(),
-    ),
+    );
+  },
 );
 
 exports.refundOnExit = onDocumentWritten(
