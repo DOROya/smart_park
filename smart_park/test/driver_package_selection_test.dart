@@ -73,11 +73,19 @@ void main() {
 
     await tester.tap(find.text('Weekly Package'));
     await tester.pumpAndSettle();
+    // Packages of a day or more warn that no slot is held.
+    expect(find.text('This is not a reservation'), findsOneWidget);
     expect(find.text('Number of weeks'), findsOneWidget);
     expect(find.text('Up to 4 weeks.'), findsOneWidget);
 
     await tester.tap(find.byTooltip('More'));
     await tester.pumpAndSettle();
+    // The not-a-reservation note sits above the summary, so scroll to it.
+    await tester.scrollUntilVisible(
+      find.text('2 weeks × ₱1200'),
+      120,
+      scrollable: find.byType(Scrollable).first,
+    );
     expect(find.text('2 weeks × ₱1200'), findsOneWidget);
     expect(find.text('₱2400'), findsWidgets);
 
@@ -122,6 +130,12 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('More'));
     await tester.pumpAndSettle();
+    // The not-a-reservation note sits above the summary, so scroll to it.
+    await tester.scrollUntilVisible(
+      find.text('2 weeks × ₱1200'),
+      120,
+      scrollable: find.byType(Scrollable).first,
+    );
     expect(find.text('2 weeks × ₱1200'), findsOneWidget);
     // The content column stays readable instead of stretching edge to edge.
     expect(tester.getSize(find.text('Weekly Package')).width, lessThan(640));

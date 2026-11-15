@@ -451,6 +451,57 @@ class _DriverPackageSelectionPageState
     );
   }
 
+  /// Packages of a day or more, which drivers come and go on.
+  static bool _isLongStay(String plan) =>
+      plan == 'daily' || plan == 'weekly' || plan == 'monthly';
+
+  /// Shown with day, week and month packages: the ticket pays for time, it
+  /// does not keep a slot while the driver is away.
+  Widget _buildNotReservedNote() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppTheme.warningSoft,
+        borderRadius: BorderRadius.circular(AppTheme.radius),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.info_outline_rounded, size: 18, color: AppTheme.textDark),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'This is not a reservation',
+                  style: TextStyle(
+                    color: AppTheme.textDark,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'This ticket pays for your parking time. It does not hold '
+                  'a slot for you. If you leave and come back, a space may '
+                  'not be available. It is meant to make paying and passing '
+                  'the gate quicker.',
+                  style: TextStyle(
+                    color: AppTheme.textSecondary,
+                    fontSize: 12,
+                    height: 1.4,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildSummary(DriverPackageOption option, int duration, double total) {
     final String unit = _durationUnit(option.key, duration);
     final List<Widget> lines = switch (option.key) {
@@ -623,6 +674,10 @@ class _DriverPackageSelectionPageState
                       if (_hasDuration(_selectedPlan)) ...[
                         const SizedBox(height: 6),
                         _buildDurationStepper(),
+                      ],
+                      if (_isLongStay(_selectedPlan)) ...[
+                        const SizedBox(height: 12),
+                        _buildNotReservedNote(),
                       ],
                       const SizedBox(height: 12),
                       _buildSummary(
