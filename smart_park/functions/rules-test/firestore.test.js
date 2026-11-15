@@ -201,6 +201,18 @@ test("only admins lift a suspension or deactivation", async () => {
   }
 });
 
+test("only admins give or withdraw a notice to fix something", async () => {
+  const notice = { reasons: ["Rates differ from the listing"], message: "" };
+  await env.withSecurityRulesDisabled((ctx) =>
+    setDoc(doc(ctx.firestore(), "establishment_details/est1"), { status: "approved", rates: {} }));
+  await assertFails(updateDoc(doc(owner(), "establishment_details/est1"), { complianceNotice: notice }));
+  await assertSucceeds(updateDoc(doc(admin(), "establishment_details/est1"), { complianceNotice: notice }));
+  // The owner can still edit the facility, but not remove the notice.
+  await assertSucceeds(updateDoc(doc(owner(), "establishment_details/est1"), { policies: "No overnight." }));
+  await assertFails(updateDoc(doc(owner(), "establishment_details/est1"), { complianceNotice: null }));
+  await assertFails(updateDoc(doc(owner(), "establishment_details/est1"), { complianceNotice: deleteField() }));
+});
+
 test("owners pick a grace period of 0 to 60 minutes", async () => {
   const details = doc(owner(), "establishment_details/est1");
   await assertSucceeds(updateDoc(details, { gracePeriodMinutes: 30 }));

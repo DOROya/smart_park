@@ -165,6 +165,7 @@ service cloud.firestore {
     }
 
     // Owners may only (re)submit for review; approving, rejecting, suspending,
+    // giving notice to fix something (complianceNotice),
     // deactivating and the review fields belong to admins. A suspended or
     // deactivated facility cannot be resubmitted - only an admin lifts it.
     function ownerReviewFieldsOk() {
@@ -173,13 +174,15 @@ service cloud.firestore {
             request.resource.data.get('reviewedBy', null) == null &&
             request.resource.data.get('rejectionReason', null) == null &&
             unchanged('restrictionReason') &&
-            unchanged('restrictionReasons')
+            unchanged('restrictionReasons') &&
+            unchanged('complianceNotice')
           : unchanged('status') &&
             unchanged('reviewedBy') &&
             unchanged('reviewedAt') &&
             unchanged('rejectionReason') &&
             unchanged('restrictionReason') &&
-            unchanged('restrictionReasons');
+            unchanged('restrictionReasons') &&
+            unchanged('complianceNotice');
     }
 
     // Minutes past the paid time a vehicle may leave without overtime.

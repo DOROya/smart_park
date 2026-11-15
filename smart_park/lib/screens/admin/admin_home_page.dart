@@ -582,9 +582,11 @@ class _AdminHomePageState extends State<AdminHomePage>
     } else {
       updates['rejectionReason'] = null;
     }
-    // Any decision answers the owner's request for review.
+    // Any decision answers the owner's request for review, and ends a
+    // notice to fix something.
     updates['appealMessage'] = null;
     updates['appealedAt'] = null;
+    updates['complianceNotice'] = null;
     // The picked reasons only apply while the facility is pulled.
     final bool pulled = status == 'suspended' || status == 'deactivated';
     updates['restrictionReasons'] = pulled && restrictionReasons.isNotEmpty
@@ -916,6 +918,91 @@ class _AdminHomePageState extends State<AdminHomePage>
     return confirmed ?? false;
   }
 
+  /// The reasons picked can be fixed, so the owner gets written notice and
+  /// [kComplianceNoticeDays] days before the facility is pulled. Sends that
+  /// notice, or shows the one already standing (and lets it be withdrawn).
+  Future<void> _giveNoticeFirst(
+    BuildContext dialogContext,
+    String establishmentId,
+    Map<String, dynamic> details,
+    List<String> reasons,
+    String note,
+  ) async {
+    final DocumentReference<Map<String, dynamic>> ref = FirebaseFirestore
+        .instance
+        .collection('establishment_details')
+        .doc(establishmentId);
+    final ComplianceNotice? standing = ComplianceNotice.of(details);
+    final DateTime now = DateTime.now();
+    final DateTime dueAt = now.add(const Duration(days: kComplianceNoticeDays));
+    final bool? act = await showDialog<bool>(
+      context: dialogContext,
+      builder: (BuildContext context) => AlertDialog(
+        title: Text(
+          standing == null ? 'Give the owner notice first' : 'Notice sent',
+        ),
+        content: Text(
+          standing == null
+              ? '${joinReasons(reasons)} can be fixed, so the terms give the '
+                    'owner $kComplianceNoticeDays days\' written notice '
+                    'before a suspension. Send the notice now? You can '
+                    'suspend from ${spFormatDate(dueAt)} if it is not fixed.'
+                    '\n\nFor safety concerns, invalid or false documents, or '
+                    'a facility that is not operating, pick that reason to '
+                    'act at once.'
+              : 'A notice was sent on ${spFormatDate(standing.issuedAt)} for '
+                    '${joinReasons(standing.reasons)}. The owner has until '
+                    '${spFormatDate(standing.dueAt)} to fix it; after that '
+                    'you can suspend. Withdraw the notice if it has been '
+                    'fixed.',
+          style: const TextStyle(fontSize: 13, height: 1.4),
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Close'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: Text(standing == null ? 'Send notice' : 'Withdraw notice'),
+          ),
+        ],
+      ),
+    );
+    if (act != true) return;
+    try {
+      await ref.set(<String, dynamic>{
+        'complianceNotice': standing != null
+            ? null
+            : <String, dynamic>{
+                'reasons': reasons,
+                'message': note,
+                'issuedAt': Timestamp.fromDate(now),
+                'dueAt': Timestamp.fromDate(dueAt),
+                'issuedBy': FirebaseAuth.instance.currentUser?.uid,
+              },
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            standing == null
+                ? 'Notice sent. The owner has until ${spFormatDate(dueAt)}.'
+                : 'Notice withdrawn.',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(friendlyError(error, fallback: 'Could not save.')),
+        ),
+      );
+    }
+  }
+
   /// Confirms suspending or deactivating a facility, both of which pull it
   /// from drivers and stop ticket sales.
   Future<bool> _confirmRestrictFacility(
@@ -1186,6 +1273,25 @@ class _AdminHomePageState extends State<AdminHomePage>
                     if (reasons.isEmpty ||
                         (reasons.contains('Other') && note.isEmpty)) {
                       setDialogState(() => reasonMissing = true);
+                      return;
+                    }
+                    final List<String> shownReasons = <String>[
+                      for (final String reason in reasons)
+                        reason == 'Other' ? note : reason,
+                    ];
+                    // A live facility pulled for something fixable gets
+                    // notice and time to fix it first.
+                    if (current == 'approved' &&
+                        needsNoticeFirst(reasons) &&
+                        !(ComplianceNotice.of(data)?.lapsedAt(DateTime.now()) ??
+                            false)) {
+                      await _giveNoticeFirst(
+                        dialogContext,
+                        doc.id,
+                        data,
+                        shownReasons,
+                        note,
+                      );
                       return;
                     }
                     confirmed = await _confirmRestrictFacility(

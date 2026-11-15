@@ -15,7 +15,8 @@ import '../../models/facility_registration_data.dart';
 import '../../services/error_reporter.dart';
 import '../../services/operating_hours.dart';
 import '../../services/parking_push.dart';
-import '../../services/facility_status.dart' show facilityRestrictionReasons;
+import '../../services/facility_status.dart'
+    show ComplianceNotice, facilityRestrictionReasons;
 import '../../services/gate_scan_service.dart'
     show
         isStaffRecordActive,

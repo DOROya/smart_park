@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
-import '../../../services/facility_status.dart' show joinReasons;
+import '../../../services/facility_status.dart'
+    show ComplianceNotice, joinReasons;
 import '../../../theme/app_theme.dart';
 import '../../../utils/friendly_error.dart';
 import '../../../widgets/smartpark_ui.dart';
@@ -15,6 +16,7 @@ class FacilityReviewStatusBanner extends StatelessWidget {
     this.restrictionReasons = const <String>[],
     this.hint,
     this.appealedAt,
+    this.notice,
     this.onAskForReview,
   });
 
@@ -30,6 +32,9 @@ class FacilityReviewStatusBanner extends StatelessWidget {
   /// When the owner asked the admin to review a suspension or
   /// deactivation; null when no request is waiting.
   final DateTime? appealedAt;
+
+  /// A notice from SmartPark to fix something before a suspension.
+  final ComplianceNotice? notice;
 
   /// Offers "Ask for review" on a suspended or deactivated facility.
   final VoidCallback? onAskForReview;
@@ -127,6 +132,30 @@ class FacilityReviewStatusBanner extends StatelessWidget {
                     fontWeight: FontWeight.w500,
                   ),
                 ),
+                if (normalized == 'approved' && notice != null) ...[
+                  const SizedBox(height: 8),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: AppTheme.warningSoft,
+                      borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
+                    ),
+                    child: Text(
+                      'Notice from SmartPark: fix this by '
+                      '${spFormatDate(notice!.dueAt)}, or your facility may '
+                      'be suspended.\n'
+                      '${joinReasons(notice!.reasons)}'
+                      '${notice!.message.isEmpty ? '' : '\n${notice!.message}'}',
+                      style: TextStyle(
+                        color: AppTheme.textDark,
+                        fontSize: 12,
+                        height: 1.4,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
                 if (picked.isNotEmpty) ...[
                   const SizedBox(height: 8),
                   Container(
