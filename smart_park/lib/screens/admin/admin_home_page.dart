@@ -812,7 +812,43 @@ class _AdminHomePageState extends State<AdminHomePage>
     );
   }
 
-  Widget _buildBusinessDocuments(List<String> documentUrls) {
+  /// When the owner says their business permit lapses; red once past.
+  Widget _buildPermitExpiry(Object? permitExpiresAt) {
+    final DateTime? expiry = spParseDateTime(permitExpiresAt);
+    final bool expired = expiry != null && expiry.isBefore(DateTime.now());
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        children: [
+          Icon(
+            Icons.event_rounded,
+            size: 16,
+            color: expired ? AppTheme.danger : AppTheme.textMuted,
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              expiry == null
+                  ? 'Permit expiry date not given.'
+                  : 'Permit ${expired ? 'expired' : 'expires'} '
+                        '${spFormatDate(expiry)}'
+                        '${expired ? '. If it lapsed after approval, pick "$kPermitExpiredReason" when suspending.' : ''}',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: expired ? AppTheme.danger : AppTheme.textDark,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBusinessDocuments(
+    List<String> documentUrls, {
+    Object? permitExpiresAt,
+  }) {
     if (documentUrls.isEmpty) {
       return Container(
         width: double.infinity,
@@ -841,6 +877,7 @@ class _AdminHomePageState extends State<AdminHomePage>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        _buildPermitExpiry(permitExpiresAt),
         _buildImageGrid(documentUrls),
         const SizedBox(height: 6),
         Text(
@@ -1458,7 +1495,10 @@ class _AdminHomePageState extends State<AdminHomePage>
                                   trailing: documentUrls.isEmpty
                                       ? null
                                       : '${documentUrls.length} submitted',
-                                  child: _buildBusinessDocuments(documentUrls),
+                                  child: _buildBusinessDocuments(
+                                    documentUrls,
+                                    permitExpiresAt: data['permitExpiresAt'],
+                                  ),
                                 ),
                                 if (((data['appealMessage'] as String?) ?? '')
                                     .trim()

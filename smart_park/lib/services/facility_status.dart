@@ -10,7 +10,10 @@ String facilityStatus(Map<String, dynamic>? details) =>
 /// owner sees, the picked reasons are also shown to drivers holding tickets
 /// for the facility.
 const List<String> kRestrictionReasons = <String>[
+  // The permit was already bad when SmartPark approved it (SmartPark covers
+  // the refunds), as opposed to one that lapsed afterwards (the owner does).
   'Invalid business permit',
+  kPermitExpiredReason,
   'Incomplete or false documents',
   'Safety or security concerns',
   'Rates differ from the listing',
@@ -20,6 +23,9 @@ const List<String> kRestrictionReasons = <String>[
   'Requested by the owner',
   'Other',
 ];
+
+/// A permit that was valid when approved and has since lapsed.
+const String kPermitExpiredReason = 'Business permit expired';
 
 /// How several picked reasons read on one line.
 String joinReasons(Iterable<String> reasons) => reasons.join(', ');

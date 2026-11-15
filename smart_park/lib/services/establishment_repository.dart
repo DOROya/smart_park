@@ -137,6 +137,17 @@ class EstablishmentRepository {
       await _storageService.deleteFacilityImage(removedUrl);
     }
 
+    final DateTime? permitExpiresAt = formData.permitExpiresAt;
+    if (permitExpiresAt != null) {
+      // With the documents: only the owner and admins can read it.
+      await FirebaseFirestore.instance
+          .collection('establishment_private')
+          .doc(savedId)
+          .set(<String, dynamic>{
+            'permitExpiresAt': Timestamp.fromDate(permitExpiresAt),
+          }, SetOptions(merge: true));
+    }
+
     return (
       establishmentId: savedId,
       submittedForReview: isCreate || resubmit,
