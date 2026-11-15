@@ -10,6 +10,7 @@ const { logger } = require("firebase-functions");
 const {
   PricingError,
   computeAmount,
+  overtimeRateFor,
   platformFeeCentavosFor,
   estimateProcessorFeeCentavos,
 } = require("./pricing");
@@ -118,6 +119,9 @@ async function priceCheckout(db, driverId, data) {
       amountCentavos - platformFeeCentavos - estimatedProcessorFeeCentavos,
     destinationAccountId: asString(establishment.ownerId) || establishmentId,
     slotSnapshot: establishment.slotCounts || {},
+    // The overtime rate posted now stays with the ticket, so a later rate
+    // change can't raise what this driver is charged.
+    overtimeRate: overtimeRateFor(establishment.ratesByType, vehicleType),
   };
 }
 
@@ -216,8 +220,9 @@ async function finalizePaidCheckout(db, checkoutRef, session) {
 
     tx.set(db.collection("transactions").doc(txId), {
       driverId: c.driverId,
+      // Name only: owners and staff read tickets, and have no use for the
+      // driver's email address.
       driverName: `${driver.firstName || ""} ${driver.lastName || ""}`.trim(),
-      driverEmail: driver.email || "",
       establishmentId: c.establishmentId,
       establishmentName: c.establishmentName,
       ownerId: c.ownerId,
@@ -233,6 +238,7 @@ async function finalizePaidCheckout(db, checkoutRef, session) {
       plan: c.plan,
       duration: c.duration,
       slotSnapshot: c.slotSnapshot || {},
+      ...(typeof c.overtimeRate === "number" ? { purchaseOvertimeRate: c.overtimeRate } : {}),
       checkoutId: checkoutRef.id,
       paidAtGate: c.kind === "gate_pass",
       createdAtClient: now,

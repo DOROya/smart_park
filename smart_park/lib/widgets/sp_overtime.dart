@@ -411,7 +411,7 @@ class SpParkedStay {
       entryAt: entryAt,
       // What was left on the ticket when this visit began.
       includedHours: ticketHoursLeft(ticket),
-      rate: resolveOvertimeRate(rates, vehicleType),
+      rate: ticketOvertimeRate(ticket, rates, vehicleType),
       graceMinutes: graceMinutes,
     );
   }

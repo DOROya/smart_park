@@ -296,3 +296,17 @@ double? resolveOvertimeRate(Map<String, dynamic>? rates, String vehicleType) {
   }
   return _parseMoney(vehicle);
 }
+
+/// The overtime rate a ticket is charged at: the one posted when its price
+/// was fixed (`purchaseOvertimeRate`, kept on the ticket by the server), so a
+/// later rate change can't raise it. Tickets from before that was kept, and
+/// walk-ins, use the facility's current [rates].
+double? ticketOvertimeRate(
+  Map<String, dynamic> ticket,
+  Map<String, dynamic>? rates,
+  String vehicleType,
+) {
+  final Object? kept = ticket['purchaseOvertimeRate'];
+  if (kept is num && kept > 0) return kept.toDouble();
+  return resolveOvertimeRate(rates, vehicleType);
+}
