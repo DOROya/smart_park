@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../services/gate_scan_service.dart'
     show kOvertimeCashDue, kOvertimeCollected, overtimeStatusOf;
+import '../services/operating_hours.dart';
 import '../services/parking_pricing.dart';
 import '../theme/app_theme.dart';
 import 'smartpark_ui.dart';
@@ -129,6 +130,7 @@ class SpOvertimeBreakdown extends StatelessWidget {
     this.statusDetail,
     this.forDriver = false,
     this.graceMinutes,
+    this.closed,
   });
 
   /// Reads an exit log or a checked-out ticket. [status] overrides the
@@ -154,6 +156,7 @@ class SpOvertimeBreakdown extends StatelessWidget {
       statusDetail: statusDetail,
       forDriver: forDriver,
       graceMinutes: (data['gracePeriodMinutes'] as num?)?.toInt(),
+      closed: Duration(seconds: ((data['closedSeconds'] as num?) ?? 0).toInt()),
     );
   }
 
@@ -180,13 +183,21 @@ class SpOvertimeBreakdown extends StatelessWidget {
   /// it was stored (and on tickets, which don't keep it).
   final int? graceMinutes;
 
+  /// Time past the paid time while the facility was closed. It is not
+  /// charged: the driver could not have left then.
+  final Duration? closed;
+
   @override
   Widget build(BuildContext context) {
     final bool billed = amount > 0;
     final int? grace = graceMinutes;
     final Duration? stay = elapsed;
+    final Duration closedFor = closed ?? Duration.zero;
     final int counted = stay == null ? 0 : stayHours(stay);
-    final int paidUsed = counted - overtimeHours;
+    final int charged = stay == null || closedFor >= stay
+        ? 0
+        : stayHours(stay - closedFor);
+    final int paidUsed = charged - overtimeHours;
 
     final (Color tone, Color fill, IconData icon, String statusText) = !billed
         ? (
@@ -257,6 +268,12 @@ class SpOvertimeBreakdown extends StatelessWidget {
                 'Covered by ticket',
                 formatParkingHours(paidUsed),
                 note: 'the paid time left when the vehicle entered',
+              ),
+            if (closedFor > Duration.zero)
+              _line(
+                'While the facility was closed',
+                spFormatDuration(closedFor),
+                note: 'not charged',
               ),
           ],
           _line(
@@ -387,6 +404,7 @@ class SpParkedStay {
     required this.includedHours,
     required this.rate,
     required this.graceMinutes,
+    this.hours = const OperatingHours(),
   });
 
   /// Null for walk-ins (no paid time) and tickets with no entry time yet.
@@ -395,6 +413,7 @@ class SpParkedStay {
     Map<String, dynamic> ticket,
     Map<String, dynamic>? rates, {
     int graceMinutes = kDefaultGraceMinutes,
+    OperatingHours hours = const OperatingHours(),
   }) {
     if (ticket['source'] == 'walk_in') return null;
     final DateTime? entryAt =
@@ -413,6 +432,7 @@ class SpParkedStay {
       includedHours: ticketHoursLeft(ticket),
       rate: ticketOvertimeRate(ticket, rates, vehicleType),
       graceMinutes: graceMinutes,
+      hours: hours,
     );
   }
 
@@ -428,13 +448,16 @@ class SpParkedStay {
   /// The facility's grace period after the paid time.
   final int graceMinutes;
 
+  /// The facility's opening hours: overtime does not run while it is closed.
+  final OperatingHours hours;
+
   DateTime get paidUntil => entryAt.add(Duration(hours: includedHours));
   DateTime get overtimeFrom =>
       overtimeStartsAt(entryAt, includedHours, graceMinutes: graceMinutes);
 
   /// Whole overtime hours the gate would bill if the car left at [now].
   int overtimeHoursAt(DateTime now) => overtimeHours(
-    now.difference(entryAt),
+    overtimeClock(entryAt, now, includedHours, hours),
     includedHours,
     graceMinutes: graceMinutes,
   );
@@ -462,9 +485,13 @@ class SpOverstayCard extends StatefulWidget {
     required this.facilityId,
     this.rates,
     this.graceMinutes = kDefaultGraceMinutes,
+    this.hours = const OperatingHours(),
   });
 
   final String facilityId;
+
+  /// The facility's opening hours, so closed time is not shown as overtime.
+  final OperatingHours hours;
 
   /// The facility's `establishment_details.rates`.
   final Map<String, dynamic>? rates;
@@ -524,6 +551,7 @@ class _SpOverstayCardState extends State<SpOverstayCard> {
               doc.data(),
               widget.rates,
               graceMinutes: widget.graceMinutes,
+              hours: widget.hours,
             ),
         ];
         final List<SpParkedStay> over =

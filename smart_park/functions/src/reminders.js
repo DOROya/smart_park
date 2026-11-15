@@ -44,8 +44,51 @@ function paidUntilMs(ticket) {
   return entry + hoursLeft(ticket) * HOUR_MS;
 }
 
+/**
+ * A facility's daily hours as { open, close } in minutes after midnight, or
+ * null when it is open all day or has none set (then it never closes).
+ */
+function facilityHours(establishment) {
+  if (!establishment || establishment.open24Hours === true) return null;
+  const parse = (value) => {
+    const m = /^(\d{1,2}):(\d{2})$/.exec(String(value || "").trim());
+    if (!m || Number(m[1]) > 23 || Number(m[2]) > 59) return null;
+    return Number(m[1]) * 60 + Number(m[2]);
+  };
+  const open = parse(establishment.openTime);
+  const close = parse(establishment.closeTime);
+  return open === null || close === null || open === close ? null : { open, close };
+}
+
+const MANILA_OFFSET_MS = 8 * HOUR_MS;
+const LONGEST_CLOSED_CHECK_MS = 3 * 24 * HOUR_MS;
+
+function isOpenAt(ms, hours) {
+  const minute = Math.floor((ms + MANILA_OFFSET_MS) / MINUTE_MS) % (24 * 60);
+  return hours.open < hours.close
+    ? minute >= hours.open && minute < hours.close
+    : minute >= hours.open || minute < hours.close;
+}
+
+/**
+ * Minutes between two moments during which the facility was open. Overtime
+ * does not run while it is closed (the driver can't leave then); mirrors
+ * overtimeClock in lib/services/parking_pricing.dart.
+ */
+function openMinutesBetween(fromMs, toMs, hours) {
+  if (toMs <= fromMs) return 0;
+  if (!hours || toMs - fromMs > LONGEST_CLOSED_CHECK_MS) {
+    return Math.floor((toMs - fromMs) / MINUTE_MS);
+  }
+  let open = 0;
+  for (let t = fromMs; t < toMs; t += MINUTE_MS) {
+    if (isOpenAt(t, hours)) open++;
+  }
+  return open;
+}
+
 /** Which notices are due for a parked ticket right now. */
-function dueNotices(ticket, prefs, graceMinutes, nowMs) {
+function dueNotices(ticket, prefs, graceMinutes, nowMs, hours = null) {
   const entry = millis(ticket.entryAt);
   const until = paidUntilMs(ticket);
   if (entry === null || until === null) return [];
@@ -58,12 +101,14 @@ function dueNotices(ticket, prefs, graceMinutes, nowMs) {
   ) {
     due.push("reminder");
   }
-  const overtimeAt = until + Math.max(0, graceMinutes) * MINUTE_MS;
+  // Minutes of overtime so far, not counting time the facility was closed.
+  const overMinutes = openMinutesBetween(until, nowMs, hours) - Math.max(0, graceMinutes);
   if (
     prefs.overtimeAlerts &&
     ticket.overtimeSentFor !== entry &&
-    nowMs >= overtimeAt &&
-    nowMs - overtimeAt < OVERTIME_ALERT_WINDOW_MS
+    nowMs >= until &&
+    overMinutes >= 0 &&
+    overMinutes * MINUTE_MS < OVERTIME_ALERT_WINDOW_MS
   ) {
     due.push("overtime");
   }
@@ -132,6 +177,7 @@ async function sendParkingReminders() {
     .where("entryStatus", "==", "checked_in")
     .get();
   const graceCache = new Map();
+  const hoursCache = new Map();
   const userCache = new Map();
   let sent = 0;
   for (const doc of parked.docs) {
@@ -149,7 +195,17 @@ async function sendParkingReminders() {
         const g = Number(d.data()?.gracePeriodMinutes);
         graceCache.set(ticket.establishmentId, Number.isFinite(g) ? g : DEFAULT_GRACE_MINUTES);
       }
-      const due = dueNotices(ticket, prefsOf(user), graceCache.get(ticket.establishmentId), nowMs);
+      if (!hoursCache.has(ticket.establishmentId)) {
+        const e = await db.collection("establishments").doc(ticket.establishmentId).get();
+        hoursCache.set(ticket.establishmentId, facilityHours(e.data()));
+      }
+      const due = dueNotices(
+        ticket,
+        prefsOf(user),
+        graceCache.get(ticket.establishmentId),
+        nowMs,
+        hoursCache.get(ticket.establishmentId),
+      );
       if (!due.length) continue;
       const tokens = Array.isArray(user.fcmTokens) ? user.fcmTokens.filter(Boolean) : [];
       const entry = millis(ticket.entryAt);
@@ -175,6 +231,8 @@ async function sendParkingReminders() {
 module.exports = {
   prefsOf,
   paidUntilMs,
+  facilityHours,
+  openMinutesBetween,
   dueNotices,
   noticeText,
   sendParkingReminders,

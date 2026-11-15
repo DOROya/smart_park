@@ -213,6 +213,7 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
                       facilityId: establishmentId,
                       rates: _ratesOf(details),
                       graceMinutes: facilityGraceMinutes(details),
+                      hours: OperatingHours.parse(facility),
                     );
                     final SpOvertimeCash overtimeCash = SpOvertimeCash.from(
                       summary.dayLogs,

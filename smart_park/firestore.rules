@@ -287,7 +287,8 @@ service cloud.firestore {
       return (!checkingIn() || facilityOpenForEntry(resource.data.establishmentId)) &&
         request.resource.data.diff(resource.data).affectedKeys().hasOnly([
         'entryStatus', 'entryAt', 'entryStaffId', 'entryLogId',
-        'exitAt', 'exitStaffId', 'exitLogId', 'staySeconds', 'remainingHours',
+        'exitAt', 'exitStaffId', 'exitLogId', 'staySeconds', 'closedSeconds',
+        'remainingHours',
         'overtimeHours', 'overtimeRate', 'overtimeAmount', 'overtimeStatus',
         'overtimeCollectedBy', 'overtimeCollectedAt', 'updatedAt'
       ]) && overtimeCollectorOk();
