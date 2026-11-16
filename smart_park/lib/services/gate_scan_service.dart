@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 import 'error_reporter.dart';
 import 'facility_status.dart';
+import 'gate_unsent_exits.dart';
 import 'operating_hours.dart';
 import 'parking_checkout_service.dart' show GatePass;
 import 'parking_pricing.dart';
@@ -226,12 +227,17 @@ const Duration kGateServerWait = Duration(seconds: 5);
 /// Waits for a gate [write] to reach the server, but not forever. Without a
 /// connection Firestore keeps the write on the device and sends it when the
 /// connection is back, so the gate must not hang on it. Returns false when
-/// it is still waiting to be sent.
-Future<bool> settleGateWrite(Future<void> write) async {
+/// it is still waiting to be sent; [onQueued] is then handed the write, to
+/// follow what becomes of it.
+Future<bool> settleGateWrite(
+  Future<void> write, {
+  void Function(Future<void> write)? onQueued,
+}) async {
   try {
     await write.timeout(kGateServerWait);
     return true;
   } on TimeoutException {
+    onQueued?.call(write);
     // Still queued. If the server refuses it later, say so in the reports.
     unawaited(
       write.then<void>(
@@ -307,8 +313,13 @@ class GateScanService {
     FirebaseFirestore? firestore,
     DateTime Function()? clock,
     this._findPass,
+    GateUnsentExits? unsent,
   }) : _db = firestore ?? FirebaseFirestore.instance,
-       _now = clock ?? DateTime.now;
+       _now = clock ?? DateTime.now,
+       unsent = unsent ?? GateUnsentExits();
+
+  /// Exits recorded without a connection that are not on the server yet.
+  final GateUnsentExits unsent;
 
   final FirebaseFirestore _db;
   final DateTime Function() _now;
@@ -1093,7 +1104,20 @@ class GateScanService {
     }
     // Without a connection the exit is kept on this device and sent later;
     // the vehicle is not held at the gate for it.
-    final bool sent = await settleGateWrite(batch.commit());
+    final bool sent = await settleGateWrite(
+      batch.commit(),
+      onQueued: (Future<void> write) => unsent.track(
+        UnsentExit(
+          transactionId: transactionId,
+          exitLogId: exitRef.id,
+          plate: plate,
+          leftAt: scannedAt,
+        ),
+        write,
+      ),
+    );
+    // An earlier try at this exit that the server refused is settled now.
+    if (sent) unsent.resolve(transactionId);
     await _logStaffAction(
       staff: staff,
       action: 'scan_exit',

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../services/error_reporter.dart';
 import '../../services/gate_scan_service.dart' show settleGateWrite;
+import '../../services/gate_unsent_exits.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/friendly_error.dart';
 import '../../widgets/smartpark_ui.dart';
@@ -21,7 +22,12 @@ class WalkInPanel extends StatefulWidget {
     required this.ownerId,
     this.staffName = '',
     this.entryClosed = false,
+    this.unsent,
   });
+
+  /// Where an exit recorded without a connection is followed until it is
+  /// on the server.
+  final GateUnsentExits? unsent;
 
   final String facilityId;
   final String? ownerId;
@@ -208,7 +214,20 @@ class _WalkInPanelState extends State<WalkInPanel> {
         );
       }
       // Without a connection the exit is kept on this device and sent later.
-      final bool sent = await settleGateWrite(batch.commit());
+      final bool sent = await settleGateWrite(
+        batch.commit(),
+        onQueued: (Future<void> write) => widget.unsent?.track(
+          UnsentExit(
+            transactionId: ticket.id,
+            exitLogId: exitRef.id,
+            plate: plate,
+            leftAt: leftAt,
+            walkIn: true,
+          ),
+          write,
+        ),
+      );
+      if (sent) widget.unsent?.resolve(ticket.id);
       _showSnackBar(
         'Walk-in ${plate.isEmpty ? '' : '$plate '}checked out.'
         '${sent ? '' : ' No connection: saved on this device and sent when it is back.'}',

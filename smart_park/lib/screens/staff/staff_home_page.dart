@@ -9,6 +9,7 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 import '../../services/driver_reports.dart' show kWrongVehicleTypeReason;
 import '../../services/facility_status.dart';
 import '../../services/gate_scan_service.dart';
+import '../../services/gate_unsent_exits.dart';
 import '../../services/parking_checkout_service.dart' show GatePassService;
 import '../../services/permission_service.dart';
 import '../../theme/app_theme.dart';
@@ -25,6 +26,7 @@ import '../../widgets/sp_overtime.dart';
 import '../auth/sign_in_screen.dart';
 import 'gate_pass_panel.dart';
 import 'gate_result_card.dart';
+import 'unsent_exits_banner.dart';
 import 'walk_in_panel.dart';
 
 part 'staff_home_page_fragments.dart';
@@ -73,8 +75,16 @@ class _StaffHomePageState extends State<StaffHomePage>
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _staffRecordSub;
 
   final GatePassService _passService = GatePassService();
+
+  /// Exits recorded without a connection, kept per staff account so they
+  /// are still chased after the app is closed and opened again.
+  final GateUnsentExits _unsentExits = GateUnsentExits(
+    storageKey:
+        'gate_unsent_exits_${FirebaseAuth.instance.currentUser?.uid ?? ''}',
+  );
   late final GateScanService _gateService = GateScanService(
     findPass: _passService.find,
+    unsent: _unsentExits,
   );
   late final MobileScannerController _scannerController;
   bool _isProcessingScan = false;
@@ -101,6 +111,11 @@ class _StaffHomePageState extends State<StaffHomePage>
 
     unawaited(_resolveAssignedFacility());
     _watchStaffRecord();
+    unawaited(
+      _unsentExits.load().then(
+        (_) => _unsentExits.recheck(FirebaseFirestore.instance),
+      ),
+    );
   }
 
   void _watchStaffRecord() {
@@ -128,6 +143,7 @@ class _StaffHomePageState extends State<StaffHomePage>
   void dispose() {
     unawaited(_staffRecordSub?.cancel());
     _gateService.dispose();
+    _unsentExits.dispose();
     _scannerController.dispose();
     super.dispose();
   }
