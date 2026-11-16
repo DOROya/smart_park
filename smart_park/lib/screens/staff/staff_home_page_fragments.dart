@@ -485,6 +485,7 @@ extension _StaffHomePageFragments on _StaffHomePageState {
           ownerId: _ownerId,
           staffName: _staffName,
           entryClosed: restriction != null,
+          unsent: _unsentExits,
         ),
       ],
     ];
@@ -672,15 +673,18 @@ extension _StaffHomePageFragments on _StaffHomePageState {
   }
 
   Widget _buildBody(Map<String, dynamic> userData) {
-    switch (_selectedNavIndex) {
-      case 1:
-        return _buildQrTab();
-      case 2:
-        return _buildHistoryTab();
-      case 0:
-      default:
-        return _buildDashboardTab(userData);
-    }
+    final Widget tab = switch (_selectedNavIndex) {
+      1 => _buildQrTab(),
+      2 => _buildHistoryTab(),
+      _ => _buildDashboardTab(userData),
+    };
+    // On every tab, so an exit that never reached the server is not missed.
+    return Column(
+      children: <Widget>[
+        UnsentExitsBanner(unsent: _unsentExits),
+        Expanded(child: tab),
+      ],
+    );
   }
 
   BottomNavigationBarItem _navItem({
