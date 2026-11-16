@@ -133,6 +133,27 @@ class GateResultCard extends StatelessWidget {
             const SizedBox(height: 4),
             Text(result.reason!),
           ],
+          if (result.qrPlate != null) ...<Widget>[
+            const SizedBox(height: 8),
+            _GateNotice(
+              icon: Icons.warning_amber_rounded,
+              warning: true,
+              text:
+                  'This QR was made for plate ${result.qrPlate}. The ticket '
+                  'is now for ${result.vehiclePlate}. Check the plate on the '
+                  'vehicle before you let it through.',
+            ),
+          ],
+          if (result.pendingSync) ...<Widget>[
+            const SizedBox(height: 8),
+            const _GateNotice(
+              icon: Icons.cloud_off_rounded,
+              text:
+                  'No connection. This exit is saved on this device and is '
+                  'sent when the connection is back. Stay signed in until '
+                  'then.',
+            ),
+          ],
           if (onWrongVehicle != null && result.canRefuseVehicle)
             Align(
               alignment: Alignment.centerRight,
@@ -195,6 +216,55 @@ class GateResultCard extends StatelessWidget {
               style: TextStyle(fontSize: 11, color: AppTheme.textMuted),
             ),
           ],
+        ],
+      ),
+    );
+  }
+}
+
+/// A note on the scan the staff must not miss: amber for something to
+/// check on the vehicle, plain for something to know.
+class _GateNotice extends StatelessWidget {
+  const _GateNotice({
+    required this.icon,
+    required this.text,
+    this.warning = false,
+  });
+
+  final IconData icon;
+  final String text;
+  final bool warning;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: warning ? AppTheme.warningSoft : AppTheme.surface,
+        borderRadius: BorderRadius.circular(AppTheme.radius),
+        border: Border.all(color: warning ? AppTheme.accent : AppTheme.border),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Icon(
+            icon,
+            size: 18,
+            color: warning ? AppTheme.accentText : AppTheme.textSecondary,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              text,
+              style: TextStyle(
+                fontSize: 12.5,
+                height: 1.35,
+                fontWeight: FontWeight.w700,
+                color: warning ? AppTheme.accentText : AppTheme.textSecondary,
+              ),
+            ),
+          ),
         ],
       ),
     );

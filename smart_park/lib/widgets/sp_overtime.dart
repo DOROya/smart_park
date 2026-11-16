@@ -464,6 +464,19 @@ class SpParkedStay {
 
   bool isOverAt(DateTime now) => overtimeHoursAt(now) > 0;
 
+  /// Time past the paid time that counts toward overtime at [now]. Hours the
+  /// facility was closed are left out, exactly as the gate leaves them out,
+  /// so this always agrees with [owedAt].
+  Duration overAt(DateTime now) {
+    final Duration over =
+        overtimeClock(entryAt, now, includedHours, hours) -
+        Duration(hours: includedHours);
+    return over.isNegative ? Duration.zero : over;
+  }
+
+  /// Time since the paid time ended during which the facility was closed.
+  Duration closedAt(DateTime now) => closedTimeBetween(paidUntil, now, hours);
+
   /// Paid time ends within [window] (or is ending this minute).
   bool endsSoonAt(DateTime now, {Duration window = spEndsSoonWindow}) =>
       !isOverAt(now) && now.isAfter(paidUntil.subtract(window));
@@ -556,8 +569,9 @@ class _SpOverstayCardState extends State<SpOverstayCard> {
         ];
         final List<SpParkedStay> over =
             stays.where((SpParkedStay s) => s.isOverAt(now)).toList()..sort(
+              // Longest over first.
               (SpParkedStay a, SpParkedStay b) =>
-                  a.overtimeFrom.compareTo(b.overtimeFrom),
+                  b.overAt(now).compareTo(a.overAt(now)),
             );
         final List<SpParkedStay> soon =
             stays.where((SpParkedStay s) => s.endsSoonAt(now)).toList()..sort(
@@ -689,6 +703,23 @@ class _SpOverstayCardState extends State<SpOverstayCard> {
   }
 }
 
+/// How far past (or close to) the end of its paid time [stay] is at [now],
+/// in the words of the owner's overtime card. Time the facility was closed
+/// is not counted, so "+1h over" matches the amount shown beside it.
+String spParkedStayTiming(SpParkedStay stay, DateTime now) {
+  final Duration left = stay.paidUntil.difference(now);
+  if (!left.isNegative) return 'ends in ${spFormatDuration(left)}';
+  final Duration counted = stay.overAt(now);
+  if (stay.isOverAt(now)) return '+${spFormatDuration(counted)} over';
+  if (counted == Duration.zero) return 'paid time ended while closed';
+  // Past the paid time but not the grace period: no overtime yet.
+  if (stay.closedAt(now) > Duration.zero && !stay.hours.isOpenAt(now)) {
+    return 'in grace · paused while closed';
+  }
+  final Duration graceLeft = Duration(minutes: stay.graceMinutes + 1) - counted;
+  return 'in grace · overtime in ${spFormatDuration(graceLeft)}';
+}
+
 /// One parked vehicle: plate, when it came in and what it paid for, and how
 /// far past (or close to) the end of its paid time it is.
 class SpParkedStayRow extends StatelessWidget {
@@ -701,16 +732,11 @@ class SpParkedStayRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final bool over = stay.isOverAt(now);
     final double? owed = stay.owedAt(now);
-    final Duration delta = over
-        ? now.difference(stay.paidUntil)
-        : stay.paidUntil.difference(now);
-    // Past the paid time but not the grace period: no overtime yet.
-    final Duration graceLeft = stay.overtimeFrom.difference(now);
-    final String timing = over
-        ? '+${spFormatDuration(delta)} over'
-        : delta.isNegative
-        ? 'in grace · overtime in ${spFormatDuration(graceLeft)}'
-        : 'ends in ${spFormatDuration(delta)}';
+    // Counted the way the gate counts it: closed hours are not overtime.
+    final Duration counted = stay.overAt(now);
+    final Duration closed = stay.closedAt(now);
+    final Duration left = stay.paidUntil.difference(now);
+    final String timing = spParkedStayTiming(stay, now);
     final Color color = over ? spInsideColor : AppTheme.textMuted;
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
@@ -741,6 +767,14 @@ class SpParkedStayRow extends StatelessWidget {
                   ' · until ${spFormatClockTime(stay.paidUntil)}',
                   style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
                 ),
+                if (left.isNegative && closed > Duration.zero)
+                  Text(
+                    counted == Duration.zero
+                        ? 'Closed since the paid time ended: no overtime.'
+                        : '${spFormatDuration(closed)} while closed is not '
+                              'counted.',
+                    style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
+                  ),
               ],
             ),
           ),

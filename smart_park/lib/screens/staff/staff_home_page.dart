@@ -127,6 +127,7 @@ class _StaffHomePageState extends State<StaffHomePage>
   @override
   void dispose() {
     unawaited(_staffRecordSub?.cancel());
+    _gateService.dispose();
     _scannerController.dispose();
     super.dispose();
   }
@@ -143,6 +144,8 @@ class _StaffHomePageState extends State<StaffHomePage>
     if (!mounted) {
       return;
     }
+    // Exits must still work when the connection drops mid-shift.
+    _gateService.keepForOffline(assignment.facilityId ?? '');
     setState(() {
       _deactivated = assignment.deactivated;
       _assignedFacilityId = assignment.facilityId;

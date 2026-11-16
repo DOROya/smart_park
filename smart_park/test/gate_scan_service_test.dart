@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:fake_async/fake_async.dart';
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:smart_park/services/gate_scan_service.dart';
@@ -366,6 +368,31 @@ void main() {
       );
     });
 
+    test('records when the vehicle left by this device\'s clock', () async {
+      // An exit saved without a connection reaches the server later; it
+      // must still carry the time it happened.
+      await seedInside(const Duration(hours: 1), <String, dynamic>{});
+      final GateScanResult? r = await scan(qr('t1'), mode: 'exit');
+      expect(r!.pendingSync, isFalse);
+      expect(((await ticket('t1'))['exitAt'] as Timestamp).toDate(), now);
+      final Map<String, dynamic> log = (await activityLogs()).single;
+      expect((log['timestamp'] as Timestamp).toDate(), now);
+      expect((log['createdAt'] as Timestamp).toDate(), now);
+    });
+
+    test('closes the entry log named on the ticket', () async {
+      await seedTicket('t1', <String, dynamic>{});
+      await scan(qr('t1'));
+      final String entryLogId = (await ticket('t1'))['entryLogId'] as String;
+      now = now.add(const Duration(hours: 1));
+      final GateScanResult? r = await scan(qr('t1'), mode: 'exit');
+      final Map<String, dynamic> entryLog =
+          (await db.collection('activity_logs').doc(entryLogId).get()).data()!;
+      expect(entryLog['isActive'], isFalse);
+      expect(entryLog['exitLogId'], r!.activityLogId);
+      expect((entryLog['exitAt'] as Timestamp).toDate(), now);
+    });
+
     test('charges overtime past the base stay and grace period', () async {
       // 4h stay on a 2h base with 5 min grace -> 1h55m over -> 2 billable
       // overtime hours at the succeeding-hour rate.
@@ -712,6 +739,35 @@ void main() {
     });
   });
 
+  group('without a connection', () {
+    test('a write is not waited on forever', () {
+      fakeAsync((FakeAsync async) {
+        bool? sent;
+        // Never completes: what a Firestore write does while offline.
+        unawaited(
+          settleGateWrite(
+            Completer<void>().future,
+          ).then((bool value) => sent = value),
+        );
+        async.elapse(kGateServerWait - const Duration(seconds: 1));
+        expect(sent, isNull);
+        async.elapse(const Duration(seconds: 2));
+        expect(sent, isFalse);
+      });
+    });
+
+    test('a write that reaches the server counts as sent', () async {
+      expect(await settleGateWrite(Future<void>.value()), isTrue);
+    });
+
+    test('a write the server refuses still fails', () async {
+      await expectLater(
+        settleGateWrite(Future<void>.error(StateError('refused'))),
+        throwsStateError,
+      );
+    });
+  });
+
   group('lookupByPlate', () {
     Future<GateScanResult?> lookup(String plate) =>
         service.lookupByPlate(staff: staff, gateMode: 'entry', rawPlate: plate);
@@ -996,6 +1052,51 @@ void main() {
               .toList()
             ..sort();
       expect(plates, <String>['FIRST 1', 'SECOND 2']);
+    });
+
+    test('an old QR warns staff that the plate was changed', () async {
+      await seedTicket('t1', <String, dynamic>{
+        'plan': 'daily',
+        'duration': 1,
+        'vehiclePlate': 'SECOND 2',
+      });
+      final GateScanResult? entry = await scan(qr('t1', 'first 1'));
+      expect(entry!.isAllowed, isTrue);
+      expect(entry.vehiclePlate, 'SECOND 2');
+      expect(entry.qrPlate, 'FIRST 1');
+      now = now.add(const Duration(hours: 1));
+      final GateScanResult? exit = await scan(
+        qr('t1', 'FIRST 1'),
+        mode: 'exit',
+      );
+      expect(exit!.qrPlate, 'FIRST 1');
+      // Kept on both gate logs, beside the plate the ticket is for.
+      for (final Map<String, dynamic> log in await activityLogs()) {
+        expect(log['vehiclePlate'], 'SECOND 2');
+        expect(log['qrPlate'], 'FIRST 1');
+      }
+    });
+
+    test('a QR with the ticket\'s own plate raises nothing', () async {
+      await seedTicket('t1', <String, dynamic>{'vehiclePlate': 'ABC 123'});
+      // Spacing, dashes and letter case are not a different plate.
+      final GateScanResult? r = await scan(qr('t1', 'abc-123'));
+      expect(r!.isAllowed, isTrue);
+      expect(r.qrPlate, isNull);
+      expect((await activityLogs()).single.containsKey('qrPlate'), isFalse);
+      expect(differingQrPlate('--', 'ABC 123'), isNull);
+      expect(differingQrPlate('', 'ABC 123'), isNull);
+      expect(differingQrPlate('XYZ 9', 'ABC 123'), 'XYZ 9');
+    });
+
+    test('a denied scan carries no plate warning', () async {
+      await seedTicket('t1', <String, dynamic>{
+        'vehiclePlate': 'SECOND 2',
+        'remainingHours': 0,
+      });
+      final GateScanResult? r = await scan(qr('t1', 'FIRST 1'));
+      expect(r!.isDenied, isTrue);
+      expect(r.qrPlate, isNull);
     });
 
     test('plate lookup finds the ticket by its new plate', () async {
