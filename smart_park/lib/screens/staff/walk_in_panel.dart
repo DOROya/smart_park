@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../../services/error_reporter.dart';
+import '../../services/gate_scan_service.dart' show settleGateWrite;
 import '../../theme/app_theme.dart';
 import '../../utils/friendly_error.dart';
 import '../../widgets/smartpark_ui.dart';
@@ -157,9 +158,13 @@ class _WalkInPanelState extends State<WalkInPanel> {
     final String plate = ((data['vehiclePlate'] as String?) ?? '').trim();
     final String vehicleType = (data['vehicleType'] as String?) ?? 'car';
     final DateTime? entryAt = spParseDateTime(data['entryAt']);
+    // This device's time: without a connection the exit is sent later, and
+    // must still say when the vehicle left.
+    final DateTime leftAt = DateTime.now();
+    final Timestamp exitAt = Timestamp.fromDate(leftAt);
     final int staySeconds = entryAt == null
         ? 0
-        : DateTime.now().difference(entryAt).inSeconds.clamp(0, 1 << 31);
+        : leftAt.difference(entryAt).inSeconds.clamp(0, 1 << 31);
     final FirebaseFirestore db = FirebaseFirestore.instance;
     final DocumentReference<Map<String, dynamic>> exitRef = db
         .collection('activity_logs')
@@ -168,7 +173,7 @@ class _WalkInPanelState extends State<WalkInPanel> {
       final WriteBatch batch = db.batch();
       batch.update(ticket.reference, <String, dynamic>{
         'entryStatus': 'checked_out',
-        'exitAt': FieldValue.serverTimestamp(),
+        'exitAt': exitAt,
         'exitStaffId': staffId,
         'exitLogId': exitRef.id,
         'staySeconds': staySeconds,
@@ -183,6 +188,8 @@ class _WalkInPanelState extends State<WalkInPanel> {
         ),
         'scanType': 'exit',
         'gateMode': 'exit',
+        'timestamp': exitAt,
+        'createdAt': exitAt,
         'decisionReason': 'Walk-in exit.',
         'isActive': false,
         'elapsedSeconds': staySeconds,
@@ -193,15 +200,19 @@ class _WalkInPanelState extends State<WalkInPanel> {
           db.collection('activity_logs').doc(entryLogId),
           <String, dynamic>{
             'isActive': false,
-            'exitAt': FieldValue.serverTimestamp(),
+            'exitAt': exitAt,
             'exitLogId': exitRef.id,
             'updatedAt': FieldValue.serverTimestamp(),
           },
           SetOptions(merge: true),
         );
       }
-      await batch.commit();
-      _showSnackBar('Walk-in ${plate.isEmpty ? '' : '$plate '}checked out.');
+      // Without a connection the exit is kept on this device and sent later.
+      final bool sent = await settleGateWrite(batch.commit());
+      _showSnackBar(
+        'Walk-in ${plate.isEmpty ? '' : '$plate '}checked out.'
+        '${sent ? '' : ' No connection: saved on this device and sent when it is back.'}',
+      );
     } catch (error, stack) {
       reportError(error, stack, reason: 'Walk-in checkout failed');
       _showSnackBar(

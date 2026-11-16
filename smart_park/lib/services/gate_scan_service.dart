@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -31,6 +32,8 @@ class GateScanResult {
     this.graceMinutes,
     this.closed,
     this.pass,
+    this.qrPlate,
+    this.pendingSync = false,
   });
 
   final String decision;
@@ -64,6 +67,16 @@ class GateScanResult {
   /// The unpaid temporary QR that was scanned, when [isTemporary].
   final GatePass? pass;
 
+  /// The plate printed in the scanned QR when it is not the plate the
+  /// ticket is for now (the driver changed the plate after that QR image
+  /// was saved or shared). Staff check the vehicle's plate; null when the
+  /// two agree.
+  final String? qrPlate;
+
+  /// There was no connection: the scan is saved on this device and reaches
+  /// the server when the connection is back.
+  final bool pendingSync;
+
   /// An unpaid temporary QR at entry: staff check for space, then take
   /// payment on the driver's phone or turn them away.
   bool get isTemporary => decision == 'TEMPORARY' && pass != null;
@@ -79,6 +92,7 @@ class GateScanResult {
     String? reason,
     bool? overtimeCollected,
     String? vehicleType,
+    String? qrPlate,
   }) => GateScanResult(
     decision: decision,
     vehiclePlate: vehiclePlate,
@@ -96,6 +110,8 @@ class GateScanResult {
     graceMinutes: graceMinutes,
     closed: closed,
     pass: pass,
+    qrPlate: qrPlate ?? this.qrPlate,
+    pendingSync: pendingSync,
   );
 
   /// This result after the overtime cash was marked collected.
@@ -203,6 +219,45 @@ Future<void> setOvertimeStatusAsOwner({
   await batch.commit();
 }
 
+/// How long a gate read or write waits for the server before the copy
+/// saved on the device is used instead.
+const Duration kGateServerWait = Duration(seconds: 5);
+
+/// Waits for a gate [write] to reach the server, but not forever. Without a
+/// connection Firestore keeps the write on the device and sends it when the
+/// connection is back, so the gate must not hang on it. Returns false when
+/// it is still waiting to be sent.
+Future<bool> settleGateWrite(Future<void> write) async {
+  try {
+    await write.timeout(kGateServerWait);
+    return true;
+  } on TimeoutException {
+    // Still queued. If the server refuses it later, say so in the reports.
+    unawaited(
+      write.then<void>(
+        (_) {},
+        onError: (Object error, StackTrace stack) => reportError(
+          error,
+          stack,
+          reason: 'A gate record saved offline was refused',
+        ),
+      ),
+    );
+    return false;
+  }
+}
+
+/// The plate printed in a scanned QR, when it differs from the plate the
+/// ticket is for now. Spacing, dashes and letter case are ignored.
+String? differingQrPlate(String qrPlate, String ticketPlate) {
+  String bare(String plate) =>
+      plate.toUpperCase().replaceAll(RegExp('[^A-Z0-9]'), '');
+  final String scanned = bare(qrPlate);
+  final String onTicket = bare(ticketPlate);
+  if (scanned.isEmpty || onTicket.isEmpty || scanned == onTicket) return null;
+  return qrPlate.trim().toUpperCase();
+}
+
 /// The signed-in staff member operating the gate.
 class GateStaff {
   const GateStaff({
@@ -270,6 +325,64 @@ class GateScanService {
   _AdmittedEntry? _lastEntry;
 
   static const Duration rescanCooldown = Duration(seconds: 8);
+
+  final List<StreamSubscription<Object?>> _offlineCopies =
+      <StreamSubscription<Object?>>[];
+
+  /// Keeps the facility's parked tickets, rates and opening hours saved on
+  /// this device, so an exit can still be worked out and recorded while the
+  /// connection is down. Call once the facility is known; [dispose] stops it.
+  void keepForOffline(String facilityId) {
+    if (_offlineCopies.isNotEmpty || facilityId.isEmpty) return;
+    void ignore(Object? _) {}
+    _offlineCopies.addAll(<StreamSubscription<Object?>>[
+      _db
+          .collection('transactions')
+          .where('establishmentId', isEqualTo: facilityId)
+          .where('entryStatus', isEqualTo: 'checked_in')
+          .snapshots()
+          .listen(ignore, onError: ignore),
+      _db
+          .collection('establishment_details')
+          .doc(facilityId)
+          .snapshots()
+          .listen(ignore, onError: ignore),
+      _db
+          .collection('establishments')
+          .doc(facilityId)
+          .snapshots()
+          .listen(ignore, onError: ignore),
+    ]);
+  }
+
+  void dispose() {
+    for (final StreamSubscription<Object?> copy in _offlineCopies) {
+      unawaited(copy.cancel());
+    }
+    _offlineCopies.clear();
+  }
+
+  /// Reads [ref] from the server, or from this device's saved copy when the
+  /// server does not answer in time. Throws when there is neither.
+  Future<DocumentSnapshot<Map<String, dynamic>>> _read(
+    DocumentReference<Map<String, dynamic>> ref,
+  ) async {
+    try {
+      return await ref.get().timeout(kGateServerWait);
+    } on TimeoutException {
+      return ref.get(const GetOptions(source: Source.cache));
+    }
+  }
+
+  Future<QuerySnapshot<Map<String, dynamic>>> _readAll(
+    Query<Map<String, dynamic>> query,
+  ) async {
+    try {
+      return await query.get().timeout(kGateServerWait);
+    } on TimeoutException {
+      return query.get(const GetOptions(source: Source.cache));
+    }
+  }
 
   /// Looks up the facility for [uid]: by staff record, then by staff email,
   /// then from the user's own profile.
@@ -425,17 +538,18 @@ class GateScanService {
       );
     }
     try {
-      final QuerySnapshot<Map<String, dynamic>> matches = await _db
-          .collection('transactions')
-          .where('establishmentId', isEqualTo: facilityId)
-          // New tickets store the plate upper-cased; older ones as typed.
-          .where(
-            'vehiclePlate',
-            whereIn: <String>{plate, plate.toUpperCase()}.toList(),
-          )
-          // Room for a regular's past tickets as well as the current one.
-          .limit(50)
-          .get();
+      final QuerySnapshot<Map<String, dynamic>> matches = await _readAll(
+        _db
+            .collection('transactions')
+            .where('establishmentId', isEqualTo: facilityId)
+            // New tickets store the plate upper-cased; older ones as typed.
+            .where(
+              'vehiclePlate',
+              whereIn: <String>{plate, plate.toUpperCase()}.toList(),
+            )
+            // Room for a regular's past tickets as well as the current one.
+            .limit(50),
+      );
       final List<QueryDocumentSnapshot<Map<String, dynamic>>> mine = matches
           .docs
           .where((QueryDocumentSnapshot<Map<String, dynamic>> d) {
@@ -554,12 +668,19 @@ class GateScanService {
     try {
       DocumentSnapshot<Map<String, dynamic>>? snap;
       try {
-        snap = await _db.collection('transactions').doc(transactionId).get();
+        snap = await _read(_db.collection('transactions').doc(transactionId));
       } on FirebaseException catch (error) {
+        // No connection and no saved copy of this ticket on the device.
+        if (error.code == 'unavailable') return _noConnection(gateMode, now);
         // Staff may only read their own facility's tickets, so a ticket from
         // another facility (or a made-up id) is denied rather than returned.
         if (error.code != 'permission-denied') rethrow;
         snap = null;
+      }
+      // A saved copy can show a vehicle is inside, so it can leave. It
+      // cannot show a ticket is still good to come in on.
+      if (snap != null && snap.metadata.isFromCache && gateMode == 'entry') {
+        return _noConnection(gateMode, now);
       }
       if (snap == null || !snap.exists) {
         // Not a ticket yet: it may be an unpaid temporary QR.
@@ -586,6 +707,7 @@ class GateScanService {
           ((ticket['vehiclePlate'] as String?) ?? payloadPlate).trim();
       final String plate = ticketPlate.isEmpty ? '--' : ticketPlate;
       final String vehicleType = _vehicleType(ticket);
+      final String? qrPlate = differingQrPlate(payloadPlate, ticketPlate);
       if (_ticketFacility(ticket) != facilityId) {
         return (await _deny(
           staff: staff,
@@ -616,6 +738,7 @@ class GateScanService {
               plate: plate,
               ticket: ticket,
               scannedAt: now,
+              qrPlate: qrPlate,
             )
           : await _processExitScan(
               staff: staff,
@@ -624,12 +747,16 @@ class GateScanService {
               plate: plate,
               ticket: ticket,
               scannedAt: now,
+              qrPlate: qrPlate,
             );
       if (result.isAllowed) {
         _lastProcessedTicketKey = ticketKey;
         _lastProcessedAt = now;
       }
-      return result._copy(vehicleType: vehicleType);
+      return result._copy(
+        vehicleType: vehicleType,
+        qrPlate: result.isAllowed ? qrPlate : null,
+      );
     } catch (error, stack) {
       reportError(error, stack, reason: 'Gate scan verification failed');
       return GateScanResult(
@@ -643,6 +770,22 @@ class GateScanService {
     }
   }
 
+  /// The scan could not be checked: there is no connection, and for an exit
+  /// the ticket is not among those saved on this device.
+  GateScanResult _noConnection(String gateMode, DateTime timestamp) =>
+      GateScanResult(
+        decision: 'ERROR',
+        vehiclePlate: '--',
+        scanType: gateMode,
+        timestamp: timestamp,
+        reason: gateMode == 'exit'
+            ? 'No connection, and this ticket is not saved on this device. '
+                  'Let the vehicle out without overtime and record the exit '
+                  'when the connection is back.'
+            : 'No connection. A ticket cannot be checked for entry without '
+                  'one. Try again when it is back.',
+      );
+
   Future<GateScanResult> _processEntryScan({
     required GateStaff staff,
     required String facilityId,
@@ -650,6 +793,7 @@ class GateScanService {
     required String plate,
     required Map<String, dynamic> ticket,
     required DateTime scannedAt,
+    String? qrPlate,
   }) async {
     final String entryStatus = _entryStatus(ticket);
     if (entryStatus == 'checked_in' || entryStatus == 'inside') {
@@ -714,6 +858,7 @@ class GateScanService {
       'isActive': true,
       'transactionId': transactionId,
       'remainingHours': hoursLeft,
+      'qrPlate': ?qrPlate,
     });
     await batch.commit();
     _lastEntry = _AdmittedEntry(transactionId, logRef.id, <String, dynamic>{
@@ -816,6 +961,7 @@ class GateScanService {
     required String plate,
     required Map<String, dynamic> ticket,
     required DateTime scannedAt,
+    String? qrPlate,
   }) async {
     final String entryStatus = _entryStatus(ticket);
     if (entryStatus == 'checked_out' || entryStatus == 'exited') {
@@ -884,12 +1030,20 @@ class GateScanService {
     final DocumentReference<Map<String, dynamic>> exitRef = _db
         .collection('activity_logs')
         .doc();
-    final QueryDocumentSnapshot<Map<String, dynamic>>? openEntry =
-        await _findOpenEntry(facilityId, transactionId);
+    // The entry log this exit closes: the one named on the ticket, else
+    // (older tickets) whichever is still open.
+    final String entryLogId = ((ticket['entryLogId'] as String?) ?? '').trim();
+    final DocumentReference<Map<String, dynamic>>? openEntry =
+        entryLogId.isNotEmpty
+        ? _db.collection('activity_logs').doc(entryLogId)
+        : (await _findOpenEntry(facilityId, transactionId))?.reference;
+    // The time on this device, not the server's: without a connection the
+    // exit reaches the server later, and must still say when it happened.
+    final Timestamp exitAt = Timestamp.fromDate(scannedAt);
     final WriteBatch batch = _db.batch();
     batch.set(ticketRef, <String, dynamic>{
       'entryStatus': 'checked_out',
-      'exitAt': FieldValue.serverTimestamp(),
+      'exitAt': exitAt,
       'exitStaffId': staff.staffId,
       'exitLogId': exitRef.id,
       'staySeconds': elapsed.inSeconds,
@@ -903,7 +1057,10 @@ class GateScanService {
     }, SetOptions(merge: true));
     batch.set(exitRef, <String, dynamic>{
       ..._logBase(staff, facilityId, plate, 'exit'),
+      'timestamp': exitAt,
+      'createdAt': exitAt,
       ..._driverFields(ticket),
+      'qrPlate': ?qrPlate,
       'status': 'ALLOWED',
       'decision': 'ALLOWED',
       'decisionReason': extraHours > 0
@@ -927,14 +1084,16 @@ class GateScanService {
       'gracePeriodMinutes': grace,
     });
     if (openEntry != null) {
-      batch.set(openEntry.reference, <String, dynamic>{
+      batch.set(openEntry, <String, dynamic>{
         'isActive': false,
-        'exitAt': FieldValue.serverTimestamp(),
+        'exitAt': exitAt,
         'exitLogId': exitRef.id,
         'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
     }
-    await batch.commit();
+    // Without a connection the exit is kept on this device and sent later;
+    // the vehicle is not held at the gate for it.
+    final bool sent = await settleGateWrite(batch.commit());
     await _logStaffAction(
       staff: staff,
       action: 'scan_exit',
@@ -955,6 +1114,7 @@ class GateScanService {
       activityLogId: exitRef.id,
       graceMinutes: grace,
       closed: closed,
+      pendingSync: !sent,
       reason: extraHours > 0
           ? (cashDue ? 'Overtime: collect cash first.' : 'Overtime: confirm.')
           : graced
@@ -980,7 +1140,7 @@ class GateScanService {
         .collection('transactions')
         .doc(transactionId);
     final Map<String, dynamic> ticket =
-        (await ticketRef.get()).data() ?? <String, dynamic>{};
+        (await _read(ticketRef)).data() ?? <String, dynamic>{};
     final String status = overtimeStatusOf(ticket);
     if (status == kOvertimeCollected) return;
     if (status != kOvertimeCashDue) {
@@ -1005,7 +1165,8 @@ class GateScanService {
         SetOptions(merge: true),
       );
     }
-    await batch.commit();
+    // Like the exit itself, kept on the device while there is no connection.
+    await settleGateWrite(batch.commit());
     await _logStaffAction(
       staff: staff,
       action: 'overtime_collected',
@@ -1041,10 +1202,9 @@ class GateScanService {
   /// when it can't be read, which leaves no rate and the default grace.
   Future<Map<String, dynamic>?> _loadDetails(String facilityId) async {
     try {
-      final DocumentSnapshot<Map<String, dynamic>> details = await _db
-          .collection('establishment_details')
-          .doc(facilityId)
-          .get();
+      final DocumentSnapshot<Map<String, dynamic>> details = await _read(
+        _db.collection('establishment_details').doc(facilityId),
+      );
       return details.data();
     } catch (error, stack) {
       reportError(
@@ -1060,10 +1220,9 @@ class GateScanService {
   /// Unset when they can't be read, which charges overtime as before.
   Future<OperatingHours> _loadHours(String facilityId) async {
     try {
-      final DocumentSnapshot<Map<String, dynamic>> facility = await _db
-          .collection('establishments')
-          .doc(facilityId)
-          .get();
+      final DocumentSnapshot<Map<String, dynamic>> facility = await _read(
+        _db.collection('establishments').doc(facilityId),
+      );
       return OperatingHours.parse(facility.data() ?? <String, dynamic>{});
     } catch (error, stack) {
       reportError(
@@ -1088,14 +1247,15 @@ class GateScanService {
     String transactionId,
   ) async {
     try {
-      final QuerySnapshot<Map<String, dynamic>> q = await _db
-          .collection('activity_logs')
-          .where('establishmentID', isEqualTo: facilityId)
-          .where('transactionId', isEqualTo: transactionId)
-          .where('scanType', isEqualTo: 'entry')
-          .where('isActive', isEqualTo: true)
-          .limit(1)
-          .get();
+      final QuerySnapshot<Map<String, dynamic>> q = await _readAll(
+        _db
+            .collection('activity_logs')
+            .where('establishmentID', isEqualTo: facilityId)
+            .where('transactionId', isEqualTo: transactionId)
+            .where('scanType', isEqualTo: 'entry')
+            .where('isActive', isEqualTo: true)
+            .limit(1),
+      );
       return q.docs.isEmpty ? null : q.docs.first;
     } catch (error, stack) {
       reportError(error, stack, reason: 'Looking up open entry log failed');
@@ -1262,17 +1422,20 @@ class GateScanService {
     if (facilityId == null) {
       return null;
     }
-    final DocumentReference<Map<String, dynamic>> logRef = await _db
+    final DocumentReference<Map<String, dynamic>> logRef = _db
         .collection('activity_logs')
-        .add(<String, dynamic>{
-          ..._logBase(staff, facilityId, vehiclePlate, scanType),
-          'status': 'DENIED',
-          'decision': 'DENIED',
-          'decisionReason': decisionReason,
-          'isActive': false,
-          if (transactionId != null && transactionId.isNotEmpty)
-            'transactionId': transactionId,
-        });
+        .doc();
+    await settleGateWrite(
+      logRef.set(<String, dynamic>{
+        ..._logBase(staff, facilityId, vehiclePlate, scanType),
+        'status': 'DENIED',
+        'decision': 'DENIED',
+        'decisionReason': decisionReason,
+        'isActive': false,
+        if (transactionId != null && transactionId.isNotEmpty)
+          'transactionId': transactionId,
+      }),
+    );
     await _logStaffAction(
       staff: staff,
       action: 'scan_$scanType',
@@ -1290,19 +1453,21 @@ class GateScanService {
     String? activityLogId,
     String? vehiclePlate,
   }) async {
-    await _db.collection('StaffActivityLogs').add(<String, dynamic>{
-      'staffID': staff.staffId,
-      'ownerId': staff.ownerId,
-      'establishmentID': staff.facilityId,
-      'facilityId': staff.facilityId,
-      'action': action,
-      'date': FieldValue.serverTimestamp(),
-      'transactionId': transactionId,
-      if (activityLogId != null && activityLogId.isNotEmpty)
-        'activityLogId': activityLogId,
-      if (vehiclePlate != null && vehiclePlate.isNotEmpty)
-        'vehiclePlate': vehiclePlate,
-    });
+    await settleGateWrite(
+      _db.collection('StaffActivityLogs').doc().set(<String, dynamic>{
+        'staffID': staff.staffId,
+        'ownerId': staff.ownerId,
+        'establishmentID': staff.facilityId,
+        'facilityId': staff.facilityId,
+        'action': action,
+        'date': FieldValue.serverTimestamp(),
+        'transactionId': transactionId,
+        if (activityLogId != null && activityLogId.isNotEmpty)
+          'activityLogId': activityLogId,
+        if (vehiclePlate != null && vehiclePlate.isNotEmpty)
+          'vehiclePlate': vehiclePlate,
+      }),
+    );
   }
 
   static String _hoursText(int hours) => formatParkingHours(hours);

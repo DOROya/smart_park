@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:smart_park/services/operating_hours.dart';
 import 'package:smart_park/services/parking_pricing.dart';
 import 'package:smart_park/widgets/sp_overtime.dart';
 
@@ -122,6 +123,67 @@ void main() {
         isNull,
       );
       expect(SpParkedStay.fromTicket('t', <String, dynamic>{}, rates), isNull);
+    });
+  });
+
+  group('the live card while the facility was closed', () {
+    // Open 6 am to 10 pm. In at 7 pm with 2 hours: paid until 9 pm.
+    const OperatingHours hours = OperatingHours(
+      openMinutes: 6 * 60,
+      closeMinutes: 22 * 60,
+    );
+    final DateTime in7pm = DateTime(2026, 9, 26, 19);
+    final SpParkedStay s = SpParkedStay.fromTicket(
+      't1',
+      <String, dynamic>{
+        'vehicleType': 'car',
+        'plan': 'base',
+        'entryAt': Timestamp.fromDate(in7pm),
+      },
+      rates,
+      hours: hours,
+    )!;
+
+    test('the time over leaves out the closed hours, like the amount', () {
+      // 7 am next day: 10 hours past 9 pm, 8 of them closed.
+      final DateTime at7am = DateTime(2026, 9, 27, 7);
+      expect(s.closedAt(at7am), const Duration(hours: 8));
+      expect(s.overAt(at7am), const Duration(hours: 2));
+      expect(s.owedAt(at7am), 40);
+      expect(spParkedStayTiming(s, at7am), '+2h 0m over');
+    });
+
+    test('nothing is over while only closed time has passed', () {
+      // Paid time ended at 10 pm, as the facility closed.
+      final SpParkedStay closing = SpParkedStay.fromTicket(
+        't2',
+        <String, dynamic>{
+          'vehicleType': 'car',
+          'plan': 'base',
+          'entryAt': Timestamp.fromDate(DateTime(2026, 9, 26, 20)),
+        },
+        rates,
+        hours: hours,
+      )!;
+      final DateTime at3am = DateTime(2026, 9, 27, 3);
+      expect(closing.isOverAt(at3am), isFalse);
+      expect(closing.overAt(at3am), Duration.zero);
+      expect(
+        spParkedStayTiming(closing, at3am),
+        'paid time ended while closed',
+      );
+      // Ten minutes after it reopens: in grace, 11 minutes of it left.
+      expect(
+        spParkedStayTiming(closing, DateTime(2026, 9, 27, 6, 10)),
+        startsWith('in grace · overtime in '),
+      );
+    });
+
+    test('an open-all-day facility counts from the end of paid time', () {
+      final SpParkedStay allDay = stay(<String, dynamic>{});
+      final DateTime at = entry.add(const Duration(hours: 3, minutes: 30));
+      expect(allDay.overAt(at), const Duration(hours: 1, minutes: 30));
+      expect(spParkedStayTiming(allDay, at), startsWith('+'));
     });
   });
 

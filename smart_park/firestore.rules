@@ -246,16 +246,39 @@ service cloud.firestore {
         request.resource.data.get('overtimeStatusBy', null) == uid();
     }
 
+    // A gate log is a record, so staff change one only in the three ways
+    // the gate itself does. What a scan wrote down (plate, time, decision,
+    // hours, amounts, who scanned) can't be rewritten afterwards.
+    //  - an exit closes the entry log it belongs to;
+    //  - an entry just admitted is refused as the wrong vehicle type;
+    //  - overtime cash owed on an exit is marked collected, by themselves.
+    function staffLogUpdateOk() {
+      let changed = request.resource.data.diff(resource.data).affectedKeys();
+      let after = request.resource.data;
+      return (resource.data.get('scanType', '') == 'entry' &&
+          changed.hasOnly(['isActive', 'exitAt', 'exitLogId', 'updatedAt']) &&
+          after.get('isActive', false) == false) ||
+        (resource.data.get('scanType', '') == 'entry' &&
+          resource.data.get('isActive', false) == true &&
+          changed.hasOnly(['status', 'decision', 'decisionReason', 'refusal',
+            'isActive', 'refusedAt']) &&
+          after.get('refusal', '') == 'wrong_vehicle' &&
+          after.get('status', '') == 'DENIED' &&
+          after.get('decision', '') == 'DENIED' &&
+          after.get('isActive', true) == false) ||
+        (resource.data.get('overtimeStatus', '') in ['cash_due', 'waived'] &&
+          changed.hasOnly(['overtimeStatus', 'overtimeCollectedBy',
+            'overtimeCollectedAt']) &&
+          after.get('overtimeStatus', '') == 'collected' &&
+          after.get('overtimeCollectedBy', '') == uid());
+    }
+
     match /activity_logs/{logId} {
       allow read: if canSeeEstablishment(resource.data.establishmentID);
       allow create: if isStaffOf(request.resource.data.establishmentID) &&
         request.resource.data.staffId == uid();
-      // Exit scans close the open entry log (isActive=false), and staff
-      // mark overtime cash collected on the exit log.
       allow update: if (isStaffOf(resource.data.establishmentID) &&
-          unchanged('establishmentID') &&
-          unchanged('transactionId') &&
-          overtimeCollectorOk()) ||
+          staffLogUpdateOk()) ||
         (isOwnerOf(resource.data.establishmentID) && ownerOvertimeUpdateOk());
       allow delete: if false;
     }

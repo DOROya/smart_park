@@ -381,6 +381,56 @@ test("staff record overtime cash as collected in their own name only", async () 
   );
 });
 
+test("staff cannot rewrite what a gate scan recorded", async () => {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const d = ctx.firestore();
+    await setDoc(doc(d, "activity_logs/in2"), {
+      establishmentID: "est1", transactionId: "tx1", scanType: "entry", staffId: "staff1",
+      status: "ALLOWED", decision: "ALLOWED", isActive: true, vehiclePlate: "ABC 123",
+    });
+    await setDoc(doc(d, "activity_logs/exit2"), {
+      establishmentID: "est1", transactionId: "tx1", scanType: "exit", staffId: "staff1",
+      status: "ALLOWED", decision: "ALLOWED", isActive: false, vehiclePlate: "ABC 123",
+      overtimeHours: 2, overtimeAmount: 40, overtimeStatus: "cash_due", elapsedSeconds: 14400,
+    });
+    await setDoc(doc(d, "activity_logs/exit3"), {
+      establishmentID: "est1", transactionId: "tx1", scanType: "exit", staffId: "staff1",
+      status: "ALLOWED", decision: "ALLOWED", isActive: false, overtimeStatus: "none",
+    });
+  });
+  const edit = (id, fields) => setDoc(doc(staff(), `activity_logs/${id}`), fields, { merge: true });
+  // The record itself: plate, time, decision, who scanned, hours and money.
+  await assertFails(edit("exit2", { vehiclePlate: "XYZ 999" }));
+  await assertFails(edit("exit2", { timestamp: serverTimestamp() }));
+  await assertFails(edit("exit2", { staffId: "staff2" }));
+  await assertFails(edit("exit2", { overtimeAmount: 0 }));
+  await assertFails(edit("exit2", { overtimeHours: 0, elapsedSeconds: 60 }));
+  await assertFails(edit("exit2", { overtimeStatus: "none" }));
+  await assertFails(edit("in2", { decisionReason: "Something else." }));
+  await assertFails(edit("in2", { status: "DENIED", decision: "DENIED" }));
+  // Collected cash can't be slipped in with another change, or onto an
+  // exit that owed nothing, and a denied scan can't be turned into an entry.
+  await assertFails(edit("exit2", {
+    overtimeStatus: "collected", overtimeCollectedBy: "staff1", overtimeAmount: 10,
+  }));
+  await assertFails(edit("exit3", { overtimeStatus: "collected", overtimeCollectedBy: "staff1" }));
+  await assertFails(edit("exit2", { isActive: true }));
+  await assertFails(deleteDoc(doc(staff(), "activity_logs/exit2")));
+  // What the gate does still works: close the entry log, collect the cash.
+  await assertSucceeds(edit("in2", {
+    isActive: false, exitAt: serverTimestamp(), exitLogId: "exit2", updatedAt: serverTimestamp(),
+  }));
+  await assertSucceeds(edit("exit2", {
+    overtimeStatus: "collected", overtimeCollectedBy: "staff1", overtimeCollectedAt: serverTimestamp(),
+  }));
+  // Once closed, an entry log can't be refused or reopened.
+  await assertFails(edit("in2", {
+    status: "DENIED", decision: "DENIED", decisionReason: "Vehicle type does not match ticket.",
+    refusal: "wrong_vehicle", isActive: false, refusedAt: serverTimestamp(),
+  }));
+  await assertFails(edit("in2", { isActive: true }));
+});
+
 test("owners change overtime status on their own exits only", async () => {
   await env.withSecurityRulesDisabled(async (ctx) => {
     const d = ctx.firestore();
