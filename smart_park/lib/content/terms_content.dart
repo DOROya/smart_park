@@ -17,9 +17,9 @@ import '../services/platform_fees.dart' show kPlatformFeeRate;
 /// they agreed (`termsVersion`, `termsAcceptedAt`). Anyone whose saved version
 /// differs is asked to accept the current terms when they open the app (see
 /// terms_update_gate.dart), so bump this with every change to the text.
-const String kTermsVersion = '2026-11-15.2';
+const String kTermsVersion = '2026-11-20';
 
-const String kTermsUpdatedLabel = 'November 15, 2026';
+const String kTermsUpdatedLabel = 'November 20, 2026';
 
 const String kSupportEmail = 'smartpark.noreply@gmail.com';
 
@@ -289,6 +289,11 @@ TermsSection _payments({required bool owner}) => TermsSection(
               'temporary QR, valid for 3 days. You pay only at the gate, on '
               'your own phone, after staff confirm there is space. If there '
               'is no space, nothing is charged.',
+          'You enter your payment details with the temporary QR: a GCash or '
+              'Maya mobile number, kept with that QR, or a card, which goes '
+              'straight to PayMongo (SmartPark keeps only its last 4 digits). '
+              'They are used only to pay for that QR, when you tap Confirm '
+              'at the gate and approve the payment.',
           'Paying at the gate needs mobile data. Temporary QRs cannot be '
               'paid in cash; without data, you may park as a regular walk-in '
               "under the facility's own terms.",

@@ -156,26 +156,33 @@ async function driverBilling(db, driverId) {
  * driver's details pre-filled. If PayMongo rejects those details, it opens
  * without them rather than not at all.
  */
+/** What the driver is charged for, the same on every PayMongo path. */
+function chargeDetails(checkoutId, c) {
+  return {
+    amountCentavos: c.amountCentavos,
+    // Commission, plus any refund the owner is still paying back.
+    platformFeeCentavos: c.platformFeeCentavos + (c.refundRecoveryCentavos || 0),
+    description: `SmartPark ${c.establishmentName} - ${c.plan.toUpperCase()} ${c.vehicleType.toUpperCase()}`,
+    destinationAccountId: c.destinationAccountId,
+    paymentMethod: c.paymentMethod,
+    metadata: {
+      checkoutId,
+      driverId: c.driverId,
+      establishmentId: c.establishmentId,
+      vehicleType: c.vehicleType,
+      plan: c.plan,
+      duration: c.duration,
+      amount: c.amount,
+    },
+  };
+}
+
 async function openPaymongoSession(secretKey, checkoutId, c, db = getFirestore()) {
   const payload = (billing) =>
     paymongo.buildCheckoutPayload({
-      amountCentavos: c.amountCentavos,
-      // Commission, plus any refund the owner is still paying back.
-      platformFeeCentavos: c.platformFeeCentavos + (c.refundRecoveryCentavos || 0),
-      description: `SmartPark ${c.establishmentName} - ${c.plan.toUpperCase()} ${c.vehicleType.toUpperCase()}`,
+      ...chargeDetails(checkoutId, c),
       remarks: "SmartPark parking checkout",
-      destinationAccountId: c.destinationAccountId,
-      paymentMethod: c.paymentMethod,
       billing,
-      metadata: {
-        checkoutId,
-        driverId: c.driverId,
-        establishmentId: c.establishmentId,
-        vehicleType: c.vehicleType,
-        plan: c.plan,
-        duration: c.duration,
-        amount: c.amount,
-      },
     });
   const billing = await driverBilling(db, c.driverId);
   if (!billing?.name || !billing?.email) {
@@ -187,6 +194,29 @@ async function openPaymongoSession(secretKey, checkoutId, c, db = getFirestore()
     logger.warn(`Checkout ${checkoutId}: billing pre-fill rejected, retrying without`, error);
     return paymongo.createCheckoutSession(secretKey, payload(null));
   }
+}
+
+/** Whether a checkout has a PayMongo payment open: a session or an intent. */
+function hasPaymongoPayment(c) {
+  return Boolean(c?.paymongo?.sessionId || c?.paymongo?.intentId);
+}
+
+/**
+ * Asks PayMongo about the checkout's open payment. Returns the paid session
+ * or intent (what finalizePaidCheckout takes), or null when not paid.
+ */
+async function fetchPaidPayment(secretKey, c) {
+  const sessionId = c?.paymongo?.sessionId;
+  if (sessionId) {
+    const session = await paymongo.getCheckoutSession(secretKey, sessionId);
+    return paymongo.isSessionPaid(session) ? session : null;
+  }
+  const intentId = c?.paymongo?.intentId;
+  if (intentId) {
+    const intent = await paymongo.getPaymentIntent(secretKey, intentId);
+    return paymongo.isIntentPaid(intent) ? intent : null;
+  }
+  return null;
 }
 
 /**
@@ -207,10 +237,12 @@ async function finalizePaidCheckout(db, checkoutRef, session) {
     const now = Timestamp.now();
     const dayKey = dayKeyManila(now.toDate());
     const txId = c.transactionId;
+    // A checkout session, or a payment intent when the driver paid with
+    // details saved on the temporary QR.
     const paymongoInfo = {
-      linkId: c.paymongo.sessionId,
-      checkoutUrl: c.paymongo.checkoutUrl,
-      referenceNumber: c.paymongo.referenceNumber,
+      linkId: c.paymongo?.sessionId || c.paymongo?.intentId || null,
+      checkoutUrl: c.paymongo?.checkoutUrl || null,
+      referenceNumber: c.paymongo?.referenceNumber || null,
       // Refunds need the payment itself, not the checkout session.
       paymentId: paymongo.paidPaymentId(session) || null,
       status: "paid",
@@ -325,14 +357,9 @@ async function confirmParkingCheckout(request, secretKey) {
   let checkout = snap.data();
   // A temporary QR is pending without a session for a moment while staff
   // open the payment.
-  if (checkout.status === "pending" && checkout.paymongo?.sessionId) {
-    const session = await paymongo.getCheckoutSession(
-      secretKey,
-      checkout.paymongo.sessionId,
-    );
-    if (paymongo.isSessionPaid(session)) {
-      checkout = await finalizePaidCheckout(db, checkoutRef, session);
-    }
+  if (checkout.status === "pending" && hasPaymongoPayment(checkout)) {
+    const paid = await fetchPaidPayment(secretKey, checkout);
+    if (paid) checkout = await finalizePaidCheckout(db, checkoutRef, paid);
   }
 
   return {
@@ -368,17 +395,15 @@ async function reconcilePendingCheckouts(secretKey) {
   for (const doc of pending.docs) {
     const c = doc.data();
     try {
-      if (gatePass.isPass(c) && !c.paymongo?.sessionId) {
-        // Staff are still opening the payment, or it failed to open.
+      if (gatePass.isPass(c) && !hasPaymongoPayment(c)) {
+        // Staff are still opening the payment, the driver has not confirmed
+        // yet, or it failed to open.
         if (await gatePass.reconcileGatePass(db, doc.ref, secretKey, c, Date.now())) reverted++;
         continue;
       }
-      const session = await paymongo.getCheckoutSession(
-        secretKey,
-        c.paymongo.sessionId,
-      );
-      if (paymongo.isSessionPaid(session)) {
-        await finalizePaidCheckout(db, doc.ref, session);
+      const paidPayment = await fetchPaidPayment(secretKey, c);
+      if (paidPayment) {
+        await finalizePaidCheckout(db, doc.ref, paidPayment);
         paid++;
       } else if (gatePass.isPass(c)) {
         // Unfinished gate payment: back to waiting once it times out.
@@ -408,7 +433,11 @@ module.exports = {
   loadEstablishment,
   priceCheckout,
   buildQrCode,
+  chargeDetails,
+  driverBilling,
   openPaymongoSession,
+  hasPaymongoPayment,
+  fetchPaidPayment,
   confirmParkingCheckout,
   reconcilePendingCheckouts,
   finalizePaidCheckout,

@@ -9,6 +9,7 @@ import '../../services/parking_checkout_service.dart';
 import '../../services/parking_receipt.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/friendly_error.dart';
+import '../../widgets/smartpark_ui.dart' show spPeso;
 import '../../widgets/sp_max_brightness.dart';
 import '../../widgets/sp_save_qr_button.dart';
 import '../../widgets/sp_ticket_cost.dart';
@@ -37,6 +38,7 @@ class _DriverParkingPassPageState extends State<DriverParkingPassPage> {
   Map<String, dynamic>? _data;
   bool _loaded = false;
   bool _cancelling = false;
+  bool _confirming = false;
 
   /// The checkout page on top of this one, so it can be closed if staff
   /// stop the payment.
@@ -75,8 +77,11 @@ class _DriverParkingPassPageState extends State<DriverParkingPassPage> {
     });
     final String status = (data?['status'] as String?) ?? '';
     final Object? paymongo = data?['paymongo'];
+    // A checkout session, or the payment intent opened by Confirm.
     final String sessionId = paymongo is Map
-        ? ((paymongo['sessionId'] as String?) ?? '')
+        ? ((paymongo['sessionId'] as String?) ??
+              (paymongo['intentId'] as String?) ??
+              '')
         : '';
     final String url = paymongo is Map
         ? ((paymongo['checkoutUrl'] as String?) ?? '')
@@ -149,6 +154,32 @@ class _DriverParkingPassPageState extends State<DriverParkingPassPage> {
       ),
     );
     if (mounted) Navigator.of(context).pop();
+  }
+
+  /// The Confirm tap: pays with the details saved on the QR. The approval
+  /// page opens from the stream as soon as the server records it.
+  Future<void> _confirmPayment() async {
+    if (_confirming) return;
+    setState(() => _confirming = true);
+    try {
+      // The server saves the approval page on the QR, and the stream opens
+      // it (once, keyed by the payment's id).
+      await _checkoutService.confirmGatePayment(widget.checkoutId);
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            friendlyError(
+              error,
+              fallback: 'Could not open the payment. Try again.',
+            ),
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _confirming = false);
+    }
   }
 
   String _text(String key) => ((_data?[key] as String?) ?? '').trim();
@@ -271,6 +302,12 @@ class _DriverParkingPassPageState extends State<DriverParkingPassPage> {
     final String qrData = (data['qrCode'] as String?) ?? '';
     final bool paying = status == 'pending';
     final String method = _methodLabel(receipt.paymentMethod);
+    final String saved = savedPaymentLabel(method, data['payer']);
+    // Staff confirmed space and the details are saved: one tap to pay.
+    final bool awaitingConfirm =
+        paying &&
+        data['gatePaymentMode'] == 'direct' &&
+        _checkoutUrl(data).isEmpty;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -319,7 +356,11 @@ class _DriverParkingPassPageState extends State<DriverParkingPassPage> {
               SpTicketCost(
                 ticket: receipt,
                 amountLabel: 'DUE AT THE GATE',
-                amountNote: method.isEmpty ? '' : 'Pay with $method',
+                amountNote: saved.isNotEmpty
+                    ? 'Pay with $saved'
+                    : method.isEmpty
+                    ? ''
+                    : 'Pay with $method',
               ),
               if (expiresAt != null) ...<Widget>[
                 const SizedBox(height: 10),
@@ -332,11 +373,42 @@ class _DriverParkingPassPageState extends State<DriverParkingPassPage> {
           ),
         ),
         const SizedBox(height: 14),
-        if (paying) ...<Widget>[
+        if (awaitingConfirm) ...<Widget>[
+          _note(
+            Icons.check_circle_outline_rounded,
+            'Staff confirmed there is space. Tap Confirm to pay'
+            '${saved.isEmpty ? '' : ' with $saved'}.',
+          ),
+          const SizedBox(height: 10),
+          FilledButton.icon(
+            onPressed: _confirming ? null : _confirmPayment,
+            style: FilledButton.styleFrom(
+              backgroundColor: AppTheme.accent,
+              foregroundColor: AppTheme.onAccent,
+              minimumSize: const Size.fromHeight(54),
+            ),
+            icon: _confirming
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.lock_outline_rounded),
+            label: Text(
+              _confirming
+                  ? 'Opening payment...'
+                  : 'Confirm ${spPeso(receipt.amountCentavos / 100)}',
+              style: const TextStyle(fontWeight: FontWeight.w800),
+            ),
+          ),
+        ] else if (paying) ...<Widget>[
           _note(
             Icons.payments_outlined,
-            'Staff started your payment. The payment screen opens here; '
-            'finish it to enter.',
+            data['gatePaymentMode'] == 'direct'
+                ? 'Approve the payment to enter. This closes by itself once '
+                      'it is paid.'
+                : 'Staff started your payment. The payment screen opens '
+                      'here; finish it to enter.',
             busy: true,
           ),
           if (_checkoutUrl(data).isNotEmpty && _checkoutRoute == null)
@@ -351,8 +423,12 @@ class _DriverParkingPassPageState extends State<DriverParkingPassPage> {
         ] else ...<Widget>[
           _note(
             Icons.info_outline_rounded,
-            'You have not been charged. Show this QR at the gate. Once staff '
-            'confirm there is space, you pay on this phone.',
+            data['directPay'] == true
+                ? 'You have not been charged. Show this QR at the gate. Once '
+                      'staff confirm there is space, you just tap Confirm on '
+                      'this phone.'
+                : 'You have not been charged. Show this QR at the gate. Once '
+                      'staff confirm there is space, you pay on this phone.',
           ),
           const SizedBox(height: 8),
           _note(
@@ -439,6 +515,20 @@ class _DriverParkingPassPageState extends State<DriverParkingPassPage> {
 String _checkoutUrl(Map<String, dynamic> data) {
   final Object? paymongo = data['paymongo'];
   return paymongo is Map ? ((paymongo['checkoutUrl'] as String?) ?? '') : '';
+}
+
+/// "GCash 0917 ••• 4567" or "Card •••• 4242" from a pass's saved `payer`;
+/// '' when nothing was saved.
+String savedPaymentLabel(String methodLabel, Object? payer) {
+  if (payer is! Map) return '';
+  final String phone = (payer['phone'] as String?) ?? '';
+  if (phone.length == 13 && phone.startsWith('+63')) {
+    final String local = '0${phone.substring(3)}';
+    return '$methodLabel ${local.substring(0, 4)} ••• ${local.substring(7)}';
+  }
+  final String last4 = (payer['cardLast4'] as String?) ?? '';
+  if (last4.isNotEmpty) return 'Card •••• $last4';
+  return '';
 }
 
 String _methodLabel(String apiType) {

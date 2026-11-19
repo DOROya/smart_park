@@ -44,9 +44,19 @@ exports.sendPasswordResetEmail = onCall(
 );
 
 // Temporary QRs: the driver pays only at the gate (see src/gate_pass.js).
-exports.createParkingPass = onCall((request) => gatePass.createParkingPass(request));
+// The secret checks a card the app saved with PayMongo.
+exports.createParkingPass = onCall(
+  { secrets: [PAYMONGO_SECRET_KEY] },
+  (request) => gatePass.createParkingPass(request, PAYMONGO_SECRET_KEY.value()),
+);
 
 exports.cancelParkingPass = onCall((request) => gatePass.cancelParkingPass(request));
+
+// The driver's Confirm tap at the gate: pays with the details saved on the QR.
+exports.payGatePass = onCall(
+  { secrets: [PAYMONGO_SECRET_KEY] },
+  (request) => gatePass.payGatePass(request, PAYMONGO_SECRET_KEY.value()),
+);
 
 exports.findGatePass = onCall((request) => gatePass.findGatePass(request));
 

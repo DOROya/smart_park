@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../../services/parking_pricing.dart';
+import '../../services/saved_payment.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/smartpark_ui.dart' show SpOccupancy;
 import 'driver_checkout_payment_page.dart';
@@ -35,6 +36,7 @@ class DriverVehicleSelection {
     required this.duration,
     required this.amount,
     required this.paymentMethod,
+    this.saved = SavedPaymentDetails.none,
   });
 
   final String vehicleType;
@@ -43,6 +45,9 @@ class DriverVehicleSelection {
   final int duration;
   final double amount;
   final DriverPaymentMethod paymentMethod;
+
+  /// Payment details entered with the QR, so the gate is just a Confirm.
+  final SavedPaymentDetails saved;
 }
 
 class DriverVehicleSelectionPage extends StatefulWidget {
@@ -74,6 +79,7 @@ class DriverVehicleSelectionPage extends StatefulWidget {
     required int duration,
     required double amount,
     required DriverPaymentMethod paymentMethod,
+    required SavedPaymentDetails saved,
   })?
   onProcessPayment;
 
@@ -334,7 +340,10 @@ class _DriverVehicleSelectionPageState
                   amount: selection.totalAmount,
                   isPayMongoConfigured: widget.isPayMongoConfigured,
                   onProcessPayment: widget.onProcessPayment != null
-                      ? (DriverPaymentMethod method) {
+                      ? (
+                          DriverPaymentMethod method,
+                          SavedPaymentDetails saved,
+                        ) {
                           return widget.onProcessPayment!(
                             vehicleType: _selectedVehicleType,
                             plateNumber: plateNumber,
@@ -342,6 +351,7 @@ class _DriverVehicleSelectionPageState
                             duration: selection.duration,
                             amount: selection.totalAmount,
                             paymentMethod: method,
+                            saved: saved,
                           );
                         }
                       : null,
@@ -368,6 +378,7 @@ class _DriverVehicleSelectionPageState
           duration: packageSelection.duration,
           amount: packageSelection.totalAmount,
           paymentMethod: paymentResult.method,
+          saved: paymentResult.saved,
         ),
       );
     }
