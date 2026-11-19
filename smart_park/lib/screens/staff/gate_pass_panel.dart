@@ -214,7 +214,7 @@ class _GatePassPanelState extends State<GatePassPanel> {
           const SizedBox(height: 10),
           if (_paying)
             Text(
-              'Waiting for the driver to pay on their phone '
+              '${_pass.directPay ? 'Waiting for the driver to confirm on their phone' : 'Waiting for the driver to pay on their phone'} '
               '(${waited.inMinutes}:${waited.inSeconds.remainder(60).toString().padLeft(2, '0')}). '
               'The gate admits them automatically once paid.',
               style: const TextStyle(height: 1.35),
@@ -224,7 +224,10 @@ class _GatePassPanelState extends State<GatePassPanel> {
               Icons.check_circle_outline_rounded,
               AppTheme.success,
               'Free ${spVehicleTypeLabel(spVehicleTypeKey(_pass.vehicleType)).toLowerCase()} slot?',
-              'Tap Take payment. The driver pays on their phone.',
+              _pass.directPay
+                  ? 'Tap Take payment. The driver just taps Confirm on their '
+                        'phone; their payment details are already saved.'
+                  : 'Tap Take payment. The driver pays on their phone.',
             ),
             const SizedBox(height: 8),
             _step(

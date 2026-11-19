@@ -881,6 +881,7 @@ class _EstablishmentDetailPageState extends State<EstablishmentDetailPage>
                 required int duration,
                 required double amount,
                 required DriverPaymentMethod paymentMethod,
+                required SavedPaymentDetails saved,
               }) {
                 return _processParkingPayment(
                   establishment: establishment,
@@ -890,6 +891,7 @@ class _EstablishmentDetailPageState extends State<EstablishmentDetailPage>
                   duration: duration,
                   amount: amount,
                   paymentMethod: paymentMethod,
+                  saved: saved,
                 );
               },
         ),
@@ -909,6 +911,7 @@ class _EstablishmentDetailPageState extends State<EstablishmentDetailPage>
     required int duration,
     required double amount,
     required DriverPaymentMethod paymentMethod,
+    SavedPaymentDetails saved = SavedPaymentDetails.none,
   }) async {
     if (_generatingTicket) {
       return false;
@@ -931,8 +934,8 @@ class _EstablishmentDetailPageState extends State<EstablishmentDetailPage>
       }
 
       // The server prices the package from the establishment's own rates.
-      // Nothing is charged now: the driver pays at the gate once staff
-      // confirm there is space.
+      // Nothing is charged now: once staff confirm there is space, the
+      // driver confirms the payment with the details saved here.
       final ParkingPass pass = await _checkoutService.createPass(
         establishmentId: widget.establishmentId,
         vehicleType: vehicleType,
@@ -940,6 +943,7 @@ class _EstablishmentDetailPageState extends State<EstablishmentDetailPage>
         plan: plan,
         duration: duration,
         paymentMethod: paymentMethod.apiType,
+        saved: saved,
       );
 
       if (!mounted) {
@@ -991,6 +995,7 @@ class _EstablishmentDetailPageState extends State<EstablishmentDetailPage>
       duration: selection.duration,
       amount: selection.amount,
       paymentMethod: selection.paymentMethod,
+      saved: selection.saved,
     );
   }
 

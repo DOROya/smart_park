@@ -93,8 +93,8 @@ void main() {
     });
 
     test('the version is the date the terms were last changed', () {
-      expect(kTermsVersion, startsWith('2026-11-15'));
-      expect(kTermsUpdatedLabel, 'November 15, 2026');
+      expect(kTermsVersion, startsWith('2026-11-20'));
+      expect(kTermsUpdatedLabel, 'November 20, 2026');
     });
   });
 

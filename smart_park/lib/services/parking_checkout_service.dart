@@ -1,5 +1,9 @@
 import 'package:cloud_functions/cloud_functions.dart';
 
+import 'saved_payment.dart';
+
+export 'saved_payment.dart' show SavedPaymentDetails;
+
 /// A temporary QR made by the `createParkingPass` Cloud Function: the
 /// package is picked and priced, but it is paid only at the gate.
 class ParkingPass {
@@ -49,8 +53,8 @@ class ParkingCheckoutService {
 
   final FirebaseFunctions _functions;
 
-  /// Makes a temporary QR. Nothing is charged until staff start the
-  /// payment at the gate.
+  /// Makes a temporary QR. Nothing is charged until the driver confirms at
+  /// the gate; [saved] holds the details they confirm with.
   Future<ParkingPass> createPass({
     required String establishmentId,
     required String vehicleType,
@@ -58,6 +62,7 @@ class ParkingCheckoutService {
     required String plan,
     required int duration,
     required String paymentMethod,
+    SavedPaymentDetails saved = SavedPaymentDetails.none,
   }) async {
     final HttpsCallableResult<dynamic> result = await _functions
         .httpsCallable('createParkingPass')
@@ -68,6 +73,9 @@ class ParkingCheckoutService {
           'plan': plan,
           'duration': duration,
           'paymentMethod': paymentMethod,
+          if (saved.phone.isNotEmpty) 'payerPhone': saved.phone,
+          if (saved.cardPaymentMethodId.isNotEmpty)
+            'cardPaymentMethodId': saved.cardPaymentMethodId,
         });
     final Map<String, dynamic> data = _asMap(result.data);
     return ParkingPass(
@@ -79,6 +87,17 @@ class ParkingCheckoutService {
         (data['expiresAt'] as num).toInt(),
       ),
     );
+  }
+
+  /// The driver's Confirm tap at the gate: pays with the saved details.
+  /// The server stores the wallet's (or bank's) approval page on the QR's
+  /// `paymongo.checkoutUrl`, which is also returned ('' when paid already or
+  /// still processing).
+  Future<String> confirmGatePayment(String checkoutId) async {
+    final HttpsCallableResult<dynamic> result = await _functions
+        .httpsCallable('payGatePass')
+        .call(<String, dynamic>{'checkoutId': checkoutId});
+    return (_asMap(result.data)['redirectUrl'] as String?) ?? '';
   }
 
   /// Cancels a temporary QR that hasn't been paid.
@@ -143,10 +162,12 @@ class GatePass {
     required this.duration,
     required this.amount,
     required this.paymentMethod,
+    this.directPay = false,
     this.expiresAt,
   });
 
   factory GatePass.fromMap(Map<String, dynamic> m) => GatePass(
+    directPay: m['directPay'] == true,
     checkoutId: (m['checkoutId'] as String?) ?? '',
     status: (m['status'] as String?) ?? '',
     plate: (m['plate'] as String?) ?? '',
@@ -171,6 +192,9 @@ class GatePass {
   final int duration;
   final double amount;
   final String paymentMethod;
+
+  /// The driver saved their payment details, so they only confirm.
+  final bool directPay;
   final DateTime? expiresAt;
 
   /// Staff can take payment on it (or it is already being paid).

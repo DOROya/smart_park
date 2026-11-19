@@ -168,6 +168,120 @@ function paidPaymentMethod(session) {
   return paid?.attributes?.source?.type || null;
 }
 
+// ---- Direct payments (Payment Intents) --------------------------------------
+// Used when the driver saved their payment details with the temporary QR: at
+// the gate the server attaches them, so the driver only approves the payment
+// in their wallet (or the bank's OTP for a card) instead of filling in
+// PayMongo's checkout form.
+
+/** PayMongo metadata is flat strings. */
+function flatMetadata(metadata) {
+  const out = {};
+  for (const [key, value] of Object.entries(metadata || {})) {
+    if (value === undefined || value === null) continue;
+    out[key] = String(value);
+  }
+  return out;
+}
+
+/** Same charge as the checkout payload, for one payment method type. */
+function buildPaymentIntentPayload({
+  amountCentavos,
+  platformFeeCentavos,
+  description,
+  destinationAccountId,
+  paymentMethod,
+  metadata,
+}) {
+  return {
+    data: {
+      attributes: {
+        amount: amountCentavos,
+        currency: "PHP",
+        payment_method_allowed: [paymentMethod],
+        capture_type: "automatic",
+        description,
+        statement_descriptor: "SmartPark",
+        metadata: flatMetadata({
+          ...metadata,
+          platform_fee: platformFeeCentavos,
+          destination_account: destinationAccountId,
+        }),
+      },
+    },
+  };
+}
+
+function intentSummary(data) {
+  const attributes = data?.attributes || {};
+  return {
+    id: data?.id || "",
+    status: String(attributes.status || "unknown"),
+    redirectUrl: attributes.next_action?.redirect?.url || "",
+  };
+}
+
+async function createPaymentIntent(secretKey, payload) {
+  const decoded = await request(secretKey, "POST", "/payment_intents", payload);
+  if (!decoded.data?.id) throw new Error("PayMongo response is missing the payment intent.");
+  return intentSummary(decoded.data);
+}
+
+async function getPaymentIntent(secretKey, intentId) {
+  const decoded = await request(
+    secretKey,
+    "GET",
+    `/payment_intents/${encodeURIComponent(intentId)}`,
+  );
+  return decoded.data || {};
+}
+
+/** Releases an unfinished intent. Fails if it is already paid or processing. */
+async function cancelPaymentIntent(secretKey, intentId) {
+  await request(secretKey, "POST", `/payment_intents/${encodeURIComponent(intentId)}/cancel`);
+}
+
+/** An e-wallet payment method from the driver's saved details. */
+async function createPaymentMethod(secretKey, { type, billing }) {
+  const decoded = await request(secretKey, "POST", "/payment_methods", {
+    data: { attributes: { type, ...(billing ? { billing } : {}) } },
+  });
+  if (!decoded.data?.id) throw new Error("PayMongo response is missing the payment method.");
+  return decoded.data.id;
+}
+
+/** A payment method the app made (a saved card), to check it is real. */
+async function getPaymentMethod(secretKey, methodId) {
+  const decoded = await request(
+    secretKey,
+    "GET",
+    `/payment_methods/${encodeURIComponent(methodId)}`,
+  );
+  return decoded.data || {};
+}
+
+/**
+ * Attaches [paymentMethodId] to the intent. Returns { id, status,
+ * redirectUrl }: "succeeded" is paid; "awaiting_next_action" has the
+ * wallet's (or the bank's 3-D Secure) page in redirectUrl.
+ */
+async function attachPaymentIntent(secretKey, intentId, { paymentMethodId, returnUrl }) {
+  const decoded = await request(
+    secretKey,
+    "POST",
+    `/payment_intents/${encodeURIComponent(intentId)}/attach`,
+    { data: { attributes: { payment_method: paymentMethodId, return_url: returnUrl } } },
+  );
+  return intentSummary(decoded.data);
+}
+
+function isIntentPaid(intent) {
+  const attributes = intent?.attributes || {};
+  if (String(attributes.status || "").toLowerCase() === "succeeded") return true;
+  const payments = Array.isArray(attributes.payments) ? attributes.payments : [];
+  return payments.some((p) => String(p?.attributes?.status || "").toLowerCase() === "paid");
+}
+
 module.exports = {
   buildCheckoutPayload,
   createCheckoutSession,
@@ -178,4 +292,13 @@ module.exports = {
   createRefund,
   getRefund,
   paidPaymentMethod,
+  flatMetadata,
+  buildPaymentIntentPayload,
+  createPaymentIntent,
+  getPaymentIntent,
+  cancelPaymentIntent,
+  createPaymentMethod,
+  getPaymentMethod,
+  attachPaymentIntent,
+  isIntentPaid,
 };

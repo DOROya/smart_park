@@ -1,8 +1,17 @@
 // Temporary QRs ("gate passes"): the driver picks a package in the app but
 // pays only at the gate, after staff confirm there is space. The pass is a
-// parking_checkouts record with kind "gate_pass" and no PayMongo session
-// until staff start the payment. Once paid, finalizePaidCheckout turns it
-// into a normal ticket with the same id, so the same QR keeps working.
+// parking_checkouts record with kind "gate_pass" and no PayMongo payment
+// until staff start it. Once paid, finalizePaidCheckout turns it into a
+// normal ticket with the same id, so the same QR keeps working.
+//
+// Payment details are entered with the QR, not at the gate: a GCash or Maya
+// number, or a card the app saved with PayMongo (only its token is kept).
+// Such a pass is "directPay": when staff start the payment, the driver's
+// phone shows one Confirm button, and the server attaches the saved details
+// to a PayMongo payment intent, so all that is left is approving it in the
+// wallet (or the bank's OTP for a card). Nothing is charged before that
+// tap. If the direct payment can't be made, the driver gets PayMongo's
+// checkout page instead, as for passes without saved details (QR Ph).
 //
 // Statuses: awaiting_gate -> pending (paying at the gate) -> paid,
 // or back to awaiting_gate if the payment is cancelled or times out;
@@ -21,7 +30,10 @@ const {
   loadEstablishment,
   priceCheckout,
   buildQrCode,
+  chargeDetails,
+  driverBilling,
   openPaymongoSession,
+  fetchPaidPayment,
   finalizePaidCheckout,
 } = require("./checkout");
 
@@ -32,6 +44,12 @@ const MAX_ACTIVE_PASSES = 3;
 const GATE_PAYMENT_TIMEOUT_MS = 5 * 60 * 1000;
 /** Keeps a pass mid-payment from being TTL-deleted under the driver. */
 const PAYING_KEEP_MS = 24 * 60 * 60 * 1000;
+/** E-wallets paid straight from a saved mobile number. */
+const WALLET_METHODS = ["gcash", "paymaya"];
+/** Where PayMongo sends the driver after approving; the app watches for it. */
+const RETURN_URL = "https://smartpark.app/payment-success";
+/** A Confirm tap still opening its payment blocks a second one this long. */
+const CONFIRM_LOCK_MS = 60 * 1000;
 
 function millis(value) {
   if (!value) return null;
@@ -61,6 +79,47 @@ function gatePaymentTimedOut(c, nowMs) {
   return started !== null && nowMs - started >= GATE_PAYMENT_TIMEOUT_MS;
 }
 
+/**
+ * A Philippine mobile number as "+639XXXXXXXXX", from "0917 123 4567",
+ * "9171234567", "+63 917-123-4567" and the like; "" if it isn't one.
+ */
+function normalizePhMobile(raw) {
+  const digits = String(raw || "").replace(/[\s\-().]/g, "");
+  const match = /^(?:\+?63|0)?(9\d{9})$/.exec(digits);
+  return match ? `+63${match[1]}` : "";
+}
+
+/**
+ * The payment details saved with a new pass, from what the app sent:
+ * { payer, directPay }. A wallet number is checked here; a card token is
+ * checked with PayMongo by [checkCard]. Without details (QR Ph, an older
+ * app, a card entered at the gate) the pass uses PayMongo's checkout page.
+ */
+async function savedPayment(data, paymentMethod, checkCard) {
+  if (WALLET_METHODS.includes(paymentMethod)) {
+    const raw = asString(data.payerPhone);
+    if (!raw) return { payer: null, directPay: false };
+    const phone = normalizePhMobile(raw);
+    if (!phone) {
+      throw new HttpsError("invalid-argument", "Enter a valid mobile number, e.g. 0917 123 4567.");
+    }
+    return { payer: { phone }, directPay: true };
+  }
+  if (paymentMethod === "card") {
+    const methodId = asString(data.cardPaymentMethodId);
+    if (!methodId) return { payer: null, directPay: false };
+    if (!/^pm_[A-Za-z0-9]+$/.test(methodId)) {
+      throw new HttpsError("invalid-argument", "Could not save this card. Try again.");
+    }
+    const card = await checkCard(methodId);
+    return {
+      payer: { cardPaymentMethodId: methodId, cardLast4: card.last4 || "", cardBrand: card.brand || "" },
+      directPay: true,
+    };
+  }
+  return { payer: null, directPay: false };
+}
+
 /** Why staff can't start a payment on this pass, or null when they can. */
 function startDenial(c, facilityId, nowMs) {
   if (!isPass(c) || c.establishmentId !== facilityId) {
@@ -77,6 +136,18 @@ function startDenial(c, facilityId, nowMs) {
   return null;
 }
 
+/** Why the driver's Confirm tap can't open a payment, or null when it can. */
+function confirmDenial(c, driverId, nowMs) {
+  if (!isPass(c) || c.driverId !== driverId) return ["not-found", "Temporary QR not found."];
+  if (c.status !== "pending" || c.gatePaymentMode !== "direct") {
+    return ["failed-precondition", "Staff have not started your payment yet."];
+  }
+  if (gatePaymentTimedOut(c, nowMs)) {
+    return ["deadline-exceeded", "The payment timed out. Ask staff to scan your QR again."];
+  }
+  return null;
+}
+
 /** What staff see about a pass. */
 function passSummary(id, c, nowMs) {
   return {
@@ -89,6 +160,8 @@ function passSummary(id, c, nowMs) {
     duration: c.duration || 0,
     amount: c.amount || 0,
     paymentMethod: c.paymentMethod || "",
+    // The driver only confirms on their phone; nothing to type.
+    directPay: c.directPay === true,
     expiresAt: millis(c.expiresAt),
   };
 }
@@ -115,19 +188,31 @@ async function expireSessionQuietly(secretKey, sessionId) {
   }
 }
 
+async function cancelIntentQuietly(secretKey, intentId) {
+  if (!intentId) return;
+  try {
+    await paymongo.cancelPaymentIntent(secretKey, intentId);
+  } catch (error) {
+    // Already paid, processing or cancelled; the re-check decides.
+    logger.info(`Could not cancel payment intent ${intentId}: ${error.message}`);
+  }
+}
+
 /**
- * Ends an unfinished gate payment. The session is expired first and then
- * re-checked, so a payment that landed at the last second is finalized
- * instead of lost. Returns the new status.
+ * Ends an unfinished gate payment. The payment is closed first and then
+ * re-checked, so one that landed at the last second is finalized instead of
+ * lost. Returns the new status.
  */
 async function endGatePayment(db, ref, secretKey, c) {
   const fresh = (await ref.get()).data() || c;
   const sessionId = fresh.paymongo?.sessionId;
-  if (sessionId) {
-    await expireSessionQuietly(secretKey, sessionId);
-    const session = await paymongo.getCheckoutSession(secretKey, sessionId);
-    if (paymongo.isSessionPaid(session)) {
-      await finalizePaidCheckout(db, ref, session);
+  const intentId = fresh.paymongo?.intentId;
+  await expireSessionQuietly(secretKey, sessionId);
+  await cancelIntentQuietly(secretKey, intentId);
+  if (sessionId || intentId) {
+    const paid = await fetchPaidPayment(secretKey, fresh);
+    if (paid) {
+      await finalizePaidCheckout(db, ref, paid);
       return "paid";
     }
   }
@@ -140,6 +225,8 @@ async function endGatePayment(db, ref, secretKey, c) {
     paymongo: FieldValue.delete(),
     gatePaymentStartedAt: FieldValue.delete(),
     gatePaymentStaffId: FieldValue.delete(),
+    gatePaymentMode: FieldValue.delete(),
+    confirmLockAt: FieldValue.delete(),
     deleteAt: c.expiresAt || FieldValue.delete(),
     updatedAt: FieldValue.serverTimestamp(),
   });
@@ -148,10 +235,28 @@ async function endGatePayment(db, ref, secretKey, c) {
 
 // ---- Driver ----------------------------------------------------------------
 
-async function createParkingPass(request) {
+/** The saved card's last digits and brand, after checking it with PayMongo. */
+async function checkSavedCard(secretKey, methodId) {
+  let method;
+  try {
+    method = await paymongo.getPaymentMethod(secretKey, methodId);
+  } catch (error) {
+    logger.warn(`Saved card ${methodId} could not be read`, error);
+    throw new HttpsError("invalid-argument", "Could not save this card. Check the details and try again.");
+  }
+  const attributes = method.attributes || {};
+  if (attributes.type !== "card") {
+    throw new HttpsError("invalid-argument", "Could not save this card. Try again.");
+  }
+  const details = attributes.details || {};
+  return { last4: asString(details.last4), brand: asString(details.brand || details.card_brand) };
+}
+
+async function createParkingPass(request, secretKey) {
   const driverId = requireVerifiedUser(request.auth);
   const db = getFirestore();
-  const record = await priceCheckout(db, driverId, request.data || {});
+  const data = request.data || {};
+  const record = await priceCheckout(db, driverId, data);
 
   const nowMs = Date.now();
   const mine = await db
@@ -167,6 +272,10 @@ async function createParkingPass(request) {
     );
   }
 
+  const saved = await savedPayment(data, record.paymentMethod, (id) =>
+    checkSavedCard(secretKey, id),
+  );
+
   const ref = db.collection(CHECKOUTS).doc();
   const expiresAt = Timestamp.fromMillis(nowMs + PASS_LIFETIME_MS);
   const qrCode = buildQrCode(ref.id, record, new Date(nowMs));
@@ -176,6 +285,8 @@ async function createParkingPass(request) {
     transactionId: ref.id,
     qrCode,
     status: "awaiting_gate",
+    directPay: saved.directPay,
+    ...(saved.payer ? { payer: saved.payer } : {}),
     expiresAt,
     // Firestore TTL policy field: unused passes are deleted after expiry.
     deleteAt: expiresAt,
@@ -189,6 +300,7 @@ async function createParkingPass(request) {
     amount: record.amount,
     establishmentName: record.establishmentName,
     expiresAt: expiresAt.toMillis(),
+    directPay: saved.directPay,
   };
 }
 
@@ -210,6 +322,159 @@ async function cancelParkingPass(request) {
     tx.update(ref, { status: "cancelled", updatedAt: FieldValue.serverTimestamp() });
     return { status: "cancelled" };
   });
+}
+
+/** Saves [fields] only while the pass is still being paid. */
+async function updateIfPending(db, ref, fields) {
+  return db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    if (snap.data()?.status !== "pending") return false;
+    tx.update(ref, { ...fields, updatedAt: FieldValue.serverTimestamp() });
+    return true;
+  });
+}
+
+/** The wallet's billing details: the account's name and email, the saved number. */
+async function walletBilling(db, c) {
+  const account = (await driverBilling(db, c.driverId)) || {};
+  const billing = {};
+  if (account.name) billing.name = account.name;
+  if (account.email) billing.email = account.email;
+  if (c.payer?.phone) billing.phone = c.payer.phone;
+  return Object.keys(billing).length > 0 ? billing : null;
+}
+
+const STOPPED = new HttpsError("failed-precondition", "Staff stopped this payment.");
+
+/**
+ * Opens the payment with the saved details. Returns { status, redirectUrl }:
+ * "paid", or "pending" with the wallet's (or bank's) approval page.
+ */
+async function openDirectPayment(db, ref, secretKey, c) {
+  let intentId = null;
+  try {
+    const intent = await paymongo.createPaymentIntent(
+      secretKey,
+      paymongo.buildPaymentIntentPayload(chargeDetails(ref.id, c)),
+    );
+    intentId = intent.id;
+    if (!(await updateIfPending(db, ref, { "paymongo.intentId": intentId }))) {
+      await cancelIntentQuietly(secretKey, intentId);
+      throw STOPPED;
+    }
+    const methodId =
+      c.paymentMethod === "card"
+        ? c.payer?.cardPaymentMethodId
+        : await paymongo.createPaymentMethod(secretKey, {
+            type: c.paymentMethod,
+            billing: await walletBilling(db, c),
+          });
+    if (!methodId) throw new Error("No saved payment details on this pass.");
+    const attached = await paymongo.attachPaymentIntent(secretKey, intentId, {
+      paymentMethodId: methodId,
+      returnUrl: RETURN_URL,
+    });
+    if (attached.status === "succeeded") {
+      await finalizePaidCheckout(db, ref, await paymongo.getPaymentIntent(secretKey, intentId));
+      return { status: "paid", redirectUrl: "" };
+    }
+    if (attached.status === "awaiting_next_action" || attached.status === "processing") {
+      const saved = await updateIfPending(db, ref, {
+        "paymongo.checkoutUrl": attached.redirectUrl || "",
+        "paymongo.status": attached.status,
+        confirmLockAt: FieldValue.delete(),
+      });
+      if (!saved) throw STOPPED;
+      return { status: "pending", redirectUrl: attached.redirectUrl || "" };
+    }
+    throw new Error(`Payment intent ${intentId} is ${attached.status} after attach.`);
+  } catch (error) {
+    if (error === STOPPED) throw error;
+    logger.warn(`Direct payment for ${ref.id} failed; falling back to checkout`, error);
+    return openFallbackCheckout(db, ref, secretKey, intentId);
+  }
+}
+
+/**
+ * PayMongo's checkout page, when the saved details could not be used (an
+ * expired card token, say). Only once the intent is surely not going to
+ * charge, so the driver can never pay twice.
+ */
+async function openFallbackCheckout(db, ref, secretKey, intentId) {
+  if (intentId) {
+    await cancelIntentQuietly(secretKey, intentId);
+    const intent = await paymongo.getPaymentIntent(secretKey, intentId);
+    if (paymongo.isIntentPaid(intent)) {
+      await finalizePaidCheckout(db, ref, intent);
+      return { status: "paid", redirectUrl: "" };
+    }
+    const status = String(intent.attributes?.status || "");
+    if (status !== "cancelled" && status !== "awaiting_payment_method") {
+      throw new HttpsError("unavailable", "Your payment is still processing. Wait a moment.");
+    }
+  }
+  const fresh = (await ref.get()).data() || {};
+  if (fresh.status === "paid") return { status: "paid", redirectUrl: "" };
+  if (fresh.status !== "pending") throw STOPPED;
+  let session;
+  try {
+    session = await openPaymongoSession(secretKey, ref.id, fresh, db);
+  } catch (error) {
+    logger.error(`Fallback checkout for ${ref.id} could not open`, error);
+    await updateIfPending(db, ref, { paymongo: FieldValue.delete(), confirmLockAt: FieldValue.delete() });
+    throw new HttpsError("unavailable", "Could not open the payment. Try again.");
+  }
+  const saved = await updateIfPending(db, ref, {
+    paymongo: {
+      sessionId: session.id,
+      checkoutUrl: session.checkoutUrl,
+      referenceNumber: session.referenceNumber,
+      status: session.status,
+    },
+    confirmLockAt: FieldValue.delete(),
+  });
+  if (!saved) {
+    await expireSessionQuietly(secretKey, session.id);
+    throw STOPPED;
+  }
+  return { status: "pending", redirectUrl: session.checkoutUrl, fallback: true };
+}
+
+/**
+ * Driver: the Confirm tap at the gate. Pays with the details saved on the
+ * pass; calling it again while the payment is open returns the same page.
+ */
+async function payGatePass(request, secretKey) {
+  const driverId = requireVerifiedUser(request.auth);
+  const db = getFirestore();
+  const ref = db.collection(CHECKOUTS).doc(asString(request.data?.checkoutId) || "-");
+  const nowMs = Date.now();
+
+  // Claim first, so a double tap can't open two payments.
+  const claim = await db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    const c = snap.exists ? snap.data() : null;
+    if (c?.status === "paid" && c.driverId === driverId) return { c, paid: true };
+    const denial = confirmDenial(c, driverId, nowMs);
+    if (denial) throw new HttpsError(...denial);
+    if (c.paymongo?.sessionId || c.paymongo?.intentId) return { c, open: true };
+    const locked = millis(c.confirmLockAt);
+    if (locked !== null && nowMs - locked < CONFIRM_LOCK_MS) {
+      throw new HttpsError("aborted", "Your payment is already opening.");
+    }
+    tx.update(ref, { confirmLockAt: FieldValue.serverTimestamp() });
+    return { c };
+  });
+  if (claim.paid) return { status: "paid", redirectUrl: "" };
+  if (claim.open) {
+    const paid = await fetchPaidPayment(secretKey, claim.c);
+    if (paid) {
+      await finalizePaidCheckout(db, ref, paid);
+      return { status: "paid", redirectUrl: "" };
+    }
+    return { status: "pending", redirectUrl: claim.c.paymongo?.checkoutUrl || "" };
+  }
+  return openDirectPayment(db, ref, secretKey, claim.c);
 }
 
 // ---- Staff -----------------------------------------------------------------
@@ -245,9 +510,9 @@ async function findGatePass(request) {
 }
 
 /**
- * Staff confirmed there is space: opens the PayMongo payment, which the
- * driver's app picks up and shows. Calling it again while the payment is
- * still open is harmless.
+ * Staff confirmed there is space. A pass with saved details asks the driver
+ * to confirm on their phone; any other opens PayMongo's checkout there.
+ * Calling it again while the payment is still open is harmless.
  */
 async function startGatePayment(request, secretKey) {
   const db = getFirestore();
@@ -255,7 +520,7 @@ async function startGatePayment(request, secretKey) {
   const ref = db.collection(CHECKOUTS).doc(asString(request.data?.checkoutId) || "-");
   const nowMs = Date.now();
 
-  // Claim the pass first so two taps (or two gates) can't open two sessions.
+  // Claim the pass first so two taps (or two gates) can't open two payments.
   const claimed = await db.runTransaction(async (tx) => {
     const snap = await tx.get(ref);
     const c = snap.data();
@@ -264,6 +529,7 @@ async function startGatePayment(request, secretKey) {
     if (c.status === "pending") return { c, fresh: false };
     tx.update(ref, {
       status: "pending",
+      gatePaymentMode: c.directPay === true ? "direct" : "checkout",
       gatePaymentStartedAt: FieldValue.serverTimestamp(),
       gatePaymentStaffId: staff.uid,
       deleteAt: Timestamp.fromMillis(nowMs + PAYING_KEEP_MS),
@@ -283,6 +549,8 @@ async function startGatePayment(request, secretKey) {
     // An owner who owes refunds pays part back from this sale.
     const recovery = await reserveRecovery(db, claimed.c.ownerId, claimed.c.netToOwnerCentavos);
     if (recovery > 0) await ref.update({ refundRecoveryCentavos: recovery });
+    // Saved details: the driver's Confirm tap opens the payment.
+    if (claimed.c.directPay === true) return { status: "pending" };
     session = await openPaymongoSession(secretKey, ref.id, {
       ...claimed.c,
       refundRecoveryCentavos: recovery,
@@ -321,13 +589,10 @@ async function checkGatePayment(request, secretKey) {
   if (c.status !== "pending") {
     return { status: c.status, transactionId: c.transactionId };
   }
-  const sessionId = c.paymongo?.sessionId;
-  if (sessionId) {
-    const session = await paymongo.getCheckoutSession(secretKey, sessionId);
-    if (paymongo.isSessionPaid(session)) {
-      await finalizePaidCheckout(db, ref, session);
-      return { status: "paid", transactionId: c.transactionId };
-    }
+  const paid = await fetchPaidPayment(secretKey, c);
+  if (paid) {
+    await finalizePaidCheckout(db, ref, paid);
+    return { status: "paid", transactionId: c.transactionId };
   }
   if (gatePaymentTimedOut(c, Date.now())) {
     const status = await endGatePayment(db, ref, secretKey, c);
@@ -362,14 +627,19 @@ module.exports = {
   PASS_LIFETIME_MS,
   MAX_ACTIVE_PASSES,
   GATE_PAYMENT_TIMEOUT_MS,
+  WALLET_METHODS,
   isPass,
   isExpired,
   isActivePass,
   gatePaymentTimedOut,
+  normalizePhMobile,
+  savedPayment,
   startDenial,
+  confirmDenial,
   passSummary,
   createParkingPass,
   cancelParkingPass,
+  payGatePass,
   findGatePass,
   startGatePayment,
   checkGatePayment,

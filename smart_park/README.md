@@ -31,8 +31,12 @@ No client can write tickets, payments, splits or stats; the rules deny it.
 flutter run -d <device>
 ```
 
-The app no longer needs PayMongo keys, so `--dart-define-from-file=paymongo.dev.json`
-is not required.
+The app needs only PayMongo's **public** key, to save a driver's card with
+PayMongo when they make a temporary QR (the card goes straight to PayMongo;
+the secret key stays in Cloud Functions). Run with
+`--dart-define-from-file=paymongo.dev.json` (as `.vscode/launch.json` does).
+Without it everything still works, but a card is entered on PayMongo's page
+at the gate instead of being saved ahead.
 
 ## Tests
 

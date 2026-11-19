@@ -26,10 +26,13 @@ workflows:
     scripts:
       - name: Get packages
         script: flutter pub get
+      # PAYMONGO_PUBLIC_KEY is a Codemagic environment variable (the pk_...
+      # key, which is safe to ship in the app). It lets drivers save a card
+      # with their temporary QR; if it is unset, cards are entered at the gate.
       - name: Build release APK
-        script: flutter build apk --release
+        script: flutter build apk --release --dart-define=PAYMONGO_PUBLIC_KEY=$PAYMONGO_PUBLIC_KEY
       - name: Build release App Bundle (for Google Play)
-        script: flutter build appbundle --release
+        script: flutter build appbundle --release --dart-define=PAYMONGO_PUBLIC_KEY=$PAYMONGO_PUBLIC_KEY
     artifacts:
       - build/app/outputs/flutter-apk/app-release.apk
       - build/app/outputs/bundle/release/app-release.aab
