@@ -42,6 +42,9 @@ class _GatePassPanelState extends State<GatePassPanel> {
   bool _checking = false;
   DateTime _payingSince = DateTime.now();
 
+  /// `confirm` until the driver taps Confirm, then `approve`.
+  String _stage = '';
+
   GatePass get _pass => widget.result.pass!;
 
   @override
@@ -66,10 +69,11 @@ class _GatePassPanelState extends State<GatePassPanel> {
     if (_checking) return;
     _checking = true;
     try {
-      final String status = await widget.passService.checkPayment(
-        _pass.checkoutId,
-      );
+      final ({String status, String stage}) progress = await widget.passService
+          .checkPayment(_pass.checkoutId);
+      final String status = progress.status;
       if (!mounted) return;
+      _stage = progress.stage;
       if (status == 'paid') {
         _poll?.cancel();
         await widget.onPaid(_pass.checkoutId);
@@ -214,7 +218,7 @@ class _GatePassPanelState extends State<GatePassPanel> {
           const SizedBox(height: 10),
           if (_paying)
             Text(
-              '${_pass.directPay ? 'Waiting for the driver to confirm on their phone' : 'Waiting for the driver to pay on their phone'} '
+              '${gatePaymentStageText(_stage, _pass.paymentMethod)} '
               '(${waited.inMinutes}:${waited.inSeconds.remainder(60).toString().padLeft(2, '0')}). '
               'The gate admits them automatically once paid.',
               style: const TextStyle(height: 1.35),
@@ -326,6 +330,22 @@ Widget _step(IconData icon, Color color, String when, String action) {
     ],
   );
 }
+
+/// What staff tell a waiting driver, from the server's payment stage:
+/// "check your phone" while they haven't confirmed, "almost there" once
+/// they are approving it.
+String gatePaymentStageText(String stage, String apiType) => switch (stage) {
+  'confirm' =>
+    'Driver notified. Waiting for them to tap Confirm on their phone',
+  'approve' =>
+    'Driver is approving the payment${switch (apiType) {
+      'gcash' => ' in GCash',
+      'paymaya' => ' in Maya',
+      'card' => ' (their bank may send an OTP)',
+      _ => '',
+    }}',
+  _ => 'Waiting for the driver to pay on their phone',
+};
 
 /// "Pay with GCash" for the method the driver picked.
 String _methodNote(String apiType) => switch (apiType) {

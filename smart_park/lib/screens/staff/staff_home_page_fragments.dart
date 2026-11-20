@@ -151,15 +151,44 @@ extension _StaffHomePageFragments on _StaffHomePageState {
                             }),
                           ),
                         ];
+                        final String? me =
+                            FirebaseAuth.instance.currentUser?.uid;
                         final Widget cashCard = _ShiftCashCard(
                           cash: SpOvertimeCash.from(
                             today.logs.where(
                               (Map<String, dynamic> log) =>
-                                  log['staffId'] ==
-                                  FirebaseAuth.instance.currentUser?.uid,
+                                  log['staffId'] == me,
                             ),
                           ),
+                          // Walk-in fees this staff member took today, and
+                          // all of today's gate cash still with them.
+                          walkInFees: today.logs
+                              .where((log) => log['staffId'] == me)
+                              .map(walkInFeeOf)
+                              .where((double fee) => fee > 0)
+                              .toList(),
+                          notHandedOver: today.logs
+                              .where(
+                                (log) =>
+                                    awaitsHandover(log) &&
+                                    cashHolderOf(log) == me,
+                              )
+                              .fold<double>(
+                                0,
+                                (double sum, log) =>
+                                    sum +
+                                    overtimeCashOf(log) +
+                                    walkInFeeOf(log),
+                              ),
                         );
+                        final Widget shiftCard = me == null
+                            ? const SizedBox.shrink()
+                            : StaffShiftCard(
+                                staffId: me,
+                                staffName: _staffName,
+                                facilityId: _assignedFacilityId!,
+                                ownerId: _ownerId,
+                              );
 
                         final Widget slotsCard = SpLiveSlotsCard(
                           establishmentId: _assignedFacilityId ?? '',
@@ -197,6 +226,8 @@ extension _StaffHomePageFragments on _StaffHomePageState {
                           padding: const EdgeInsets.all(16),
                           children: [
                             hero,
+                            const SizedBox(height: 12),
+                            shiftCard,
                             const SizedBox(height: 16),
                             if (_useTabletColumns)
                               SpTabletColumns(
@@ -713,16 +744,29 @@ extension _StaffHomePageFragments on _StaffHomePageState {
 /// The overtime cash this staff member took at the gate today, so the
 /// end-of-shift handover to the owner can be checked against it.
 class _ShiftCashCard extends StatelessWidget {
-  const _ShiftCashCard({required this.cash});
+  const _ShiftCashCard({
+    required this.cash,
+    this.walkInFees = const <double>[],
+    this.notHandedOver = 0,
+  });
 
   final SpOvertimeCash cash;
+
+  /// Walk-in parking fees this staff member took today.
+  final List<double> walkInFees;
+
+  /// Today's gate cash the owner hasn't marked received yet.
+  final double notHandedOver;
 
   @override
   Widget build(BuildContext context) {
     final bool owed = cash.dueCount > 0;
+    final double walkIn = walkInFees.fold<double>(0, (a, b) => a + b);
+    final double total = cash.collectedAmount + walkIn;
+    final double handed = total - notHandedOver;
     return SpSectionCard(
       icon: Icons.payments_rounded,
-      title: 'Your Overtime Cash Today',
+      title: 'Your Gate Cash Today',
       subtitle: 'Hand this to the owner at the end of your shift.',
       trailing: owed
           ? SpChip(label: '${cash.dueCount} to confirm', color: spInsideColor)
@@ -731,7 +775,7 @@ class _ShiftCashCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            spPeso(cash.collectedAmount),
+            spPeso(total),
             style: TextStyle(
               fontSize: 26,
               fontWeight: FontWeight.w800,
@@ -740,12 +784,36 @@ class _ShiftCashCard extends StatelessWidget {
           ),
           const SizedBox(height: 2),
           Text(
-            cash.collectedCount == 0
-                ? 'No overtime cash collected yet today.'
-                : 'Collected from ${cash.collectedCount} exit'
-                      '${cash.collectedCount == 1 ? '' : 's'}.',
+            total == 0
+                ? 'No cash taken at the gate yet today.'
+                : <String>[
+                    if (cash.collectedCount > 0)
+                      'Overtime ${spPeso(cash.collectedAmount)} from '
+                          '${cash.collectedCount} exit'
+                          '${cash.collectedCount == 1 ? '' : 's'}',
+                    if (walkInFees.isNotEmpty)
+                      'walk-in fees ${spPeso(walkIn)} from '
+                          '${walkInFees.length} car'
+                          '${walkInFees.length == 1 ? '' : 's'}',
+                  ].join(' · '),
             style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
           ),
+          if (total > 0) ...[
+            const SizedBox(height: 4),
+            Text(
+              notHandedOver <= 0
+                  ? 'All of it was received by the owner.'
+                  : '${spPeso(notHandedOver)} still with you'
+                        '${handed > 0 ? ' · ${spPeso(handed)} received by the owner' : ''}.',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: notHandedOver <= 0
+                    ? AppTheme.success
+                    : AppTheme.textDark,
+              ),
+            ),
+          ],
           if (owed) ...[
             const SizedBox(height: 8),
             Text(

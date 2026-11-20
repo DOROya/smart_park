@@ -273,13 +273,95 @@ service cloud.firestore {
           after.get('overtimeCollectedBy', '') == uid());
     }
 
+    // A walk-in's parking fee, taken in cash by staff at its exit, is
+    // written on that exit's log and can't be changed after (see
+    // staffLogUpdateOk). Nowhere else carries one.
+    function walkInFeeOk(d) {
+      return !('walkInFee' in d) ||
+        (d.get('source', '') == 'walk_in' &&
+          d.get('scanType', '') == 'exit' &&
+          d.walkInFee is number &&
+          d.walkInFee >= 0 && d.walkInFee <= 100000);
+    }
+
+    // Cash staff took at the gate (overtime marked collected, or a walk-in
+    // fee) is handed to the owner; the owner stamps each log with the
+    // handover that covered it, once, so no cash is counted twice.
+    function ownerHandoverUpdateOk() {
+      let handover = request.resource.data.get('cashHandoverId', '');
+      return request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['cashHandoverId']) &&
+        !('cashHandoverId' in resource.data) &&
+        (resource.data.get('overtimeStatus', '') == 'collected' ||
+          resource.data.get('walkInFee', 0) > 0) &&
+        handover is string && handover.size() > 0 &&
+        getAfter(/databases/$(database)/documents/cash_handovers/$(handover))
+          .data.establishmentId == resource.data.establishmentID;
+    }
+
     match /activity_logs/{logId} {
       allow read: if canSeeEstablishment(resource.data.establishmentID);
       allow create: if isStaffOf(request.resource.data.establishmentID) &&
-        request.resource.data.staffId == uid();
+        request.resource.data.staffId == uid() &&
+        !('cashHandoverId' in request.resource.data) &&
+        walkInFeeOk(request.resource.data);
       allow update: if (isStaffOf(resource.data.establishmentID) &&
           staffLogUpdateOk()) ||
-        (isOwnerOf(resource.data.establishmentID) && ownerOvertimeUpdateOk());
+        (isOwnerOf(resource.data.establishmentID) &&
+          (ownerOvertimeUpdateOk() || ownerHandoverUpdateOk()));
+      allow delete: if false;
+    }
+
+    // An owner's record of cash a staff member handed over: how much, from
+    // how many gate logs, received when and by whom. A receipt, never
+    // edited; the staff member sees their own.
+    match /cash_handovers/{handoverId} {
+      allow read: if isAdmin() || isOwnerOf(resource.data.establishmentId) ||
+        (signedIn() && resource.data.staffId == uid());
+      allow create: if isOwnerOf(request.resource.data.establishmentId) &&
+        cashHandoverCreateOk(request.resource.data);
+      allow update, delete: if false;
+    }
+
+    function cashHandoverCreateOk(d) {
+      return d.keys().hasOnly([
+          'establishmentId', 'ownerId', 'staffId', 'staffName', 'amount',
+          'overtimeAmount', 'walkInAmount', 'logCount', 'receivedAt',
+          'receivedBy', 'note'
+        ]) &&
+        d.keys().hasAll(['establishmentId', 'staffId', 'amount', 'logCount',
+          'receivedAt', 'receivedBy']) &&
+        d.receivedBy == uid() &&
+        d.receivedAt == request.time &&
+        d.staffId is string && d.staffId.size() > 0 &&
+        d.amount is number && d.amount >= 0 &&
+        d.logCount is int && d.logCount > 0 && d.logCount <= 400 &&
+        d.get('note', '') is string && d.get('note', '').size() <= 300;
+    }
+
+    // Staff clock in and out of their shift; the owner sees who was on duty
+    // when, and may close a shift someone forgot to end.
+    match /staff_shifts/{shiftId} {
+      allow read: if isAdmin() || isOwnerOf(resource.data.establishmentId) ||
+        (signedIn() && resource.data.staffId == uid());
+      // endedAt is stored as null while on duty, so "on duty now" is a query.
+      allow create: if isStaffOf(request.resource.data.establishmentId) &&
+        request.resource.data.keys().hasOnly([
+          'establishmentId', 'ownerId', 'staffId', 'staffName', 'startedAt',
+          'endedAt'
+        ]) &&
+        request.resource.data.staffId == uid() &&
+        request.resource.data.startedAt == request.time &&
+        request.resource.data.get('endedAt', null) == null;
+      allow update: if resource.data.get('endedAt', null) == null &&
+        request.resource.data.endedAt == request.time &&
+        ((signedIn() && resource.data.staffId == uid() &&
+            request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(['endedAt'])) ||
+          (isOwnerOf(resource.data.establishmentId) &&
+            request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(['endedAt', 'endedBy']) &&
+            request.resource.data.endedBy == uid()));
       allow delete: if false;
     }
 

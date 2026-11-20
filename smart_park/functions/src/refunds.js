@@ -23,6 +23,7 @@ const { logger } = require("firebase-functions");
 const paymongo = require("./paymongo");
 const { platformFeeCentavosFor } = require("./pricing");
 const { notifyUser, peso } = require("./notify");
+const { notifyAdmins, refundRequestAlert } = require("./alerts");
 
 const REFUNDS = "refunds";
 const BALANCES = "owner_refund_balances";
@@ -548,19 +549,25 @@ async function requestRefund(request) {
     throw new HttpsError("failed-precondition", "Exit the facility first, then request the refund.");
   }
   const ref = db.collection(REFUNDS).doc(ticketId);
-  return db.runTransaction(async (tx) => {
+  const refund = buildRefund(ticketId, ticket, details, "driver_request", "requested");
+  const result = await db.runTransaction(async (tx) => {
     const existing = await tx.get(ref);
     if (existing.exists && existing.data().status !== "rejected") {
-      return { status: existing.data().status };
+      return { status: existing.data().status, fresh: false };
     }
     tx.set(ref, {
-      ...buildRefund(ticketId, ticket, details, "driver_request", "requested"),
+      ...refund,
       requestedAt: FieldValue.serverTimestamp(),
       createdAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
     });
-    return { status: "requested" };
+    return { status: "requested", fresh: true };
   });
+  // Nobody deciding approves it after a few days, so admins hear now.
+  if (result.fresh) {
+    await notifyAdmins(db, refundRequestAlert(refund, REQUEST_AUTO_APPROVE_DAYS));
+  }
+  return { status: result.status };
 }
 
 /** Admin: approves (and sends) or rejects a driver's refund request. */

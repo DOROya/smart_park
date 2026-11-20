@@ -767,3 +767,96 @@ test("refunds are read-only, and only for the driver, owner or an admin", async 
   await assertFails(getDoc(doc(otherOwner(), "owner_refund_balances/owner1")));
   await assertFails(updateDoc(doc(owner(), "owner_refund_balances/owner1"), { owedCentavos: 0 }));
 });
+
+test("a walk-in fee is recorded only on a walk-in exit, and never edited", async () => {
+  const exitLog = (extra) => ({
+    establishmentID: "est1", staffId: "staff1", source: "walk_in", scanType: "exit",
+    vehiclePlate: "WALK-IN", ...extra,
+  });
+  await assertSucceeds(setDoc(doc(staff(), "activity_logs/fee1"), exitLog({ walkInFee: 50 })));
+  await assertSucceeds(setDoc(doc(staff(), "activity_logs/fee0"), exitLog({})));
+  // Only on a walk-in exit, a sane amount, never pre-stamped as handed over.
+  await assertFails(setDoc(doc(staff(), "activity_logs/feeX"), exitLog({ walkInFee: 50, source: "ticket" })));
+  await assertFails(setDoc(doc(staff(), "activity_logs/feeY"), exitLog({ walkInFee: 50, scanType: "entry" })));
+  await assertFails(setDoc(doc(staff(), "activity_logs/feeZ"), exitLog({ walkInFee: -1 })));
+  await assertFails(setDoc(doc(staff(), "activity_logs/feeW"), exitLog({ walkInFee: "50" })));
+  await assertFails(setDoc(doc(staff(), "activity_logs/feeV"), exitLog({ walkInFee: 5, cashHandoverId: "h" })));
+  // Staff can't change the fee afterwards.
+  await assertFails(updateDoc(doc(staff(), "activity_logs/fee1"), { walkInFee: 5 }));
+});
+
+test("owners record cash handovers and stamp each log once", async () => {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const d = ctx.firestore();
+    await setDoc(doc(d, "activity_logs/cash1"), {
+      establishmentID: "est1", staffId: "staff1", source: "walk_in", scanType: "exit", walkInFee: 50,
+    });
+    await setDoc(doc(d, "activity_logs/cash2"), {
+      establishmentID: "est1", staffId: "staff1", scanType: "exit",
+      overtimeStatus: "collected", overtimeAmount: 40, overtimeCollectedBy: "staff1",
+    });
+    await setDoc(doc(d, "activity_logs/nocash"), {
+      establishmentID: "est1", staffId: "staff1", scanType: "entry",
+    });
+  });
+  const handover = (id, extra = {}) => ({
+    establishmentId: "est1", ownerId: "owner1", staffId: "staff1", staffName: "Ana",
+    amount: 90, overtimeAmount: 40, walkInAmount: 50, logCount: 2,
+    receivedAt: serverTimestamp(), receivedBy: "owner1", ...extra,
+  });
+  const stamp = (fs, id, logs) => {
+    const b = writeBatch(fs);
+    b.set(doc(fs, `cash_handovers/${id}`), handover(id));
+    for (const l of logs) b.update(doc(fs, `activity_logs/${l}`), { cashHandoverId: id });
+    return b.commit();
+  };
+  await assertSucceeds(stamp(owner(), "h1", ["cash1", "cash2"]));
+  // A log already handed over, or one with no cash, can't be stamped.
+  await assertFails(stamp(owner(), "h2", ["cash1"]));
+  await assertFails(stamp(owner(), "h3", ["nocash"]));
+  // Not another owner, not staff; a receipt is never edited or deleted.
+  await assertFails(setDoc(doc(otherOwner(), "cash_handovers/h4"), handover("h4", { receivedBy: "owner2" })));
+  await assertFails(setDoc(doc(staff(), "cash_handovers/h5"), handover("h5", { receivedBy: "staff1" })));
+  await assertFails(setDoc(doc(owner(), "cash_handovers/h6"), handover("h6", { receivedBy: "owner2" })));
+  await assertFails(setDoc(doc(owner(), "cash_handovers/h7"), handover("h7", { logCount: 0 })));
+  await assertFails(setDoc(doc(owner(), "cash_handovers/h8"), handover("h8", { extra: 1 })));
+  await assertFails(updateDoc(doc(owner(), "cash_handovers/h1"), { amount: 1 }));
+  await assertFails(deleteDoc(doc(owner(), "cash_handovers/h1")));
+  // The staff member sees their receipt; drivers don't.
+  await assertSucceeds(getDoc(doc(staff(), "cash_handovers/h1")));
+  await assertFails(getDoc(doc(driver(), "cash_handovers/h1")));
+  // Staff can't stamp logs themselves.
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), "activity_logs/cash3"), {
+      establishmentID: "est1", staffId: "staff1", source: "walk_in", scanType: "exit", walkInFee: 20,
+    });
+  });
+  await assertFails(updateDoc(doc(staff(), "activity_logs/cash3"), { cashHandoverId: "h1" }));
+});
+
+test("staff clock in and out; the owner can end a forgotten shift", async () => {
+  const shift = (extra = {}) => ({
+    establishmentId: "est1", ownerId: "owner1", staffId: "staff1", staffName: "Ana",
+    startedAt: serverTimestamp(), endedAt: null, ...extra,
+  });
+  await assertSucceeds(setDoc(doc(staff(), "staff_shifts/s1"), shift()));
+  // Their own, at their facility, starting now, open.
+  await assertFails(setDoc(doc(staff(), "staff_shifts/s2"), shift({ staffId: "staff9" })));
+  await assertFails(setDoc(doc(staff(), "staff_shifts/s3"), shift({ establishmentId: "est2" })));
+  await assertFails(setDoc(doc(staff(), "staff_shifts/s4"), shift({ startedAt: new Date(0) })));
+  await assertFails(setDoc(doc(staff(), "staff_shifts/s5"), shift({ endedAt: serverTimestamp() })));
+  await assertFails(setDoc(doc(driver(), "staff_shifts/s6"), shift()));
+  // Clock out once, stamped by the server; the start can't move.
+  await assertFails(updateDoc(doc(staff(), "staff_shifts/s1"), { endedAt: new Date(0) }));
+  await assertFails(updateDoc(doc(staff(), "staff_shifts/s1"), { endedAt: serverTimestamp(), startedAt: new Date(0) }));
+  await assertSucceeds(updateDoc(doc(staff(), "staff_shifts/s1"), { endedAt: serverTimestamp() }));
+  await assertFails(updateDoc(doc(staff(), "staff_shifts/s1"), { endedAt: serverTimestamp() }));
+  // The owner ends a shift left open, in their own name.
+  await assertSucceeds(setDoc(doc(staff(), "staff_shifts/s7"), shift()));
+  await assertFails(updateDoc(doc(otherOwner(), "staff_shifts/s7"), { endedAt: serverTimestamp(), endedBy: "owner2" }));
+  await assertFails(updateDoc(doc(owner(), "staff_shifts/s7"), { endedAt: serverTimestamp(), endedBy: "staff1" }));
+  await assertSucceeds(updateDoc(doc(owner(), "staff_shifts/s7"), { endedAt: serverTimestamp(), endedBy: "owner1" }));
+  await assertSucceeds(getDoc(doc(owner(), "staff_shifts/s7")));
+  await assertFails(getDoc(doc(driver(), "staff_shifts/s7")));
+  await assertFails(deleteDoc(doc(owner(), "staff_shifts/s7")));
+});

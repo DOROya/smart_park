@@ -1,8 +1,10 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../services/error_reporter.dart';
+import '../../services/gate_cash.dart' show kMaxWalkInFee;
 import '../../services/gate_scan_service.dart' show settleGateWrite;
 import '../../services/gate_unsent_exits.dart';
 import '../../theme/app_theme.dart';
@@ -14,7 +16,9 @@ import '../../widgets/sp_vehicle_type.dart';
 ///
 /// A walk-in is stored as a `transactions` doc with `source: 'walk_in'` and
 /// `entryStatus: 'checked_in'`, so the updateOccupancy Cloud Function counts
-/// it like any parked ticket. No money is recorded; the plate is optional.
+/// it like any parked ticket. The plate is optional. At exit, staff enter
+/// the cash fee the walk-in paid (if any); it goes on the exit log for the
+/// owner's books and the end-of-shift cash handover.
 class WalkInPanel extends StatefulWidget {
   const WalkInPanel({
     super.key,
@@ -159,6 +163,9 @@ class _WalkInPanelState extends State<WalkInPanel> {
   ) async {
     final String? staffId = FirebaseAuth.instance.currentUser?.uid;
     if (staffId == null || _exiting.contains(ticket.id)) return;
+    // The cash fee the walk-in paid, for the owner's books and handover.
+    final double? fee = await _askWalkInFee(ticket.data());
+    if (fee == null || !mounted) return;
     setState(() => _exiting.add(ticket.id));
     final Map<String, dynamic> data = ticket.data();
     final String plate = ((data['vehiclePlate'] as String?) ?? '').trim();
@@ -199,6 +206,7 @@ class _WalkInPanelState extends State<WalkInPanel> {
         'decisionReason': 'Walk-in exit.',
         'isActive': false,
         'elapsedSeconds': staySeconds,
+        if (fee > 0) 'walkInFee': fee,
       });
       final String entryLogId = ((data['entryLogId'] as String?) ?? '').trim();
       if (entryLogId.isNotEmpty) {
@@ -229,7 +237,8 @@ class _WalkInPanelState extends State<WalkInPanel> {
       );
       if (sent) widget.unsent?.resolve(ticket.id);
       _showSnackBar(
-        'Walk-in ${plate.isEmpty ? '' : '$plate '}checked out.'
+        'Walk-in ${plate.isEmpty ? '' : '$plate '}checked out'
+        '${fee > 0 ? ', ${spPeso(fee)} collected' : ''}.'
         '${sent ? '' : ' No connection: saved on this device and sent when it is back.'}',
       );
     } catch (error, stack) {
@@ -240,6 +249,19 @@ class _WalkInPanelState extends State<WalkInPanel> {
     } finally {
       if (mounted) setState(() => _exiting.remove(ticket.id));
     }
+  }
+
+  /// Asks what the walk-in paid in cash (0 for none). Null if staff
+  /// cancel, and then nothing is recorded.
+  Future<double?> _askWalkInFee(Map<String, dynamic> data) {
+    final String plate = ((data['vehiclePlate'] as String?) ?? '').trim();
+    return showDialog<double>(
+      context: context,
+      builder: (BuildContext context) => _WalkInFeeDialog(
+        title: plate.isEmpty ? 'Walk-in exit' : 'Walk-in exit · $plate',
+        stay: _stayLabel(spParseDateTime(data['entryAt'])),
+      ),
+    );
   }
 
   String _stayLabel(DateTime? entryAt) {
@@ -457,6 +479,84 @@ class _WalkInPanelState extends State<WalkInPanel> {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// The cash fee for a walk-in leaving: pops the amount (0 for "No fee").
+class _WalkInFeeDialog extends StatefulWidget {
+  const _WalkInFeeDialog({required this.title, required this.stay});
+
+  final String title;
+  final String stay;
+
+  @override
+  State<_WalkInFeeDialog> createState() => _WalkInFeeDialogState();
+}
+
+class _WalkInFeeDialogState extends State<_WalkInFeeDialog> {
+  final TextEditingController _fee = TextEditingController();
+  String? _error;
+
+  @override
+  void dispose() {
+    _fee.dispose();
+    super.dispose();
+  }
+
+  void _save() {
+    final double? fee = double.tryParse(_fee.text.trim());
+    if (fee == null || fee <= 0 || fee > kMaxWalkInFee) {
+      setState(() => _error = 'Enter the amount collected, or tap No fee.');
+      return;
+    }
+    Navigator.of(context).pop((fee * 100).round() / 100);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(widget.title),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Text(
+            'Parked ${widget.stay}. Enter the parking fee you collected in '
+            'cash; it is added to the cash you hand to the owner.',
+            style: TextStyle(color: AppTheme.textSecondary, height: 1.35),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _fee,
+            autofocus: true,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            inputFormatters: <TextInputFormatter>[
+              FilteringTextInputFormatter.allow(
+                RegExp(r'^\d{0,6}(\.\d{0,2})?'),
+              ),
+            ],
+            decoration: InputDecoration(
+              labelText: 'Fee collected',
+              prefixText: '₱ ',
+              errorText: _error,
+              border: const OutlineInputBorder(),
+            ),
+            onSubmitted: (_) => _save(),
+          ),
+        ],
+      ),
+      actions: <Widget>[
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(0.0),
+          child: const Text('No fee'),
+        ),
+        FilledButton(onPressed: _save, child: const Text('Record exit')),
+      ],
     );
   }
 }

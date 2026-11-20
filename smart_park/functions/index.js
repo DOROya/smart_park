@@ -2,12 +2,13 @@ const { initializeApp } = require("firebase-admin/app");
 const { getFirestore, Timestamp, FieldValue } = require("firebase-admin/firestore");
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
-const { onDocumentWritten } = require("firebase-functions/v2/firestore");
+const { onDocumentWritten, onDocumentCreated } = require("firebase-functions/v2/firestore");
 const { onObjectFinalized } = require("firebase-functions/v2/storage");
 const { getStorage } = require("firebase-admin/storage");
 const { setGlobalOptions } = require("firebase-functions/v2");
 const { defineSecret } = require("firebase-functions/params");
 
+const alerts = require("./src/alerts");
 const authEmails = require("./src/auth_emails");
 const checkout = require("./src/checkout");
 const gatePass = require("./src/gate_pass");
@@ -102,6 +103,8 @@ exports.onFacilityStatusChange = onDocumentWritten(
     const after = event.data?.after?.data();
     // A notice to fix something before a suspension reaches the owner's phone.
     await permits.notifyComplianceNotice(event.params.establishmentId, before, after);
+    // Applications and review requests to admins; decisions to the owner.
+    await alerts.onFacilityChange(event.params.establishmentId, before, after);
     await refunds.onFacilityStatusChange(
       event.params.establishmentId,
       before,
@@ -129,6 +132,19 @@ exports.refundLongSuspensions = onSchedule(
     // Same daily run: tell owners whose business permit is about to lapse.
     await permits.remindExpiringPermits();
   },
+);
+
+// New reports reach the admins, and staff flags their owner (src/alerts.js).
+exports.alertDriverReport = onDocumentCreated("driver_reports/{reportId}", (event) =>
+  alerts.onReportCreated("driver_reports", event.data?.data()),
+);
+
+exports.alertFacilityReport = onDocumentCreated("facility_reports/{reportId}", (event) =>
+  alerts.onReportCreated("facility_reports", event.data?.data()),
+);
+
+exports.alertStaffFlag = onDocumentCreated("staff_incidents/{incidentId}", (event) =>
+  alerts.onStaffFlagCreated(event.data?.data()),
 );
 
 // Push reminders before parked drivers' paid time runs out (src/reminders.js).

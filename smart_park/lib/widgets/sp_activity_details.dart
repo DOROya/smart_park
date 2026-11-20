@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 
+import '../services/gate_cash.dart';
 import '../services/ticket_plate.dart';
 import '../theme/app_theme.dart';
 import 'smartpark_ui.dart';
@@ -224,6 +225,19 @@ class _ActivityDetailsSheetState extends State<_ActivityDetailsSheet> {
             if (reason.isNotEmpty)
               _row(Icons.info_outline_rounded, 'Result', reason),
             if (((log['overtimeHours'] as num?) ?? 0) > 0) _overtimeRow(),
+            if (walkInFeeOf(log) > 0)
+              _row(
+                Icons.payments_outlined,
+                'Walk-in fee',
+                '${spPeso(walkInFeeOf(log))} cash',
+              ),
+            // Gate cash the owner received (or not yet).
+            if (overtimeCashOf(log) > 0 || walkInFeeOf(log) > 0)
+              _row(
+                Icons.account_balance_wallet_outlined,
+                'Handed to owner',
+                awaitsHandover(log) ? 'Not yet' : 'Yes',
+              ),
             if (transactionId.isNotEmpty) _ticketRow(context, transactionId),
             // A ticket moved between vehicles shows every plate it was on.
             if (!walkIn && transactionId.isNotEmpty)
