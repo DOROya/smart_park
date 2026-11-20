@@ -300,10 +300,26 @@ class _CommissionsListContentState extends State<_CommissionsListContent>
         final String status = ((data['status'] as String?) ?? 'paid')
             .toUpperCase();
         final DateTime? createdAt = _parseDateTime(data['createdAt']);
+        // Extra hours bought on a ticket: its own sale, named after the
+        // ticket's driver.
+        final String ticketId = ((data['ticketId'] as String?) ?? '').trim();
+        final int extraHours = ((data['hours'] as num?) ?? 0).toInt();
+        String driverName = 'Driver';
+        for (final QueryDocumentSnapshot<Map<String, dynamic>> t in txDocs) {
+          if (t.id != ticketId) continue;
+          final String name = ((t.data()['driverName'] as String?) ?? '')
+              .trim();
+          if (name.isNotEmpty) driverName = name;
+        }
+        if (data['kind'] == 'extra_hours' && extraHours > 0) {
+          driverName =
+              '$driverName · extra $extraHours '
+              'hr${extraHours == 1 ? '' : 's'}';
+        }
 
         recordMap[txId] = _CommissionRecord(
           id: txId,
-          driverName: 'Driver',
+          driverName: driverName,
           grossAmount: grossAmount,
           platformFee: platformFee,
           netToOwner: netToOwner,

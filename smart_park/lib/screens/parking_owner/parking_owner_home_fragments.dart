@@ -230,8 +230,13 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
                         summary: summary,
                         overstayCard: overstayCard,
                         overtimeCash: overtimeCash,
-                        trendsCard: ParkingTrendsCard(
-                          facilityId: establishmentId,
+                        trendsCard: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: <Widget>[
+                            ParkingTrendsCard(facilityId: establishmentId),
+                            const SizedBox(height: 16),
+                            OwnerRatingsCard(facilityId: establishmentId),
+                          ],
                         ),
                         slotsCard: SpLiveSlotsCard(
                           establishmentId: establishmentId,
@@ -310,6 +315,8 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
                         ),
                         const SizedBox(height: 16),
                         ParkingTrendsCard(facilityId: establishmentId),
+                        const SizedBox(height: 16),
+                        OwnerRatingsCard(facilityId: establishmentId),
                         const SizedBox(height: 16),
                         SpSectionLabel(
                           'Recent Scans',

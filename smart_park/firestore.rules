@@ -155,12 +155,17 @@ service cloud.firestore {
 
     match /establishments/{establishmentId} {
       allow read: if isVerifiedOrStaff();
+      // The rating shown to drivers is the server's (on details), never the
+      // owner's: these fields stay off the owner's record.
       allow create: if isParkingOwner() &&
-        request.resource.data.ownerId == uid();
+        request.resource.data.ownerId == uid() &&
+        !request.resource.data.keys().hasAny(['rating', 'ratingCount']);
       allow update: if isAdmin() ||
         (signedIn() &&
           resource.data.ownerId == uid() &&
-          request.resource.data.ownerId == uid());
+          request.resource.data.ownerId == uid() &&
+          unchanged('rating') &&
+          unchanged('ratingCount'));
       allow delete: if isAdmin();
     }
 
@@ -171,12 +176,16 @@ service cloud.firestore {
     function ownerReviewFieldsOk() {
       return request.resource.data.get('status', 'pending') == 'pending'
           ? !(resource.data.get('status', 'pending') in ['suspended', 'deactivated']) &&
+            unchanged('rating') &&
+            unchanged('ratingCount') &&
             request.resource.data.get('reviewedBy', null) == null &&
             request.resource.data.get('rejectionReason', null) == null &&
             unchanged('restrictionReason') &&
             unchanged('restrictionReasons') &&
             unchanged('complianceNotice')
           : unchanged('status') &&
+            unchanged('rating') &&
+            unchanged('ratingCount') &&
             unchanged('reviewedBy') &&
             unchanged('reviewedAt') &&
             unchanged('rejectionReason') &&
@@ -199,7 +208,8 @@ service cloud.firestore {
         willOwn(establishmentId) &&
         gracePeriodOk() &&
         request.resource.data.get('status', 'pending') == 'pending' &&
-        request.resource.data.get('reviewedBy', null) == null;
+        request.resource.data.get('reviewedBy', null) == null &&
+        !request.resource.data.keys().hasAny(['rating', 'ratingCount']);
       allow update: if isAdmin() ||
         (isOwnerOf(establishmentId) && ownerReviewFieldsOk() && gracePeriodOk());
       allow delete: if isAdmin();
@@ -621,6 +631,41 @@ service cloud.firestore {
     match /stats/{doc} {
       allow read: if isAdmin();
       allow write: if false;
+    }
+
+    // A driver rates a facility after parking there: one rating per ticket
+    // (its id), only on their own ticket once it has been used (an exit is
+    // on record), 1-5 stars and an optional comment. They may change it;
+    // the facility's owner reads it; the server keeps the average.
+    function ratingFieldsOk(ticketId) {
+      let d = request.resource.data;
+      let t = get(/databases/$(database)/documents/transactions/$(ticketId)).data;
+      return signedIn() &&
+        d.driverId == uid() &&
+        t.get('driverId', '') == uid() &&
+        d.establishmentId == t.get('establishmentId', '') &&
+        t.get('exitAt', null) != null &&
+        d.keys().hasOnly(['establishmentId', 'driverId', 'stars', 'comment',
+          'createdAt', 'updatedAt']) &&
+        d.stars is int && d.stars >= 1 && d.stars <= 5 &&
+        d.get('comment', '') is string && d.get('comment', '').size() <= 300 &&
+        d.updatedAt == request.time;
+    }
+
+    match /facility_ratings/{ticketId} {
+      // A missing rating reads as missing (nothing to hide), so the ticket
+      // screen can tell whether to ask for one.
+      allow get: if signedIn() && (resource == null ||
+        resource.data.driverId == uid() ||
+        isOwnerOf(resource.data.establishmentId) || isAdmin());
+      allow list: if isAdmin() || isOwnerOf(resource.data.establishmentId) ||
+        (signedIn() && resource.data.driverId == uid());
+      allow create: if ratingFieldsOk(ticketId) &&
+        request.resource.data.createdAt == request.time;
+      allow update: if ratingFieldsOk(ticketId) &&
+        resource.data.driverId == uid() &&
+        request.resource.data.createdAt == resource.data.createdAt;
+      allow delete: if false;
     }
 
     // Anything not listed above is closed.

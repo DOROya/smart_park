@@ -295,6 +295,14 @@ TermsSection _payments({required bool owner}) => TermsSection(
               'straight to PayMongo (SmartPark keeps only its last 4 digits). '
               'They are used only to pay for that QR, when you tap Confirm '
               'at the gate and approve the payment.',
+          'You can add hours to a paid ticket in the app, at the overtime '
+              'rate fixed when you bought it, so your time does not run '
+              'out. You are charged only when you tap Confirm. If SmartPark '
+              'refunds a ticket because its facility was pulled, the refund '
+              'is worked out on the ticket\'s original purchase.',
+          'After parking you may rate the facility (1 to 5 stars and an '
+              'optional comment). Its owner sees your rating and comment, '
+              'not your name, and drivers see the average.',
           'Paying at the gate needs mobile data. Temporary QRs cannot be '
               'paid in cash; without data, you may park as a regular walk-in '
               "under the facility's own terms.",

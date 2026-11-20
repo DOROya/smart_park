@@ -10,6 +10,8 @@ const { defineSecret } = require("firebase-functions/params");
 
 const alerts = require("./src/alerts");
 const authEmails = require("./src/auth_emails");
+const extraHours = require("./src/extra_hours");
+const ratings = require("./src/ratings");
 const checkout = require("./src/checkout");
 const gatePass = require("./src/gate_pass");
 const refunds = require("./src/refunds");
@@ -52,6 +54,12 @@ exports.createParkingPass = onCall(
 );
 
 exports.cancelParkingPass = onCall((request) => gatePass.cancelParkingPass(request));
+
+// Extra hours on a paid ticket, e.g. from the "time almost up" reminder.
+exports.addTicketHours = onCall(
+  { secrets: [PAYMONGO_SECRET_KEY] },
+  (request) => extraHours.addTicketHours(request, PAYMONGO_SECRET_KEY.value()),
+);
 
 // The driver's Confirm tap at the gate: pays with the details saved on the QR.
 exports.payGatePass = onCall(
@@ -132,6 +140,11 @@ exports.refundLongSuspensions = onSchedule(
     // Same daily run: tell owners whose business permit is about to lapse.
     await permits.remindExpiringPermits();
   },
+);
+
+// Keeps each facility's average rating (src/ratings.js).
+exports.updateFacilityRating = onDocumentWritten("facility_ratings/{ticketId}", (event) =>
+  ratings.onRatingWritten(event.data?.before?.data(), event.data?.after?.data()),
 );
 
 // New reports reach the admins, and staff flags their owner (src/alerts.js).

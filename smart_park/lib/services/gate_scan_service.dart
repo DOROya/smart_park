@@ -1403,14 +1403,16 @@ class GateScanService {
     );
   }
 
-  /// Who the ticket belongs to, copied onto its gate logs so the owner can
-  /// see (and report) the driver without opening the ticket.
+  /// Who the ticket belongs to and its vehicle type, copied onto its gate
+  /// logs so the owner can see (and report, and export) them without
+  /// opening the ticket.
   static Map<String, dynamic> _driverFields(Map<String, dynamic> ticket) {
     final String driverId = ((ticket['driverId'] as String?) ?? '').trim();
     final String driverName = ((ticket['driverName'] as String?) ?? '').trim();
     return <String, dynamic>{
       if (driverId.isNotEmpty) 'driverId': driverId,
       if (driverName.isNotEmpty) 'driverName': driverName,
+      'vehicleType': _vehicleType(ticket),
     };
   }
 

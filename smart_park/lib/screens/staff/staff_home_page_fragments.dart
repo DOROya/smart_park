@@ -792,8 +792,8 @@ class _ShiftCashCard extends StatelessWidget {
                           '${cash.collectedCount} exit'
                           '${cash.collectedCount == 1 ? '' : 's'}',
                     if (walkInFees.isNotEmpty)
-                      'walk-in fees ${spPeso(walkIn)} from '
-                          '${walkInFees.length} car'
+                      'Walk-in fees ${spPeso(walkIn)} from '
+                          '${walkInFees.length} vehicle'
                           '${walkInFees.length == 1 ? '' : 's'}',
                   ].join(' · '),
             style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),

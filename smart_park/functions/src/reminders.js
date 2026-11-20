@@ -133,14 +133,16 @@ function noticeText(kind, ticket, nowMs) {
       title: "Parking time almost up",
       body:
         `Your paid time at ${facility} ends at ${manilaTime(until)} ` +
-        `(in ${minutes} min). After that, overtime is charged at the exit.`,
+        `(in ${minutes} min). Tap to add hours in the app, or overtime ` +
+        "is charged at the exit.",
     };
   }
   return {
     title: "Overtime has started",
     body:
       `Your paid time at ${facility} ended at ${manilaTime(until)}. ` +
-      "Overtime is now being charged and is paid in cash at the exit.",
+      "Overtime is now being charged and is paid in cash at the exit. " +
+      "Tap to add hours and stop it.",
   };
 }
 
