@@ -344,6 +344,8 @@ service cloud.firestore {
     // paid ticket to another plate (stored trimmed and upper-cased, as
     // checkout does) while it isn't parked. Nothing else changes, the
     // vehicle type included.
+    // Every change also records the plate it replaced in `plateHistory`
+    // (append only), so a shared ticket shows which vehicles used it.
     function driverPlateUpdateOk() {
       let plate = request.resource.data.get('vehiclePlate', '');
       return signedIn() &&
@@ -351,11 +353,36 @@ service cloud.firestore {
         resource.data.get('status', '') == 'paid' &&
         !(resource.data.get('entryStatus', '') in ['checked_in', 'inside']) &&
         request.resource.data.diff(resource.data).affectedKeys()
-          .hasOnly(['vehiclePlate', 'updatedAt']) &&
+          .hasOnly(['vehiclePlate', 'updatedAt', 'plateHistory']) &&
+        plateHistoryAppendOk() &&
         plate is string &&
         plate.size() > 0 && plate.size() <= 20 &&
         plate == plate.trim().upper() &&
         request.resource.data.get('updatedAt', null) == request.time;
+    }
+
+    // One entry added at the end, earlier ones untouched, at most 30.
+    function plateHistoryAppendOk() {
+      let before = resource.data.get('plateHistory', []);
+      let after = request.resource.data.get('plateHistory', []);
+      return before is list && after is list &&
+        after.size() == before.size() + 1 &&
+        after.size() <= 30 &&
+        // (An empty range is an index error in rules, hence the guard.)
+        (before.size() == 0 || after[0:before.size()] == before) &&
+        plateHistoryEntryOk(after[before.size()]);
+    }
+
+    // { plate: the plate being replaced, until: when (the phone's clock,
+    // so within 10 minutes of the server's) }.
+    function plateHistoryEntryOk(e) {
+      return e is map &&
+        e.keys().hasOnly(['plate', 'until']) &&
+        e.keys().hasAll(['plate', 'until']) &&
+        e.plate == resource.data.get('vehiclePlate', '') &&
+        e.until is timestamp &&
+        e.until > request.time - duration.value(10, 'm') &&
+        e.until < request.time + duration.value(10, 'm');
     }
 
     match /transactions/{transactionId} {

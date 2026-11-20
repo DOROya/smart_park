@@ -3,9 +3,9 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'parking_pricing.dart';
 
 /// A driver may move a ticket to another plate, e.g. to lend it to someone
-/// with the same vehicle type. The vehicle type never changes, and each gate
-/// log keeps the plate it was scanned with, so past visits still show which
-/// vehicle used the ticket.
+/// with the same vehicle type. The vehicle type never changes; the ticket
+/// keeps the plates it was on before (`plateHistory`), and each gate log the
+/// plate it was scanned with, so it always shows which vehicles used it.
 
 const int kMaxPlateLength = 20;
 
@@ -24,8 +24,60 @@ bool canChangeTicketPlate(Map<String, dynamic> ticket) {
       ticketHoursLeft(ticket) > 0;
 }
 
-/// Puts ticket [transactionId] on [plate]. Only `vehiclePlate` and
-/// `updatedAt` change; rules let only the ticket's own driver do it.
+/// Most plate changes one ticket keeps a record of (security rules cap it).
+const int kMaxPlateHistory = 30;
+
+/// A plate a ticket was on before, and until when.
+typedef PastPlate = ({String plate, DateTime? until});
+
+/// The ticket's earlier plates, oldest first (`plateHistory`).
+List<PastPlate> ticketPlateHistory(Map<String, dynamic> ticket) {
+  final Object? raw = ticket['plateHistory'];
+  if (raw is! List) return const <PastPlate>[];
+  return <PastPlate>[
+    for (final Object? e in raw)
+      if (e is Map && e['plate'] is String && (e['plate'] as String).isNotEmpty)
+        (
+          plate: e['plate'] as String,
+          until: e['until'] is Timestamp
+              ? (e['until'] as Timestamp).toDate()
+              : null,
+        ),
+  ];
+}
+
+/// "ABC123 (to Nov 18) → NEW 123 (now)": every plate the ticket was on,
+/// oldest first; '' when it was never moved.
+String plateHistoryLabel(Map<String, dynamic> ticket) {
+  final List<PastPlate> past = ticketPlateHistory(ticket);
+  if (past.isEmpty) return '';
+  const List<String> months = <String>[
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
+  ];
+  final String current = ((ticket['vehiclePlate'] as String?) ?? '').trim();
+  return <String>[
+    for (final PastPlate p in past)
+      p.until == null
+          ? p.plate
+          : '${p.plate} (to ${months[p.until!.month - 1]} ${p.until!.day})',
+    if (current.isNotEmpty) '$current (now)',
+  ].join(' → ');
+}
+
+/// Puts ticket [transactionId] on [plate], recording the plate it replaces
+/// in `plateHistory`. Rules let only the ticket's own driver do it, and
+/// only append to the history.
 Future<void> changeTicketPlate({
   required String transactionId,
   required String plate,
@@ -36,10 +88,26 @@ Future<void> changeTicketPlate({
     throw ArgumentError.value(plate, 'plate', 'Enter a valid plate number.');
   }
   final FirebaseFirestore db = firestore ?? FirebaseFirestore.instance;
-  return db.collection('transactions').doc(transactionId).update(
-    <String, dynamic>{
+  final DocumentReference<Map<String, dynamic>> ref = db
+      .collection('transactions')
+      .doc(transactionId);
+  return db.runTransaction<void>((Transaction tx) async {
+    final Map<String, dynamic> ticket = (await tx.get(ref)).data() ?? {};
+    final Object? raw = ticket['plateHistory'];
+    final List<Object?> history = raw is List ? List<Object?>.of(raw) : [];
+    if (history.length >= kMaxPlateHistory) {
+      throw StateError("This ticket's plate was changed too many times.");
+    }
+    tx.update(ref, <String, dynamic>{
       'vehiclePlate': normalized,
       'updatedAt': FieldValue.serverTimestamp(),
-    },
-  );
+      'plateHistory': <Object?>[
+        ...history,
+        <String, dynamic>{
+          'plate': (ticket['vehiclePlate'] as String?) ?? '',
+          'until': Timestamp.now(),
+        },
+      ],
+    });
+  });
 }

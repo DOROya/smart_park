@@ -1,8 +1,10 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:smart_park/screens/driver/driver_checkout_payment_page.dart';
 import 'package:smart_park/screens/driver/driver_parking_pass_page.dart';
 import 'package:smart_park/screens/driver/driver_payment_page.dart';
+import 'package:smart_park/screens/driver/widgets/driver_active_pass_bar.dart';
 import 'package:smart_park/services/saved_payment.dart';
 
 void main() {
@@ -21,6 +23,52 @@ void main() {
         expect(normalizePhMobile(raw), isNull, reason: raw);
       }
     });
+  });
+
+  test('a saved number is shown the local way', () {
+    expect(localPhMobile('+639171234567'), '0917 123 4567');
+    expect(localPhMobile(''), '');
+  });
+
+  test('the Home shortcut lists usable QRs, the one being paid first', () {
+    final DateTime now = DateTime(2026, 11, 20, 12);
+    Timestamp at(int hour) => Timestamp.fromDate(DateTime(2026, 11, 20, hour));
+    final List<ActivePass> passes = usablePasses(<ActivePass>[
+      (
+        id: 'old',
+        data: <String, dynamic>{
+          'status': 'awaiting_gate',
+          'createdAt': at(8),
+          'expiresAt': at(23),
+        },
+      ),
+      (
+        id: 'new',
+        data: <String, dynamic>{
+          'status': 'awaiting_gate',
+          'createdAt': at(10),
+          'expiresAt': at(23),
+        },
+      ),
+      (
+        id: 'paying',
+        data: <String, dynamic>{'status': 'pending', 'createdAt': at(7)},
+      ),
+      (
+        id: 'expired',
+        data: <String, dynamic>{
+          'status': 'awaiting_gate',
+          'createdAt': at(11),
+          'expiresAt': at(11),
+        },
+      ),
+      (id: 'paid', data: <String, dynamic>{'status': 'paid'}),
+    ], now);
+    expect(passes.map((ActivePass p) => p.id), <String>[
+      'paying',
+      'new',
+      'old',
+    ]);
   });
 
   group('cards', () {
@@ -80,8 +128,10 @@ void main() {
 
   group('payment step', () {
     Future<List<(DriverPaymentMethod, SavedPaymentDetails)>> pumpPage(
-      WidgetTester tester,
-    ) async {
+      WidgetTester tester, {
+      String initialMethod = '',
+      String initialPhone = '',
+    }) async {
       tester.view.physicalSize = const Size(1080, 2600);
       tester.view.devicePixelRatio = 2.5;
       addTearDown(tester.view.reset);
@@ -96,6 +146,8 @@ void main() {
             duration: 1,
             amount: 50,
             isPayMongoConfigured: true,
+            initialMethodApiType: initialMethod,
+            initialPhone: initialPhone,
             onProcessPayment:
                 (DriverPaymentMethod method, SavedPaymentDetails saved) async {
                   calls.add((method, saved));
@@ -126,6 +178,26 @@ void main() {
       await tester.tap(find.text('Get Temporary QR'));
       await tester.pump();
       expect(calls, hasLength(1));
+      expect(calls.single.$1, DriverPaymentMethod.gcash);
+      expect(calls.single.$2.phone, '+639171234567');
+    });
+
+    testWidgets("last time's GCash number is filled in", (
+      WidgetTester tester,
+    ) async {
+      final List<(DriverPaymentMethod, SavedPaymentDetails)> calls =
+          await pumpPage(
+            tester,
+            initialMethod: 'gcash',
+            initialPhone: '+639171234567',
+          );
+      // (The field's hint is the same example number, so read its value.)
+      expect(
+        tester.widget<TextField>(find.byType(TextField)).controller!.text,
+        '0917 123 4567',
+      );
+      await tester.tap(find.text('Get Temporary QR'));
+      await tester.pump();
       expect(calls.single.$1, DriverPaymentMethod.gcash);
       expect(calls.single.$2.phone, '+639171234567');
     });

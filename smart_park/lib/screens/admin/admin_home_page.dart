@@ -1780,7 +1780,7 @@ class _AdminHomePageState extends State<AdminHomePage>
         (Icons.dashboard_outlined, Icons.dashboard_rounded, 'Dashboard'),
         (Icons.apartment_outlined, Icons.apartment_rounded, 'Facility'),
         (Icons.group_outlined, Icons.group_rounded, 'Users'),
-        (Icons.assessment_outlined, Icons.assessment_rounded, 'Report'),
+        (Icons.assessment_outlined, Icons.assessment_rounded, 'Reports'),
         (Icons.settings_outlined, Icons.settings_rounded, 'Settings'),
       ];
 

@@ -23,6 +23,7 @@ const { logger } = require("firebase-functions");
 
 const paymongo = require("./paymongo");
 const { reserveRecovery, releaseRecovery } = require("./refunds");
+const { notifyUser, peso } = require("./notify");
 const {
   CHECKOUTS,
   asString,
@@ -294,6 +295,8 @@ async function createParkingPass(request, secretKey) {
     updatedAt: FieldValue.serverTimestamp(),
   });
 
+  await rememberPaymentChoice(db, driverId, record.paymentMethod, saved.payer);
+
   return {
     checkoutId: ref.id,
     qrCode,
@@ -302,6 +305,30 @@ async function createParkingPass(request, secretKey) {
     expiresAt: expiresAt.toMillis(),
     directPay: saved.directPay,
   };
+}
+
+/**
+ * The method (and wallet number) the driver used, so the next temporary QR
+ * starts with them filled in. Never the card token: a card is entered again.
+ */
+async function rememberPaymentChoice(db, driverId, paymentMethod, payer) {
+  try {
+    await db
+      .collection("users")
+      .doc(driverId)
+      .set(
+        {
+          paymentPrefs: {
+            method: paymentMethod || "",
+            ...(payer?.phone ? { walletPhone: payer.phone } : {}),
+          },
+        },
+        { merge: true },
+      );
+  } catch (error) {
+    // A convenience only; the pass is already made.
+    logger.warn(`Could not remember payment choice for ${driverId}`, error);
+  }
 }
 
 async function cancelParkingPass(request) {
@@ -550,7 +577,10 @@ async function startGatePayment(request, secretKey) {
     const recovery = await reserveRecovery(db, claimed.c.ownerId, claimed.c.netToOwnerCentavos);
     if (recovery > 0) await ref.update({ refundRecoveryCentavos: recovery });
     // Saved details: the driver's Confirm tap opens the payment.
-    if (claimed.c.directPay === true) return { status: "pending" };
+    if (claimed.c.directPay === true) {
+      await notifyGateConfirm(db, ref.id, claimed.c);
+      return { status: "pending" };
+    }
     session = await openPaymongoSession(secretKey, ref.id, {
       ...claimed.c,
       refundRecoveryCentavos: recovery,
@@ -570,7 +600,25 @@ async function startGatePayment(request, secretKey) {
     },
     updatedAt: FieldValue.serverTimestamp(),
   });
+  await notifyGateConfirm(db, ref.id, claimed.c);
   return { status: "pending" };
+}
+
+/**
+ * Tells the driver staff confirmed space, in case the QR isn't open on
+ * their phone (a saved image, the phone in a pocket). Tapping it opens the
+ * QR, where Confirm (or the payment page) is waiting.
+ */
+async function notifyGateConfirm(db, checkoutId, c) {
+  const amount = peso(c.amountCentavos);
+  await notifyUser(db, c.driverId, {
+    title: "Staff confirmed there is space",
+    body:
+      c.directPay === true
+        ? `Tap to confirm your ${amount} payment for ${c.establishmentName}.`
+        : `Tap to pay ${amount} for ${c.establishmentName}.`,
+    data: { kind: "gate_confirm", checkoutId },
+  });
 }
 
 /**

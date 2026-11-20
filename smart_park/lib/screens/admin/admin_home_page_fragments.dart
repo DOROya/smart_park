@@ -462,7 +462,7 @@ extension _AdminHomePageFragments on _AdminHomePageState {
     if (_isTablet) {
       return <Widget>[
         const SpPageHeader(
-          title: 'Report',
+          title: 'Reports',
           subtitle: 'Sales report: SmartPark commission and transactions.',
         ),
         const SizedBox(height: 16),
@@ -494,7 +494,7 @@ extension _AdminHomePageFragments on _AdminHomePageState {
 
     return <Widget>[
       _buildTabHero(
-        title: 'Report',
+        title: 'Reports',
         subtitle: 'Sales report: SmartPark commission and transactions.',
         icon: Icons.assessment_rounded,
       ),

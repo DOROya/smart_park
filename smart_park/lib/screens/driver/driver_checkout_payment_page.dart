@@ -30,6 +30,8 @@ class DriverCheckoutPaymentPage extends StatefulWidget {
     required this.duration,
     required this.amount,
     required this.isPayMongoConfigured,
+    this.initialMethodApiType = '',
+    this.initialPhone = '',
     this.onProcessPayment,
   });
 
@@ -39,6 +41,11 @@ class DriverCheckoutPaymentPage extends StatefulWidget {
   final int duration;
   final double amount;
   final bool isPayMongoConfigured;
+
+  /// What the driver used last time ("gcash", "+639171234567"), so a
+  /// regular only checks it and taps Get Temporary QR.
+  final String initialMethodApiType;
+  final String initialPhone;
   final Future<bool> Function(
     DriverPaymentMethod method,
     SavedPaymentDetails saved,
@@ -61,6 +68,22 @@ class _DriverCheckoutPaymentPageState extends State<DriverCheckoutPaymentPage> {
   final TextEditingController _cardCvc = TextEditingController();
   final TextEditingController _cardName = TextEditingController();
   String? _detailsError;
+
+  static const List<DriverPaymentMethod> _methods = <DriverPaymentMethod>[
+    DriverPaymentMethod.card,
+    DriverPaymentMethod.gcash,
+    DriverPaymentMethod.maya,
+    DriverPaymentMethod.qrph,
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    for (final DriverPaymentMethod m in _methods) {
+      if (m.apiType == widget.initialMethodApiType) _selectedMethod = m;
+    }
+    _phone.text = localPhMobile(widget.initialPhone);
+  }
 
   @override
   void dispose() {
@@ -332,12 +355,7 @@ class _DriverCheckoutPaymentPageState extends State<DriverCheckoutPaymentPage> {
 
   @override
   Widget build(BuildContext context) {
-    final List<DriverPaymentMethod> methods = <DriverPaymentMethod>[
-      DriverPaymentMethod.card,
-      DriverPaymentMethod.gcash,
-      DriverPaymentMethod.maya,
-      DriverPaymentMethod.qrph,
-    ];
+    const List<DriverPaymentMethod> methods = _methods;
 
     return Scaffold(
       backgroundColor: AppTheme.background,

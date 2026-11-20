@@ -27,6 +27,11 @@ class DriverParkingPassPage extends StatefulWidget {
 
   final String checkoutId;
 
+  /// Temporary QRs on screen now, so nothing opens a second copy.
+  static final Set<String> _open = <String>{};
+
+  static bool isOpen(String checkoutId) => _open.contains(checkoutId);
+
   @override
   State<DriverParkingPassPage> createState() => _DriverParkingPassPageState();
 }
@@ -49,6 +54,7 @@ class _DriverParkingPassPageState extends State<DriverParkingPassPage> {
   @override
   void initState() {
     super.initState();
+    DriverParkingPassPage._open.add(widget.checkoutId);
     _sub = FirebaseFirestore.instance
         .collection('parking_checkouts')
         .doc(widget.checkoutId)
@@ -64,6 +70,7 @@ class _DriverParkingPassPageState extends State<DriverParkingPassPage> {
 
   @override
   void dispose() {
+    DriverParkingPassPage._open.remove(widget.checkoutId);
     _sub?.cancel();
     super.dispose();
   }

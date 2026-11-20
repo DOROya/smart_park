@@ -752,6 +752,18 @@ class _ActiveTicketCard extends StatelessWidget {
                     ),
                   ],
                 ),
+                if (plateHistoryLabel(data).isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: Text(
+                      'Plates: ${plateHistoryLabel(data)}',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: AppTheme.textMuted,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
                 // Not while parked: the vehicle inside is the one on the
                 // ticket until it exits.
                 if (canChangeTicketPlate(data))

@@ -23,6 +23,7 @@ const {
   writeBatch,
   serverTimestamp,
   deleteField,
+  Timestamp,
 } = require("firebase/firestore");
 
 const PROJECT_ID = "demo-smartpark";
@@ -306,8 +307,45 @@ test("drivers change only the plate on their own tickets while not parked", asyn
       driverId: "driver1", establishmentId: "est1", status: "pending", vehiclePlate: "P1",
     });
   });
-  const plate = (p) => ({ vehiclePlate: p, updatedAt: serverTimestamp() });
+  // A change records the plate it replaces; tx1 starts as ABC123.
+  let history = [];
+  let current = "ABC123";
+  const entry = (from, until = Timestamp.now()) => ({ plate: from, until });
+  const plate = (p) => ({
+    vehiclePlate: p,
+    updatedAt: serverTimestamp(),
+    plateHistory: [...history, entry(current)],
+  });
+  const stored = async () => {
+    let data;
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      data = (await getDoc(doc(ctx.firestore(), "transactions/tx1"))).data();
+    });
+    return data;
+  };
   await assertSucceeds(updateDoc(doc(driver(), "transactions/tx1"), plate("NEW 123")));
+  ({ plateHistory: history, vehiclePlate: current } = await stored());
+  assert.equal(history.length, 1);
+  assert.equal(history[0].plate, "ABC123");
+  // A second change appends to the history.
+  await assertSucceeds(updateDoc(doc(driver(), "transactions/tx1"), plate("NEW 200")));
+  ({ plateHistory: history, vehiclePlate: current } = await stored());
+  assert.deepEqual(history.map((h) => h.plate), ["ABC123", "NEW 123"]);
+  // The history can't be skipped, rewritten, back-dated or misattributed.
+  const bare = { vehiclePlate: "NEW 300", updatedAt: serverTimestamp() };
+  await assertFails(updateDoc(doc(driver(), "transactions/tx1"), bare));
+  await assertFails(updateDoc(doc(driver(), "transactions/tx1"), {
+    ...bare, plateHistory: [entry("FAKE 1"), history[1], entry(current)],
+  }));
+  await assertFails(updateDoc(doc(driver(), "transactions/tx1"), {
+    ...bare, plateHistory: [...history, entry("SOMEONE ELSE")],
+  }));
+  await assertFails(updateDoc(doc(driver(), "transactions/tx1"), {
+    ...bare, plateHistory: [...history, entry(current, Timestamp.fromMillis(Date.now() - 3600_000))],
+  }));
+  await assertFails(updateDoc(doc(driver(), "transactions/tx1"), {
+    ...bare, plateHistory: [...history, entry(current), entry(current)],
+  }));
   // Someone else's ticket, one that is parked, or one not paid.
   await assertFails(updateDoc(doc(otherDriver(), "transactions/tx1"), plate("HIS 1")));
   await assertFails(updateDoc(doc(driver(), "transactions/tx2"), plate("X 1")));

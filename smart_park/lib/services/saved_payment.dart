@@ -35,6 +35,15 @@ String? normalizePhMobile(String raw) {
   return m == null ? null : '+63${m.group(1)}';
 }
 
+/// "0917 123 4567" from a saved "+639171234567", for showing and editing;
+/// '' for anything else.
+String localPhMobile(String saved) {
+  final String? n = normalizePhMobile(saved);
+  if (n == null) return '';
+  final String local = '0${n.substring(3)}';
+  return '${local.substring(0, 4)} ${local.substring(4, 7)} ${local.substring(7)}';
+}
+
 /// Card number digits only.
 String cardDigits(String raw) => raw.replaceAll(RegExp(r'\D'), '');
 
