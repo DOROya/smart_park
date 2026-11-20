@@ -18,6 +18,7 @@ import '../auth/sign_in_screen.dart';
 import 'driver_parking_pass_page.dart';
 import 'establishment_detail_page.dart';
 import 'services/driver_establishment_service.dart';
+import 'widgets/add_hours_sheet.dart';
 import 'widgets/driver_active_pass_bar.dart';
 import 'widgets/driver_home_section.dart';
 import 'widgets/driver_notification_settings_card.dart';
@@ -97,6 +98,12 @@ class _DriverHomePageState extends State<DriverHomePage>
             if (data['kind'] == ParkingPush.kGateConfirm && id is String) {
               _openPass(id);
             }
+            // "Time almost up" / "overtime started": buy more hours.
+            final Object? ticketId = data['ticketId'];
+            if ((data['kind'] == 'reminder' || data['kind'] == 'overtime') &&
+                ticketId is String) {
+              unawaited(_openAddHours(ticketId));
+            }
           },
         ),
       );
@@ -163,6 +170,24 @@ class _DriverHomePageState extends State<DriverHomePage>
           onError: (Object error, StackTrace stack) =>
               reportError(error, stack, reason: 'Temporary QR watcher'),
         );
+  }
+
+  /// Tickets tab, then the Add hours sheet for [ticketId].
+  Future<void> _openAddHours(String ticketId) async {
+    if (!mounted) return;
+    setState(() => _selectedIndex = 1);
+    try {
+      final DocumentSnapshot<Map<String, dynamic>> snap =
+          await FirebaseFirestore.instance
+              .collection('transactions')
+              .doc(ticketId)
+              .get();
+      final Map<String, dynamic>? ticket = snap.data();
+      if (!mounted || ticket == null || !canAddTicketHours(ticket)) return;
+      await showAddHoursSheet(context, ticketId: ticketId, ticket: ticket);
+    } catch (error, stack) {
+      reportError(error, stack, reason: 'Open add hours');
+    }
   }
 
   void _openPass(String checkoutId) {

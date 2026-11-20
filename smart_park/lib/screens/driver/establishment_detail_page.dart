@@ -194,7 +194,9 @@ class _EstablishmentDetailPageState extends State<EstablishmentDetailPage>
       fallback: 'Parking Establishment',
     );
     final String address = _readText(data['address']);
+    // Drivers' average (kept by the server) and how many rated.
     final double rating = ((data['rating'] as num?) ?? 0).toDouble();
+    final int ratingCount = ((data['ratingCount'] as num?) ?? 0).toInt();
     final bool openNow = DriverEstablishmentService.isOpenNow(data);
     final List<String> photoUrls = _extractPhotoUrls(data);
 
@@ -332,7 +334,9 @@ class _EstablishmentDetailPageState extends State<EstablishmentDetailPage>
                                 ),
                                 const SizedBox(width: 3),
                                 Text(
-                                  rating.toStringAsFixed(1),
+                                  ratingCount > 0
+                                      ? '${rating.toStringAsFixed(1)} ($ratingCount)'
+                                      : rating.toStringAsFixed(1),
                                   style: TextStyle(
                                     color: AppTheme.onAccent,
                                     fontSize: 12,

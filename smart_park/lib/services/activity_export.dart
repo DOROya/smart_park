@@ -31,10 +31,12 @@ Future<List<Map<String, dynamic>>> loadActivityRange(
           .where('establishmentID', isEqualTo: facilityId)
           .where('timestamp', isGreaterThanOrEqualTo: Timestamp.fromDate(start))
           .where('timestamp', isLessThan: Timestamp.fromDate(end))
-          .orderBy('timestamp')
+          // Newest first uses the index the Activity tab already has.
+          .orderBy('timestamp', descending: true)
           .get();
   return <Map<String, dynamic>>[
-    for (final QueryDocumentSnapshot<Map<String, dynamic>> d in snap.docs)
+    for (final QueryDocumentSnapshot<Map<String, dynamic>> d
+        in snap.docs.reversed)
       <String, dynamic>{...d.data(), '_id': d.id},
   ];
 }

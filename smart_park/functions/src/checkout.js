@@ -233,10 +233,16 @@ async function finalizePaidCheckout(db, checkoutRef, session) {
 
     const driverSnap = await tx.get(db.collection("users").doc(c.driverId));
     const driver = driverSnap.data() || {};
+    // Extra hours bought on a ticket add to it instead of making a new one,
+    // and are their own sale (own payment and split, linked by ticketId).
+    const extra = c.kind === "add_hours";
+    const ticketRef = extra ? db.collection("transactions").doc(c.ticketId) : null;
+    const ticketSnap = extra ? await tx.get(ticketRef) : null;
 
     const now = Timestamp.now();
     const dayKey = dayKeyManila(now.toDate());
-    const txId = c.transactionId;
+    const txId = extra ? checkoutRef.id : c.transactionId;
+    const saleLink = extra ? { ticketId: c.ticketId, kind: "extra_hours", hours: c.hours } : {};
     // A checkout session, or a payment intent when the driver paid with
     // details saved on the temporary QR.
     const paymongoInfo = {
@@ -250,7 +256,9 @@ async function finalizePaidCheckout(db, checkoutRef, session) {
     const recovery = c.refundRecoveryCentavos || 0;
     const paymentMethod = paymongo.paidPaymentMethod(session) || c.paymentMethod;
 
-    tx.set(db.collection("transactions").doc(txId), {
+    if (extra) {
+      require("./extra_hours").applyExtraHoursInTx(tx, ticketRef, ticketSnap.data(), c);
+    } else tx.set(db.collection("transactions").doc(txId), {
       driverId: c.driverId,
       // Name only: owners and staff read tickets, and have no use for the
       // driver's email address.
@@ -279,6 +287,7 @@ async function finalizePaidCheckout(db, checkoutRef, session) {
     });
     tx.set(db.collection("payments").doc(txId), {
       transactionId: txId,
+      ...saleLink,
       driverId: c.driverId,
       establishmentId: c.establishmentId,
       ownerId: c.ownerId,
@@ -292,6 +301,7 @@ async function finalizePaidCheckout(db, checkoutRef, session) {
     });
     tx.set(db.collection("payment_splits").doc(txId), {
       transactionId: txId,
+      ...saleLink,
       paymentId: txId,
       establishmentId: c.establishmentId,
       driverId: c.driverId,

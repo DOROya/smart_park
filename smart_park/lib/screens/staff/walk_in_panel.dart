@@ -357,8 +357,8 @@ class _WalkInPanelState extends State<WalkInPanel> {
       icon: Icons.directions_walk_rounded,
       title: 'Walk-ins',
       subtitle:
-          'Customers without a SmartPark ticket. Counts toward slots only; '
-          'no payment is recorded.',
+          'Customers without a SmartPark ticket. They count toward slots, '
+          'and the cash fee you take at their exit is recorded.',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -522,7 +522,9 @@ class _WalkInFeeDialogState extends State<_WalkInFeeDialog> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
           Text(
-            'Parked ${widget.stay}. Enter the parking fee you collected in '
+            // "Parked just now." / "Parked 1h 05m."
+            'Parked ${widget.stay == 'Just now' ? 'just now' : widget.stay}. '
+            'Enter the parking fee you collected in '
             'cash; it is added to the cash you hand to the owner.',
             style: TextStyle(color: AppTheme.textSecondary, height: 1.35),
           ),

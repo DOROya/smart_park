@@ -56,6 +56,7 @@ import '../../widgets/sp_profile_view.dart';
 import '../auth/sign_in_screen.dart';
 import 'widgets/owner_cash_handover_card.dart';
 import 'widgets/owner_duty_log_card.dart';
+import 'widgets/owner_ratings_card.dart';
 import 'widgets/owner_walk_in_cash_row.dart';
 import 'widgets/facility_registration_dialog.dart';
 import 'widgets/facility_review_status_banner.dart';

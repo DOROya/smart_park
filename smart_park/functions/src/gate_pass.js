@@ -468,6 +468,17 @@ async function openFallbackCheckout(db, ref, secretKey, intentId) {
 }
 
 /**
+ * Opens a payment the driver just confirmed: straight to the wallet with
+ * saved details, else PayMongo's checkout page. For records made already
+ * pending (extra hours). Returns { status, redirectUrl }.
+ */
+async function openPayment(db, ref, secretKey, c) {
+  return c.directPay === true
+    ? openDirectPayment(db, ref, secretKey, c)
+    : openFallbackCheckout(db, ref, secretKey, null);
+}
+
+/**
  * Driver: the Confirm tap at the gate. Pays with the details saved on the
  * pass; calling it again while the payment is open returns the same page.
  */
@@ -699,6 +710,7 @@ module.exports = {
   createParkingPass,
   cancelParkingPass,
   payGatePass,
+  openPayment,
   findGatePass,
   startGatePayment,
   checkGatePayment,

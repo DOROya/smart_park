@@ -100,6 +100,24 @@ class ParkingCheckoutService {
     return (_asMap(result.data)['redirectUrl'] as String?) ?? '';
   }
 
+  /// Buys [hours] more on paid ticket [ticketId] and opens the payment.
+  /// `redirectUrl` is the wallet's approval page (or PayMongo's checkout
+  /// page) to open; '' when it is already paid or still processing.
+  Future<({String checkoutId, String status, String redirectUrl})> addHours({
+    required String ticketId,
+    required int hours,
+  }) async {
+    final HttpsCallableResult<dynamic> result = await _functions
+        .httpsCallable('addTicketHours')
+        .call(<String, dynamic>{'ticketId': ticketId, 'hours': hours});
+    final Map<String, dynamic> data = _asMap(result.data);
+    return (
+      checkoutId: (data['checkoutId'] as String?) ?? '',
+      status: (data['status'] as String?) ?? '',
+      redirectUrl: (data['redirectUrl'] as String?) ?? '',
+    );
+  }
+
   /// Cancels a temporary QR that hasn't been paid.
   Future<void> cancelPass(String checkoutId) async {
     await _functions.httpsCallable('cancelParkingPass').call(<String, dynamic>{

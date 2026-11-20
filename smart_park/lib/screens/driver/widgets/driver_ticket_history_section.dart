@@ -25,6 +25,8 @@ import '../../../widgets/sp_save_qr_button.dart';
 import '../../../widgets/sp_ticket_cost.dart' show spPackageParts;
 import '../../../widgets/sp_vehicle_type.dart';
 import '../driver_parking_pass_page.dart';
+import 'add_hours_sheet.dart';
+import 'rate_facility.dart';
 
 /// Rebuilds a scanner-compatible QR payload for tickets saved before the QR
 /// string was persisted. The gate scanner requires JSON containing at least
@@ -766,6 +768,30 @@ class _ActiveTicketCard extends StatelessWidget {
                   ),
                 // Not while parked: the vehicle inside is the one on the
                 // ticket until it exits.
+                // More paid time, before it runs out (or to stop overtime).
+                if (canAddTicketHours(data))
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton.icon(
+                      onPressed: () => showAddHoursSheet(
+                        context,
+                        ticketId: doc.id,
+                        ticket: data,
+                      ),
+                      icon: const Icon(Icons.more_time_rounded, size: 16),
+                      label: const Text(
+                        'Add hours',
+                        style: TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                      style: TextButton.styleFrom(
+                        foregroundColor: AppTheme.accentText,
+                        padding: EdgeInsets.zero,
+                        visualDensity: VisualDensity.compact,
+                      ),
+                    ),
+                  ),
+                if (canRateTicket(data))
+                  RateFacilityRow(ticketId: doc.id, ticket: data),
                 if (canChangeTicketPlate(data))
                   Align(
                     alignment: Alignment.centerLeft,
@@ -1710,6 +1736,8 @@ class _PastTicketRow extends StatelessWidget {
                   const SizedBox(height: 8),
                   SpOvertimeBreakdown.fromRecord(data, forDriver: true),
                 ],
+                if (canRateTicket(data))
+                  RateFacilityRow(ticketId: doc.id, ticket: data),
                 if (_isPaid(state))
                   Align(
                     alignment: Alignment.centerRight,

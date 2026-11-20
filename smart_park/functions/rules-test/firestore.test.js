@@ -860,3 +860,44 @@ test("staff clock in and out; the owner can end a forgotten shift", async () => 
   await assertFails(getDoc(doc(driver(), "staff_shifts/s7")));
   await assertFails(deleteDoc(doc(owner(), "staff_shifts/s7")));
 });
+
+test("drivers rate a facility once per used ticket; owners can't set their score", async () => {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const d = ctx.firestore();
+    await setDoc(doc(d, "transactions/used1"), {
+      driverId: "driver1", establishmentId: "est1", status: "paid", exitAt: new Date(),
+    });
+    await setDoc(doc(d, "transactions/unused1"), {
+      driverId: "driver1", establishmentId: "est1", status: "paid",
+    });
+  });
+  const rating = (extra = {}) => ({
+    establishmentId: "est1", driverId: "driver1", stars: 4, comment: "Easy in and out",
+    createdAt: serverTimestamp(), updatedAt: serverTimestamp(), ...extra,
+  });
+  // Nothing to read yet: the ticket screen sees "not rated".
+  await assertSucceeds(getDoc(doc(driver(), "facility_ratings/used1")));
+  await assertSucceeds(setDoc(doc(driver(), "facility_ratings/used1"), rating()));
+  // Only a ticket of theirs that was used, for that ticket's facility.
+  await assertFails(setDoc(doc(driver(), "facility_ratings/unused1"), rating()));
+  await assertFails(setDoc(doc(otherDriver(), "facility_ratings/tx2"), rating({ driverId: "driver2" })));
+  await assertFails(setDoc(doc(driver(), "facility_ratings/tx2"), rating()));
+  // 1-5 whole stars, a short comment, nothing else.
+  for (const bad of [{ stars: 0 }, { stars: 6 }, { stars: 4.5 }, { comment: "x".repeat(301) }, { extra: 1 }]) {
+    await assertFails(setDoc(doc(driver(), "facility_ratings/used1"), rating(bad)));
+  }
+  // They can change it, keeping when they first rated.
+  await assertSucceeds(updateDoc(doc(driver(), "facility_ratings/used1"), {
+    stars: 5, updatedAt: serverTimestamp(),
+  }));
+  await assertFails(updateDoc(doc(driver(), "facility_ratings/used1"), {
+    createdAt: new Date(0), updatedAt: serverTimestamp(),
+  }));
+  await assertFails(deleteDoc(doc(driver(), "facility_ratings/used1")));
+  // The owner reads their ratings; another driver doesn't.
+  await assertSucceeds(getDoc(doc(owner(), "facility_ratings/used1")));
+  await assertFails(getDoc(doc(otherDriver(), "facility_ratings/used1")));
+  // An owner can't write a score onto their own facility.
+  await assertFails(updateDoc(doc(owner(), "establishments/est1"), { rating: 5 }));
+  await assertFails(setDoc(doc(owner(), "establishment_details/est1"), { rating: 5, ratingCount: 99 }, { merge: true }));
+});
