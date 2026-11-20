@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 
 import '../../services/facility_status.dart';
+import '../../services/parking_push.dart';
 import '../../services/parking_pricing.dart';
 import '../../services/sales_report.dart';
 import '../../services/sales_report_pdf.dart'
@@ -542,8 +543,44 @@ class _AdminHomePageState extends State<AdminHomePage>
     }
   }
 
+  @override
+  void initState() {
+    super.initState();
+    final String? uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid != null) {
+      // Applications, refund requests and reports, so none waits unseen
+      // (a refund request is approved by itself after a few days).
+      unawaited(
+        ParkingPush.register(
+          uid,
+          onForeground: (String title, String body) {
+            if (!mounted) return;
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('$title\n$body'),
+                duration: const Duration(seconds: 8),
+              ),
+            );
+          },
+          onOpen: (Map<String, dynamic> data) {
+            final _AdminTab? tab = switch (data['kind']) {
+              'admin_facility_review' => _AdminTab.facility,
+              'admin_refund_request' => _AdminTab.finance,
+              'admin_report' => _AdminTab.dashboard,
+              _ => null,
+            };
+            if (tab != null && mounted) setState(() => _selectedTab = tab);
+          },
+        ),
+      );
+    }
+  }
+
   Future<void> _signOut() async {
     if (!await spConfirmSignOut(context)) return;
+    final String? uid = FirebaseAuth.instance.currentUser?.uid;
+    // This phone stops getting the admin's alerts.
+    if (uid != null) await ParkingPush.unregister(uid);
     await FirebaseAuth.instance.signOut();
     if (!mounted) {
       return;

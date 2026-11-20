@@ -8,6 +8,7 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 
 import '../../services/driver_reports.dart' show kWrongVehicleTypeReason;
 import '../../services/facility_status.dart';
+import '../../services/gate_cash.dart';
 import '../../services/gate_scan_service.dart';
 import '../../services/gate_unsent_exits.dart';
 import '../../services/parking_checkout_service.dart' show GatePassService;
@@ -26,6 +27,7 @@ import '../../widgets/sp_overtime.dart';
 import '../auth/sign_in_screen.dart';
 import 'gate_pass_panel.dart';
 import 'gate_result_card.dart';
+import 'staff_shift_card.dart';
 import 'unsent_exits_banner.dart';
 import 'walk_in_panel.dart';
 

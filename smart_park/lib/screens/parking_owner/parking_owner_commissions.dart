@@ -456,6 +456,12 @@ class _CommissionsListContentState extends State<_CommissionsListContent>
             ),
           ),
         ],
+        // Walk-in fees staff took in cash, and the facility's whole takings.
+        OwnerWalkInCashRow(
+          facilityId: widget.facilityId,
+          range: range,
+          appCentavos: totals.grossCentavos + totals.cashCentavos,
+        ),
         const SizedBox(height: 12),
         _buildSalesReport(report, previous),
         const SizedBox(height: 12),

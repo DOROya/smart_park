@@ -842,8 +842,24 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
 
         const Widget header = SpPageHeader(
           title: 'Staff',
-          subtitle: 'Create and manage staff accounts for your facility.',
+          subtitle:
+              'Manage staff accounts, the cash they hand over and their '
+              'duty log.',
         );
+        // Cash handovers and the duty log, once the facility is known.
+        final Widget cashCard = hasFacilityId
+            ? OwnerCashHandoverCard(
+                key: ValueKey<String>('cash_$facilityId'),
+                facilityId: facilityId,
+                ownerId: ownerId,
+              )
+            : const SizedBox.shrink();
+        final Widget dutyCard = hasFacilityId
+            ? OwnerDutyLogCard(
+                key: ValueKey<String>('duty_$facilityId'),
+                facilityId: facilityId,
+              )
+            : const SizedBox.shrink();
 
         if (_isTablet) {
           return ListView(
@@ -854,8 +870,8 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
               SpTabletColumns(
                 leftFlex: 2,
                 rightFlex: 3,
-                left: [addStaffCard],
-                right: [staffListCard],
+                left: [addStaffCard, const SizedBox(height: 12), dutyCard],
+                right: [cashCard, const SizedBox(height: 12), staffListCard],
               ),
             ],
           );
@@ -866,6 +882,10 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
           children: [
             header,
             const SizedBox(height: 16),
+            cashCard,
+            const SizedBox(height: 12),
+            dutyCard,
+            const SizedBox(height: 12),
             addStaffCard,
             const SizedBox(height: 12),
             staffListCard,

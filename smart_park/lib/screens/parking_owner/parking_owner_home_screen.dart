@@ -12,7 +12,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 
 import '../../models/facility_registration_data.dart';
+import '../../services/activity_export.dart';
 import '../../services/error_reporter.dart';
+import '../../services/local_save.dart'
+    show saveFileToDevice, kDownloadsFolderLabel;
 import '../../services/operating_hours.dart';
 import '../../services/parking_push.dart';
 import '../../services/facility_status.dart'
@@ -45,11 +48,15 @@ import '../../widgets/sp_refunds_section.dart';
 import '../../widgets/sp_activity_details.dart';
 import '../../widgets/sp_activity_search.dart';
 import '../../widgets/sp_driver_report.dart';
+import '../../widgets/sp_export_sheet.dart' show showSpSaveResult;
 import '../../widgets/sp_loading.dart';
 import '../../widgets/sp_sales_report_card.dart';
 import '../../widgets/sp_overtime.dart';
 import '../../widgets/sp_profile_view.dart';
 import '../auth/sign_in_screen.dart';
+import 'widgets/owner_cash_handover_card.dart';
+import 'widgets/owner_duty_log_card.dart';
+import 'widgets/owner_walk_in_cash_row.dart';
 import 'widgets/facility_registration_dialog.dart';
 import 'widgets/facility_review_status_banner.dart';
 import 'widgets/parking_trends_card.dart';
@@ -100,7 +107,8 @@ class _ParkingOwnerHomePageState extends State<ParkingOwnerHomePage>
     _userFuture = _fetchUserDocument();
     final String? uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid != null) {
-      // Refund, dispute and permit notices from the server.
+      // Refund, dispute, permit, facility decision and staff flag notices
+      // from the server.
       unawaited(
         ParkingPush.register(
           uid,
@@ -112,6 +120,14 @@ class _ParkingOwnerHomePageState extends State<ParkingOwnerHomePage>
                 duration: const Duration(seconds: 8),
               ),
             );
+          },
+          // A decision or a staff flag: both are on the Facility tab.
+          onOpen: (Map<String, dynamic> data) {
+            if (!mounted) return;
+            if (data['kind'] == 'owner_facility_status' ||
+                data['kind'] == 'owner_staff_flag') {
+              setState(() => _selectedIndex = 0);
+            }
           },
         ),
       );

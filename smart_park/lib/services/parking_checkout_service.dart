@@ -228,9 +228,23 @@ class GatePassService {
     });
   }
 
-  /// `pending`, `paid`, `timed_out` or the pass's other status.
-  Future<String> checkPayment(String checkoutId) =>
-      _call('checkGatePayment', checkoutId);
+  /// `status`: `pending`, `paid`, `timed_out` or the pass's other status.
+  /// While pending, `stage` is `confirm` (the driver hasn't tapped Confirm
+  /// yet) or `approve` (the payment is open on their phone).
+  Future<({String status, String stage})> checkPayment(
+    String checkoutId,
+  ) async {
+    final HttpsCallableResult<dynamic> result = await _functions
+        .httpsCallable('checkGatePayment')
+        .call(<String, dynamic>{'checkoutId': checkoutId});
+    final Map<String, dynamic> data = ParkingCheckoutService._asMap(
+      result.data,
+    );
+    return (
+      status: (data['status'] as String?) ?? '',
+      stage: (data['stage'] as String?) ?? '',
+    );
+  }
 
   /// Stops an unfinished payment. Returns `paid` if it went through first.
   Future<String> cancelPayment(String checkoutId) =>

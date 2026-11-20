@@ -89,6 +89,70 @@ class _GateActivityContentState extends State<_GateActivityContent>
     }
   }
 
+  bool _exporting = false;
+
+  /// Saves the gate activity for a date range as a spreadsheet (CSV).
+  Future<void> _export(Map<String, String>? staffNames) async {
+    final DateTime now = DateTime.now();
+    final DateTime today = DateTime(now.year, now.month, now.day);
+    final DateTimeRange? range = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(now.year - 1, now.month, now.day),
+      lastDate: today,
+      initialDateRange: DateTimeRange(
+        start: DateTime(_date.year, _date.month, _date.day),
+        end: DateTime(_date.year, _date.month, _date.day),
+      ),
+      helpText: 'Export gate activity',
+      saveText: 'Export',
+    );
+    if (range == null || !mounted) return;
+    if (range.duration.inDays + 1 > kMaxExportDays) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Pick up to 3 months at a time.')),
+      );
+      return;
+    }
+    setState(() => _exporting = true);
+    final String name = activityCsvFileName(range.start, range.end);
+    try {
+      final List<Map<String, dynamic>> logs = await loadActivityRange(
+        widget.facilityId,
+        range.start,
+        range.end,
+      );
+      if (!mounted) return;
+      if (logs.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No gate scans in those dates.')),
+        );
+        return;
+      }
+      final bool saved = await saveFileToDevice(
+        bytes: buildActivityCsv(
+          logs,
+          (Map<String, dynamic> log) => spLogStaffName(log, staffNames) ?? '',
+        ),
+        fileName: name,
+        mimeType: kCsvMimeType,
+      );
+      if (saved && mounted) {
+        showSpSaveResult(
+          context,
+          saved:
+              'Saved $name (${logs.length} scans) to $kDownloadsFolderLabel.',
+        );
+      }
+    } catch (error, stack) {
+      reportError(error, stack, reason: 'Activity export');
+      if (mounted) {
+        showSpSaveResult(context, saved: '', error: error);
+      }
+    } finally {
+      if (mounted) setState(() => _exporting = false);
+    }
+  }
+
   bool _matchesFilter(
     Map<String, dynamic> data,
     Map<String, String>? staffNames,
@@ -202,7 +266,23 @@ class _GateActivityContentState extends State<_GateActivityContent>
             SpPageHeader(
               title: 'Activity',
               subtitle: 'Gate scans recorded by your staff.',
-              trailing: SpDateButton(date: _date, onTap: _pickDate),
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  IconButton(
+                    tooltip: 'Export to a spreadsheet',
+                    onPressed: _exporting ? null : () => _export(staffNames),
+                    icon: _exporting
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.file_download_outlined),
+                  ),
+                  SpDateButton(date: _date, onTap: _pickDate),
+                ],
+              ),
             ),
             const SizedBox(height: 16),
             if (!overtimeCash.isEmpty) ...[

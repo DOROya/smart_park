@@ -646,7 +646,17 @@ async function checkGatePayment(request, secretKey) {
     const status = await endGatePayment(db, ref, secretKey, c);
     return { status: status === "paid" ? "paid" : "timed_out", transactionId: c.transactionId };
   }
-  return { status: "pending", transactionId: c.transactionId };
+  return { status: "pending", stage: paymentStage(c), transactionId: c.transactionId };
+}
+
+/**
+ * Where a payment in progress is, for staff: "confirm" while the driver
+ * hasn't tapped Confirm yet, "approve" once the payment is open on their
+ * phone (the wallet, bank or PayMongo page).
+ */
+function paymentStage(c) {
+  if (c.paymongo?.sessionId || c.paymongo?.intentId) return "approve";
+  return c.gatePaymentMode === "direct" ? "confirm" : "approve";
 }
 
 /** Staff stop an unfinished payment; the QR goes back to waiting. */
@@ -684,6 +694,7 @@ module.exports = {
   savedPayment,
   startDenial,
   confirmDenial,
+  paymentStage,
   passSummary,
   createParkingPass,
   cancelParkingPass,
