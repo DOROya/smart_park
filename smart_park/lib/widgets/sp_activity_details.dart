@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 
+import '../services/ticket_plate.dart';
 import '../theme/app_theme.dart';
 import 'smartpark_ui.dart';
 import 'sp_driver_report.dart';
@@ -224,6 +225,18 @@ class _ActivityDetailsSheetState extends State<_ActivityDetailsSheet> {
               _row(Icons.info_outline_rounded, 'Result', reason),
             if (((log['overtimeHours'] as num?) ?? 0) > 0) _overtimeRow(),
             if (transactionId.isNotEmpty) _ticketRow(context, transactionId),
+            // A ticket moved between vehicles shows every plate it was on.
+            if (!walkIn && transactionId.isNotEmpty)
+              FutureBuilder<Map<String, dynamic>?>(
+                future: _ticket,
+                builder: (BuildContext context, snapshot) {
+                  final String plates = snapshot.data == null
+                      ? ''
+                      : plateHistoryLabel(snapshot.data!);
+                  if (plates.isEmpty) return const SizedBox.shrink();
+                  return _row(Icons.history_rounded, 'Ticket plates', plates);
+                },
+              ),
             if (widget.canReportDriver && !walkIn && transactionId.isNotEmpty)
               FutureBuilder<Map<String, dynamic>?>(
                 future: _ticket,

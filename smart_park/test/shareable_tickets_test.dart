@@ -67,29 +67,62 @@ void main() {
       );
     });
 
-    test('change writes only the plate and updatedAt', () async {
-      final FakeFirebaseFirestore db = FakeFirebaseFirestore();
-      await db.collection('transactions').doc('t1').set(<String, dynamic>{
-        'vehiclePlate': 'OLD 1',
-        'vehicleType': 'motorcycle',
-        'status': 'paid',
-      });
-      await changeTicketPlate(
-        transactionId: 't1',
-        plate: ' new 22 ',
-        firestore: db,
-      );
-      final Map<String, dynamic> t =
-          (await db.collection('transactions').doc('t1').get()).data()!;
-      expect(t['vehiclePlate'], 'NEW 22');
-      expect(t['vehicleType'], 'motorcycle');
-      expect(t['updatedAt'], isNotNull);
-      expect(t.keys.toSet(), <String>{
-        'vehiclePlate',
-        'vehicleType',
-        'status',
-        'updatedAt',
-      });
+    test(
+      'change writes the plate, updatedAt and the plate it replaced',
+      () async {
+        final FakeFirebaseFirestore db = FakeFirebaseFirestore();
+        await db.collection('transactions').doc('t1').set(<String, dynamic>{
+          'vehiclePlate': 'OLD 1',
+          'vehicleType': 'motorcycle',
+          'status': 'paid',
+        });
+        await changeTicketPlate(
+          transactionId: 't1',
+          plate: ' new 22 ',
+          firestore: db,
+        );
+        final Map<String, dynamic> t =
+            (await db.collection('transactions').doc('t1').get()).data()!;
+        expect(t['vehiclePlate'], 'NEW 22');
+        expect(t['vehicleType'], 'motorcycle');
+        expect(t['updatedAt'], isNotNull);
+        expect(t.keys.toSet(), <String>{
+          'vehiclePlate',
+          'vehicleType',
+          'status',
+          'updatedAt',
+          'plateHistory',
+        });
+        expect(ticketPlateHistory(t).map((PastPlate p) => p.plate), <String>[
+          'OLD 1',
+        ]);
+
+        // A second move appends; the label lists every plate, oldest first.
+        await changeTicketPlate(
+          transactionId: 't1',
+          plate: 'NEW 33',
+          firestore: db,
+        );
+        final Map<String, dynamic> t2 =
+            (await db.collection('transactions').doc('t1').get()).data()!;
+        expect(ticketPlateHistory(t2).map((PastPlate p) => p.plate), <String>[
+          'OLD 1',
+          'NEW 22',
+        ]);
+        expect(
+          plateHistoryLabel(t2),
+          matches(
+            RegExp(
+              r'^OLD 1 \(to \w{3} \d+\) → NEW 22 \(to \w{3} \d+\) → NEW 33 \(now\)$',
+            ),
+          ),
+        );
+      },
+    );
+
+    test('a ticket never moved has no plate history', () {
+      expect(plateHistoryLabel(<String, dynamic>{'vehiclePlate': 'A 1'}), '');
+      expect(ticketPlateHistory(<String, dynamic>{}), isEmpty);
     });
 
     test('change refuses an empty or too-long plate', () {

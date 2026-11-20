@@ -290,7 +290,8 @@ TermsSection _payments({required bool owner}) => TermsSection(
               'your own phone, after staff confirm there is space. If there '
               'is no space, nothing is charged.',
           'You enter your payment details with the temporary QR: a GCash or '
-              'Maya mobile number, kept with that QR, or a card, which goes '
+              'Maya mobile number, kept with that QR and on your account so '
+              'the next one is filled in for you, or a card, which goes '
               'straight to PayMongo (SmartPark keeps only its last 4 digits). '
               'They are used only to pay for that QR, when you tap Confirm '
               'at the gate and approve the payment.',

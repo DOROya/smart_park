@@ -7,6 +7,7 @@ import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
+import '../../services/error_reporter.dart';
 import '../../services/parking_push.dart';
 import '../../services/permission_service.dart';
 import '../../theme/app_theme.dart';
@@ -14,8 +15,10 @@ import '../../widgets/smartpark_logo.dart';
 import '../../widgets/smartpark_ui.dart';
 import '../../widgets/sp_profile_view.dart';
 import '../auth/sign_in_screen.dart';
+import 'driver_parking_pass_page.dart';
 import 'establishment_detail_page.dart';
 import 'services/driver_establishment_service.dart';
+import 'widgets/driver_active_pass_bar.dart';
 import 'widgets/driver_home_section.dart';
 import 'widgets/driver_notification_settings_card.dart';
 import 'widgets/driver_ticket_history_section.dart';
@@ -62,6 +65,14 @@ class _DriverHomePageState extends State<DriverHomePage>
   /// Pops up new warnings from the SmartPark admin once, when the app opens.
   DriverWarningWatcher? _warnings;
 
+  /// The driver's usable temporary QRs, for the Home shortcut.
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _passesSub;
+  List<ActivePass> _activePasses = <ActivePass>[];
+
+  /// Gate payments already brought up ("checkoutId@startedAt"), so a QR the
+  /// driver closed doesn't keep popping back for the same payment.
+  final Set<String> _gatePaymentsShown = <String>{};
+
   @override
   void initState() {
     super.initState();
@@ -81,8 +92,15 @@ class _DriverHomePageState extends State<DriverHomePage>
               ),
             );
           },
+          onOpen: (Map<String, dynamic> data) {
+            final Object? id = data['checkoutId'];
+            if (data['kind'] == ParkingPush.kGateConfirm && id is String) {
+              _openPass(id);
+            }
+          },
         ),
       );
+      _watchPasses(uid);
     }
     WidgetsBinding.instance.addObserver(this);
     _searchController.addListener(_onSearchChanged);
@@ -102,6 +120,7 @@ class _DriverHomePageState extends State<DriverHomePage>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _warnings?.dispose();
+    _passesSub?.cancel();
     _positionSubscription?.cancel();
     _searchController.removeListener(_onSearchChanged);
     _searchController.dispose();
@@ -110,6 +129,51 @@ class _DriverHomePageState extends State<DriverHomePage>
     _profileEmailController.dispose();
     _mapController?.dispose();
     super.dispose();
+  }
+
+  /// Follows the driver's temporary QRs: keeps the Home shortcut current,
+  /// and opens a QR by itself when staff start its payment, so the driver
+  /// only has to tap Confirm.
+  void _watchPasses(String uid) {
+    _passesSub = FirebaseFirestore.instance
+        .collection('parking_checkouts')
+        .where('driverId', isEqualTo: uid)
+        .where('kind', isEqualTo: 'gate_pass')
+        .where('status', whereIn: <String>['awaiting_gate', 'pending'])
+        .snapshots()
+        .listen(
+          (QuerySnapshot<Map<String, dynamic>> snap) {
+            if (!mounted) return;
+            final List<ActivePass> passes = usablePasses(
+              snap.docs.map(
+                (QueryDocumentSnapshot<Map<String, dynamic>> d) =>
+                    (id: d.id, data: d.data()),
+              ),
+              DateTime.now(),
+            );
+            setState(() => _activePasses = passes);
+            for (final ActivePass p in passes) {
+              if (p.data['status'] != 'pending') continue;
+              final Object? started = p.data['gatePaymentStartedAt'];
+              final String key =
+                  '${p.id}@${started is Timestamp ? started.millisecondsSinceEpoch : ''}';
+              if (_gatePaymentsShown.add(key)) _openPass(p.id);
+            }
+          },
+          onError: (Object error, StackTrace stack) =>
+              reportError(error, stack, reason: 'Temporary QR watcher'),
+        );
+  }
+
+  void _openPass(String checkoutId) {
+    if (!mounted || DriverParkingPassPage.isOpen(checkoutId)) return;
+    unawaited(
+      Navigator.of(context).push<void>(
+        MaterialPageRoute<void>(
+          builder: (_) => DriverParkingPassPage(checkoutId: checkoutId),
+        ),
+      ),
+    );
   }
 
   void _seedProfileControllers(Map<String, dynamic>? data) {
@@ -453,6 +517,10 @@ class _DriverHomePageState extends State<DriverHomePage>
             _mapController = controller;
           },
           onEstablishmentTap: _openEstablishmentDetails,
+          belowSearch: DriverActivePassBar(
+            passes: _activePasses,
+            onOpen: _openPass,
+          ),
         );
     }
   }

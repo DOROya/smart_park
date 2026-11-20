@@ -103,6 +103,30 @@ class _DriverVehicleSelectionPageState
     _selectedVehicleType = widget.vehicleOptions.first.key;
     _plateNumberController.addListener(() => setState(() {}));
     _loadRecentPlates();
+    _loadPaymentPrefs();
+  }
+
+  /// The method and wallet number used last time (saved by the server with
+  /// each temporary QR), so the payment step starts filled in.
+  ({String method, String phone}) _paymentPrefs = (method: '', phone: '');
+
+  Future<void> _loadPaymentPrefs() async {
+    try {
+      final String? uid = FirebaseAuth.instance.currentUser?.uid;
+      if (uid == null) return;
+      final DocumentSnapshot<Map<String, dynamic>> user =
+          await FirebaseFirestore.instance.collection('users').doc(uid).get();
+      final Object? prefs = user.data()?['paymentPrefs'];
+      if (prefs is! Map || !mounted) return;
+      setState(
+        () => _paymentPrefs = (
+          method: (prefs['method'] as String?) ?? '',
+          phone: (prefs['walletPhone'] as String?) ?? '',
+        ),
+      );
+    } catch (_) {
+      // Only a shortcut; the driver can still pick and type.
+    }
   }
 
   /// Reads the plates on the driver's own tickets, so a regular can tap one
@@ -339,6 +363,8 @@ class _DriverVehicleSelectionPageState
                   duration: selection.duration,
                   amount: selection.totalAmount,
                   isPayMongoConfigured: widget.isPayMongoConfigured,
+                  initialMethodApiType: _paymentPrefs.method,
+                  initialPhone: _paymentPrefs.phone,
                   onProcessPayment: widget.onProcessPayment != null
                       ? (
                           DriverPaymentMethod method,

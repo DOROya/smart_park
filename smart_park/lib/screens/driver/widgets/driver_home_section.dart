@@ -25,6 +25,7 @@ class DriverHomeSection extends StatefulWidget {
     required this.onOpenNowChanged,
     required this.onMapCreated,
     required this.onEstablishmentTap,
+    this.belowSearch,
   });
 
   final Position? currentPosition;
@@ -36,6 +37,9 @@ class DriverHomeSection extends StatefulWidget {
   final ValueChanged<bool> onOpenNowChanged;
   final ValueChanged<GoogleMapController> onMapCreated;
   final ValueChanged<String> onEstablishmentTap;
+
+  /// Shown under the search bar: the driver's temporary QRs.
+  final Widget? belowSearch;
 
   @override
   State<DriverHomeSection> createState() => _DriverHomeSectionState();
@@ -294,32 +298,9 @@ class _DriverHomeSectionState extends State<DriverHomeSection>
           top: 16,
           left: 16,
           right: 16,
-          child: Material(
-            color: AppTheme.surface,
-            elevation: 4,
-            shadowColor: const Color(0x33000000),
-            borderRadius: BorderRadius.circular(AppTheme.radiusLarge),
-            child: TextField(
-              controller: widget.searchController,
-              textInputAction: TextInputAction.search,
-              onSubmitted: (_) => _popUpSearchResults(),
-              decoration: InputDecoration(
-                hintText: 'Search parking by name or address',
-                prefixIcon: const Icon(Icons.search_rounded),
-                suffixIcon: widget.searchQuery.isEmpty
-                    ? null
-                    : IconButton(
-                        tooltip: 'Clear search',
-                        icon: const Icon(Icons.close_rounded),
-                        onPressed: widget.searchController.clear,
-                      ),
-                border: InputBorder.none,
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 14,
-                ),
-              ),
-            ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[_searchBar(), ?widget.belowSearch],
           ),
         ),
         Positioned.fill(
@@ -426,6 +407,36 @@ class _DriverHomeSectionState extends State<DriverHomeSection>
           ),
         ),
       ],
+    );
+  }
+
+  Widget _searchBar() {
+    return Material(
+      color: AppTheme.surface,
+      elevation: 4,
+      shadowColor: const Color(0x33000000),
+      borderRadius: BorderRadius.circular(AppTheme.radiusLarge),
+      child: TextField(
+        controller: widget.searchController,
+        textInputAction: TextInputAction.search,
+        onSubmitted: (_) => _popUpSearchResults(),
+        decoration: InputDecoration(
+          hintText: 'Search parking by name or address',
+          prefixIcon: const Icon(Icons.search_rounded),
+          suffixIcon: widget.searchQuery.isEmpty
+              ? null
+              : IconButton(
+                  tooltip: 'Clear search',
+                  icon: const Icon(Icons.close_rounded),
+                  onPressed: widget.searchController.clear,
+                ),
+          border: InputBorder.none,
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 14,
+          ),
+        ),
+      ),
     );
   }
 
