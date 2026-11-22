@@ -29,12 +29,17 @@ test("totals the period and works out the rescued share", () => {
     gateFailedToStart: 0,
     checkoutsAbandoned: 1,
   });
-  // Oldest day first, for the chart.
+  // Every day of the period, oldest first, quiet days at zero.
   assert.deepEqual(
     s.series.map((d) => [d.date, d.confirmedInApp, d.rescued, d.unfinished]),
     [
+      ["2026-11-16", 0, 0, 0],
+      ["2026-11-17", 0, 0, 0],
+      ["2026-11-18", 0, 0, 0],
+      ["2026-11-19", 0, 0, 0],
       ["2026-11-20", 19, 1, 3],
       ["2026-11-21", 18, 2, 1],
+      ["2026-11-22", 0, 0, 0],
     ],
   );
   assert.equal(s.status, "ok");

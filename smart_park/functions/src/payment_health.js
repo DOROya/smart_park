@@ -108,10 +108,19 @@ function summarizePaymentHealth({ days = [], pending = [], refunds = [], lastRun
   }
   const paid = totals.confirmedInApp + totals.rescued;
 
-  const series = [...days]
-    .sort((a, b) => String(a.date).localeCompare(String(b.date)))
-    .map((d) => ({
-      date: d.date,
+  // One entry per day of the period, oldest first, zero for quiet days, so
+  // the chart always has [periodDays] bars (one busy day is not one wide bar).
+  const byDate = new Map(days.map((d) => [String(d.date), d]));
+  const dates =
+    periodDays > 0
+      ? Array.from({ length: periodDays }, (_, i) =>
+          dayKeyManila(new Date(nowMs - (periodDays - 1 - i) * 24 * 60 * 60 * 1000)),
+        )
+      : [...byDate.keys()].sort();
+  const series = dates.map((date) => {
+    const d = byDate.get(date) || {};
+    return {
+      date,
       confirmedInApp: Number(d.confirmedInApp || 0),
       rescued: Number(d.rescued || 0),
       unfinished:
@@ -119,7 +128,8 @@ function summarizePaymentHealth({ days = [], pending = [], refunds = [], lastRun
         Number(d.gateCancelled || 0) +
         Number(d.gateFailedToStart || 0) +
         Number(d.checkoutsAbandoned || 0),
-    }));
+    };
+  });
 
   let stuck = 0;
   let oldestPendingMinutes = null;
