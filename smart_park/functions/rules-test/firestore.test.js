@@ -901,3 +901,46 @@ test("drivers rate a facility once per used ticket; owners can't set their score
   await assertFails(updateDoc(doc(owner(), "establishments/est1"), { rating: 5 }));
   await assertFails(setDoc(doc(owner(), "establishment_details/est1"), { rating: 5, ratingCount: 99 }, { merge: true }));
 });
+
+// ---------- audit log and data exports ----------
+
+test("only the server writes the audit log; admins read all, owners their own", async () => {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const d = ctx.firestore();
+    await setDoc(doc(d, "audit_logs/a1"), { action: "facility.approved", ownerId: "owner1", at: new Date() });
+    await setDoc(doc(d, "audit_logs/a2"), { action: "driver.warned", ownerId: "", at: new Date() });
+  });
+  await assertSucceeds(getDoc(doc(admin(), "audit_logs/a1")));
+  await assertSucceeds(getDoc(doc(admin(), "audit_logs/a2")));
+  await assertSucceeds(getDocs(collection(admin(), "audit_logs")));
+  // The owner's history query, and nothing outside it.
+  await assertSucceeds(getDocs(query(collection(owner(), "audit_logs"), where("ownerId", "==", "owner1"))));
+  await assertSucceeds(getDoc(doc(owner(), "audit_logs/a1")));
+  await assertFails(getDoc(doc(owner(), "audit_logs/a2")));
+  await assertFails(getDocs(collection(owner(), "audit_logs")));
+  await assertFails(getDoc(doc(otherOwner(), "audit_logs/a1")));
+  await assertFails(getDoc(doc(driver(), "audit_logs/a1")));
+  await assertFails(getDoc(doc(staff(), "audit_logs/a1")));
+  // Nobody can add, rewrite or erase an entry from the app, admins included.
+  await assertFails(setDoc(doc(admin(), "audit_logs/a3"), { action: "x", ownerId: "" }));
+  await assertFails(setDoc(doc(owner(), "audit_logs/a3"), { action: "x", ownerId: "owner1" }));
+  await assertFails(updateDoc(doc(admin(), "audit_logs/a1"), { action: "facility.rejected" }));
+  await assertFails(deleteDoc(doc(admin(), "audit_logs/a1")));
+  await assertFails(deleteDoc(doc(owner(), "audit_logs/a1")));
+});
+
+test("the data export rate limit is server only", async () => {
+  await assertFails(getDoc(doc(driver(), "data_exports/driver1")));
+  await assertFails(setDoc(doc(driver(), "data_exports/driver1"), { lastAt: new Date(0) }));
+  await assertFails(deleteDoc(doc(driver(), "data_exports/driver1")));
+});
+
+test("drivers keep saved parking on their own profile only", async () => {
+  await assertSucceeds(setDoc(doc(driver(), "users/driver1"),
+    { favoriteEstablishmentIds: ["est1", "est2"] }, { merge: true }));
+  await assertFails(setDoc(doc(driver(), "users/driver2"),
+    { favoriteEstablishmentIds: ["est1"] }, { merge: true }));
+  // Saving parking can't sneak in a role change.
+  await assertFails(setDoc(doc(driver(), "users/driver1"),
+    { favoriteEstablishmentIds: [], role: "admin" }, { merge: true }));
+});

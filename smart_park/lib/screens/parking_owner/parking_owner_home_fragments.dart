@@ -1499,6 +1499,7 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
       onSignOut: _signOut,
       padding: const EdgeInsets.only(top: 8),
       wide: _isTablet,
+      extraCards: const <Widget>[SpAuditLogCard(admin: false)],
     );
   }
 }

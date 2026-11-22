@@ -15,6 +15,8 @@ import '../../widgets/smartpark_logo.dart';
 import '../../widgets/smartpark_ui.dart';
 import '../../widgets/sp_profile_view.dart';
 import '../auth/sign_in_screen.dart';
+import 'driver_guide_page.dart';
+import 'driver_help_page.dart';
 import 'driver_parking_pass_page.dart';
 import 'establishment_detail_page.dart';
 import 'services/driver_establishment_service.dart';
@@ -112,7 +114,25 @@ class _DriverHomePageState extends State<DriverHomePage>
     WidgetsBinding.instance.addObserver(this);
     _searchController.addListener(_onSearchChanged);
     _userFuture = _fetchUserDocument();
-    unawaited(_initializeDriverPermissions());
+    unawaited(_startUp());
+  }
+
+  /// First sign-in on this phone: the guide first, then the location
+  /// prompt, so the two don't open over each other.
+  Future<void> _startUp() async {
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted) return;
+    await DriverGuide.showIfFirstRun(context);
+    if (!mounted) return;
+    await _initializeDriverPermissions();
+  }
+
+  void _openHelp() {
+    unawaited(
+      Navigator.of(context).push<void>(
+        MaterialPageRoute<void>(builder: (_) => const DriverHelpPage()),
+      ),
+    );
   }
 
   @override
@@ -511,6 +531,27 @@ class _DriverHomePageState extends State<DriverHomePage>
               DriverNoticesCard(driverId: uid),
             if (FirebaseAuth.instance.currentUser?.uid case final String uid)
               DriverNotificationSettingsCard(driverId: uid),
+            SpSectionCard(
+              icon: Icons.help_outline_rounded,
+              title: 'Help & FAQ',
+              subtitle:
+                  'How SmartPark works, answers to common questions, and '
+                  'how to reach us.',
+              child: SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: _openHelp,
+                  icon: const Icon(Icons.support_agent_rounded, size: 18),
+                  label: const Text(
+                    'Open Help & FAQ',
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    minimumSize: const Size.fromHeight(44),
+                  ),
+                ),
+              ),
+            ),
           ],
           firstNameController: _profileFirstNameController,
           lastNameController: _profileLastNameController,
@@ -589,6 +630,11 @@ class _DriverHomePageState extends State<DriverHomePage>
                       icon: const Icon(Icons.my_location_rounded),
                       tooltip: 'Refresh location',
                     ),
+                  IconButton(
+                    onPressed: _openHelp,
+                    icon: const Icon(Icons.help_outline_rounded),
+                    tooltip: 'Help & FAQ',
+                  ),
                   SpAccountAvatarButton(
                     active: _selectedIndex == 2,
                     onTap: () => setState(() => _selectedIndex = 2),

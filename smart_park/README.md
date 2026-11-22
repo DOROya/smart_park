@@ -76,6 +76,63 @@ and their business documents to the private `establishment_private` doc.
 Admins are regular users whose `users/{uid}.role` is `admin`, set by hand
 in the Firebase console. The app never lets anyone give themselves that role.
 
+## App Check
+
+The app turns on Firebase App Check at startup (`lib/services/app_check.dart`):
+Play Integrity on Android and App Attest on iOS in release builds, and the
+debug provider in debug builds. Requests then carry a token proving they come
+from the real app. Nothing is refused until enforcement is switched on:
+
+1. Firebase console > App Check > Apps: register the Android app with Play
+   Integrity. It needs the SHA-256 of the signing key: the upload key from
+   Codemagic, plus Play's app signing key once the app is on Play.
+2. For debug builds, run with `--dart-define=APP_CHECK_DEBUG_TOKEN=<uuid>` and
+   add that uuid under **Manage debug tokens**. Without the define, the token
+   is printed to logcat on first run.
+3. Wait until the App Check metrics show nearly all requests as verified.
+   Then set `ENFORCE_APP_CHECK=true` in `functions/.env` and deploy the
+   functions. Firestore and Storage are enforced separately, from the same
+   console page.
+
+Play Integrity is meant for apps installed from Google Play. Check the
+metrics with the APK you actually hand out before enforcing. If its
+requests show as unverified, leave enforcement off, or register those phones'
+debug tokens.
+
+## Audit log
+
+`audit_logs` records who approved, rejected, suspended or edited a facility,
+changed rates, added or deactivated staff, reset a staff password, decided
+refunds or disputes, warned a driver, handled a report, exported their data or
+deleted their account (`functions/src/audit.js`). Only Cloud Functions write
+it. Admins see everything under Settings > Audit Log. Owners see entries about
+their own facility and staff under Profile > Change History. Reports drivers
+file about a facility are never shown to its owner.
+
+## Payment health
+
+The admin Dashboard's **Payment Health** card (`getPaymentHealth`,
+`functions/src/payment_health.js`) shows whether every payment became a
+ticket:
+- how many payments were confirmed in the app, and how many were "rescued" by
+  the 15-minute `reconcilePendingCheckouts` check after the phone lost
+  connection
+- gate payments that ended unpaid
+- payments stuck in progress
+- refunds in flight or failed
+- when the check last ran
+
+Payments that end unpaid leave no record of their own, so the server counts
+events as they happen in `payment_health_daily/{Manila day}`. The check
+records each run in `stats/reconcile`. Counting started on 2026-11-22, so
+earlier payments aren't included.
+
+## Download my data
+
+Profile > **Download My Data** saves a JSON copy of the user's own records
+(`exportMyData`, `functions/src/data_export.js`): their right of access under
+the Data Privacy Act of 2012. Allowed once a minute per account.
+
 ## Crash reporting
 
 Release builds send uncaught errors to Firebase Crashlytics, along with handled

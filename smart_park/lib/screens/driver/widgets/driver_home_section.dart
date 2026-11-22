@@ -1,10 +1,12 @@
 import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
+import '../../../services/error_reporter.dart';
 import '../../../services/operating_hours.dart';
 import '../../../theme/app_theme.dart';
 import '../../../widgets/smartpark_ui.dart';
@@ -12,6 +14,7 @@ import '../../../widgets/sp_loading.dart';
 import '../../../widgets/sp_network_image.dart';
 import '../../../widgets/sp_vehicle_type.dart';
 import '../services/driver_establishment_service.dart';
+import '../services/driver_favorites.dart';
 
 class DriverHomeSection extends StatefulWidget {
   const DriverHomeSection({
@@ -51,7 +54,99 @@ class _DriverHomeSectionState extends State<DriverHomeSection>
 
   double _selectedRadiusKm = 1;
 
+  /// Only facilities with slots for this vehicle type, when set.
+  String? _vehicleType;
+
+  /// Only the driver's saved facilities (anywhere, like a search).
+  bool _savedOnly = false;
+
+  /// The driver's saved facilities, and where they parked lately.
+  Set<String> _favorites = <String>{};
+  List<String> _recentIds = <String>[];
+  StreamSubscription<Set<String>>? _favoritesSub;
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _ticketsSub;
+
   bool get _searching => widget.searchQuery.trim().isNotEmpty;
+
+  /// The list ignores the radius while searching or showing saved parking.
+  bool get _ignoresRadius => _searching || _savedOnly;
+
+  @override
+  void initState() {
+    super.initState();
+    final String? uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    _favoritesSub = DriverFavorites.watch(uid).listen(
+      (Set<String> ids) {
+        if (mounted) setState(() => _favorites = ids);
+      },
+      onError: (Object error, StackTrace stack) =>
+          reportError(error, stack, reason: 'Saved parking watcher'),
+    );
+    _ticketsSub = FirebaseFirestore.instance
+        .collection('transactions')
+        .where('driverId', isEqualTo: uid)
+        .snapshots()
+        .listen(
+          (QuerySnapshot<Map<String, dynamic>> snap) {
+            if (!mounted) return;
+            setState(
+              () => _recentIds = recentFacilityIds(
+                snap.docs.map(
+                  (QueryDocumentSnapshot<Map<String, dynamic>> d) => d.data(),
+                ),
+              ),
+            );
+          },
+          onError: (Object error, StackTrace stack) =>
+              reportError(error, stack, reason: 'Recent parking watcher'),
+        );
+  }
+
+  Future<void> _toggleSaved(String establishmentId) async {
+    final String? uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null || establishmentId.isEmpty) return;
+    final bool save = !_favorites.contains(establishmentId);
+    // Show it at once; the profile stream confirms it.
+    setState(() {
+      _favorites = <String>{..._favorites};
+      save
+          ? _favorites.add(establishmentId)
+          : _favorites.remove(establishmentId);
+    });
+    try {
+      await DriverFavorites.setSaved(uid, establishmentId, saved: save);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            content: Text(
+              save ? 'Saved to your parking.' : 'Removed from your parking.',
+            ),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+    } catch (error, stack) {
+      reportError(error, stack, reason: 'Save parking');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          const SnackBar(content: Text('Could not update. Please try again.')),
+        );
+    }
+  }
+
+  Future<void> _openDirections(Map<String, dynamic> establishment) async {
+    if (await DriverEstablishmentService.openDirections(establishment)) return;
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        const SnackBar(content: Text('Unable to open maps for this parking.')),
+      );
+  }
 
   static const double _collapsedSheetSize = 0.1;
   static const double _resultsSheetSize = 0.5;
@@ -80,6 +175,8 @@ class _DriverHomeSectionState extends State<DriverHomeSection>
 
   @override
   void dispose() {
+    _favoritesSub?.cancel();
+    _ticketsSub?.cancel();
     _searchPopUpTimer?.cancel();
     _sheetController.dispose();
     super.dispose();
@@ -229,10 +326,13 @@ class _DriverHomeSectionState extends State<DriverHomeSection>
           openNowOnly: widget.openNowOnly,
           sortOption: widget.sortOption,
           currentPosition: widget.currentPosition,
+          vehicleType: _vehicleType,
+          onlyIds: _savedOnly ? _favorites : null,
         );
     if (widget.currentPosition != null) {
-      // A search looks through every registered parking, not just nearby.
-      if (!_searching) {
+      // A search, or the saved list, looks through every registered
+      // parking, not just nearby.
+      if (!_ignoresRadius) {
         displayedDocs.removeWhere(
           (Map<String, dynamic> establishment) =>
               _distanceMeters(establishment) > _selectedRadiusKm * 1000,
@@ -255,7 +355,23 @@ class _DriverHomeSectionState extends State<DriverHomeSection>
         DriverEstablishmentService.buildUserLocationCircle(
           widget.currentPosition,
         );
-    if (widget.currentPosition != null && !_searching) {
+    // Vehicle types any listed facility takes, for the filter chips.
+    final Set<String> vehicleTypes = <String>{
+      for (final Map<String, dynamic> e in mergedEstablishments)
+        for (final String key in spFacilityVehicleKeys(e['slotCounts']))
+          if (DriverEstablishmentService.takesVehicle(e, key)) key,
+    };
+    final Map<String, Map<String, dynamic>> byId =
+        <String, Map<String, dynamic>>{
+          for (final Map<String, dynamic> e in mergedEstablishments)
+            (e['establishmentID'] as String?) ?? '': e,
+        };
+    final List<Map<String, dynamic>> recent = <Map<String, dynamic>>[
+      for (final String id in _recentIds)
+        if (byId[id] != null) byId[id]!,
+    ];
+
+    if (widget.currentPosition != null && !_ignoresRadius) {
       circles.add(
         Circle(
           circleId: const CircleId('selected_radius_coverage_alt'),
@@ -336,7 +452,11 @@ class _DriverHomeSectionState extends State<DriverHomeSection>
                   controller: scrollController,
                   slivers: [
                     SliverToBoxAdapter(
-                      child: _buildSheetHeader(displayedDocs.length),
+                      child: _buildSheetHeader(
+                        displayedDocs.length,
+                        vehicleTypes: vehicleTypes,
+                        recent: recent,
+                      ),
                     ),
                     if (snapshot.hasError || detailsSnapshot.hasError)
                       const SliverToBoxAdapter(
@@ -360,17 +480,10 @@ class _DriverHomeSectionState extends State<DriverHomeSection>
                         child: Padding(
                           padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
                           child: SpEmptyState(
-                            icon: Icons.search_off_rounded,
-                            message: _searching
-                                ? widget.openNowOnly
-                                      ? 'No Parking Space Found. '
-                                            'Try turning off "Open now".'
-                                      : 'No Parking Space Found'
-                                : widget.openNowOnly
-                                ? 'No Parking Space Found within ${_formatKm(_selectedRadiusKm)} km. '
-                                      'Try a wider radius or turn off "Open now".'
-                                : 'No Parking Space Found within ${_formatKm(_selectedRadiusKm)} km. '
-                                      'Try a wider radius.',
+                            icon: _savedOnly && _favorites.isEmpty
+                                ? Icons.favorite_border_rounded
+                                : Icons.search_off_rounded,
+                            message: _emptyMessage(),
                           ),
                         ),
                       )
@@ -391,6 +504,11 @@ class _DriverHomeSectionState extends State<DriverHomeSection>
                               distanceMeters: widget.currentPosition == null
                                   ? null
                                   : _distanceMeters(doc),
+                              saved: _favorites.contains(establishmentId),
+                              onToggleSaved: establishmentId.isEmpty
+                                  ? null
+                                  : () => _toggleSaved(establishmentId),
+                              onDirections: () => _openDirections(doc),
                               onTap: establishmentId.isEmpty
                                   ? null
                                   : () => widget.onEstablishmentTap(
@@ -440,7 +558,173 @@ class _DriverHomeSectionState extends State<DriverHomeSection>
     );
   }
 
-  Widget _buildSheetHeader(int count) {
+  String _emptyMessage() {
+    if (_savedOnly && _favorites.isEmpty) {
+      return 'You have no saved parking yet. Tap the heart on a parking '
+          'card to save it here.';
+    }
+    final List<String> loosen = <String>[
+      if (!_ignoresRadius) 'a wider radius',
+      if (widget.openNowOnly) 'turning off "Open now"',
+      if (_vehicleType != null)
+        'turning off "${spVehicleTypeLabel(_vehicleType!)}"',
+      if (_savedOnly) 'turning off "Saved"',
+    ];
+    final String where = _ignoresRadius
+        ? ''
+        : ' within ${_formatKm(_selectedRadiusKm)} km';
+    final String hint = loosen.isEmpty
+        ? ''
+        : ' Try ${loosen.length == 1 ? loosen.first : '${loosen.sublist(0, loosen.length - 1).join(', ')} or ${loosen.last}'}.';
+    return 'No Parking Space Found$where.$hint';
+  }
+
+  /// "Sort: Nearest" chip that opens the sort choices.
+  Widget _sortChip() {
+    final DriverSortOption current =
+        widget.sortOption == DriverSortOption.nearest
+        ? DriverSortOption.none
+        : widget.sortOption;
+    final bool custom = current != DriverSortOption.none;
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: PopupMenuButton<DriverSortOption>(
+        tooltip: 'Sort parking',
+        initialValue: current,
+        onSelected: widget.onSortChanged,
+        itemBuilder: (BuildContext context) =>
+            <PopupMenuEntry<DriverSortOption>>[
+              for (final DriverSortOption option in <DriverSortOption>[
+                DriverSortOption.none,
+                DriverSortOption.cheapest,
+                DriverSortOption.topRated,
+                DriverSortOption.mostSlots,
+              ])
+                CheckedPopupMenuItem<DriverSortOption>(
+                  value: option,
+                  checked: option == current,
+                  child: Text(option.label),
+                ),
+            ],
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+          decoration: BoxDecoration(
+            color: custom ? AppTheme.accent : AppTheme.surface,
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(color: custom ? AppTheme.accent : spCardBorder),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Icon(
+                Icons.sort_rounded,
+                size: 16,
+                color: custom ? AppTheme.onAccent : AppTheme.textMuted,
+              ),
+              const SizedBox(width: 4),
+              Text(
+                'Sort: ${current.label}',
+                style: TextStyle(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 12,
+                  color: custom ? AppTheme.onAccent : AppTheme.textMuted,
+                ),
+              ),
+              Icon(
+                Icons.arrow_drop_down_rounded,
+                size: 18,
+                color: custom ? AppTheme.onAccent : AppTheme.textMuted,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Facilities the driver parked at lately, one tap to open again.
+  Widget _parkAgain(List<Map<String, dynamic>> recent) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        const SizedBox(height: 10),
+        Row(
+          children: <Widget>[
+            Icon(Icons.history_rounded, size: 15, color: AppTheme.textMuted),
+            const SizedBox(width: 4),
+            Text(
+              'Park again',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: AppTheme.textMuted,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            children: <Widget>[
+              for (final Map<String, dynamic> e in recent)
+                Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: ActionChip(
+                    avatar: Icon(
+                      _favorites.contains(e['establishmentID'])
+                          ? Icons.favorite_rounded
+                          : Icons.local_parking_rounded,
+                      size: 16,
+                      color: _favorites.contains(e['establishmentID'])
+                          ? AppTheme.danger
+                          : AppTheme.textMuted,
+                    ),
+                    label: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 160),
+                      child: Text(
+                        ((e['name'] as String?) ?? '').trim().isEmpty
+                            ? 'Parking'
+                            : (e['name'] as String).trim(),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    labelStyle: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: AppTheme.textDark,
+                    ),
+                    backgroundColor: AppTheme.surface,
+                    side: BorderSide(color: spCardBorder),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    visualDensity: VisualDensity.compact,
+                    onPressed: () => widget.onEstablishmentTap(
+                      (e['establishmentID'] as String?) ?? '',
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSheetHeader(
+    int count, {
+    required Set<String> vehicleTypes,
+    required List<Map<String, dynamic>> recent,
+  }) {
+    // Car and motorcycle first, then custom types by name.
+    final List<String> types = <String>[
+      ...kStandardVehicleKeys.where(vehicleTypes.contains),
+      ...(vehicleTypes
+          .where((String t) => !kStandardVehicleKeys.contains(t))
+          .toList()
+        ..sort()),
+    ];
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
       child: Column(
@@ -458,41 +742,61 @@ class _DriverHomeSectionState extends State<DriverHomeSection>
           ),
           const SizedBox(height: 12),
           SpSectionLabel(
-            _searching ? 'Search Results' : 'Nearby Parking',
+            _searching
+                ? 'Search Results'
+                : _savedOnly
+                ? 'Saved Parking'
+                : 'Nearby Parking',
             trailing: SpChip(label: '$count found', color: spExitColor),
           ),
           const SizedBox(height: 2),
           Text(
             _searching
                 ? 'All registered parking matching "${widget.searchQuery}".'
+                : _savedOnly
+                ? 'Parking you saved, wherever it is.'
                 : widget.currentPosition == null
                 ? 'Turn on location to see parking around you.'
                 : 'Within ${_formatKm(_selectedRadiusKm)} km of you. Tap a card for details.',
             style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
           ),
+          if (!_searching && !_savedOnly && recent.isNotEmpty)
+            _parkAgain(recent),
           const SizedBox(height: 10),
-          Row(
-            children: [
-              _filterChip(
-                label: 'Open now',
-                icon: Icons.schedule_rounded,
-                selected: widget.openNowOnly,
-                onTap: () => widget.onOpenNowChanged(!widget.openNowOnly),
-              ),
-              _filterChip(
-                label: 'Most slots',
-                icon: Icons.local_parking_rounded,
-                selected: widget.sortOption == DriverSortOption.mostSlots,
-                onTap: () => widget.onSortChanged(
-                  widget.sortOption == DriverSortOption.mostSlots
-                      ? DriverSortOption.none
-                      : DriverSortOption.mostSlots,
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                _sortChip(),
+                _filterChip(
+                  label: 'Open now',
+                  icon: Icons.schedule_rounded,
+                  selected: widget.openNowOnly,
+                  onTap: () => widget.onOpenNowChanged(!widget.openNowOnly),
                 ),
-              ),
-            ],
+                _filterChip(
+                  label: 'Saved',
+                  icon: _savedOnly
+                      ? Icons.favorite_rounded
+                      : Icons.favorite_border_rounded,
+                  selected: _savedOnly,
+                  onTap: () => setState(() => _savedOnly = !_savedOnly),
+                ),
+                for (final String type in types)
+                  _filterChip(
+                    label: spVehicleTypeLabel(type),
+                    icon: spVehicleTypeIcon(type),
+                    selected: _vehicleType == type,
+                    onTap: () => setState(
+                      () => _vehicleType = _vehicleType == type ? null : type,
+                    ),
+                  ),
+              ],
+            ),
           ),
-          // A search ignores the radius, so the picker would only confuse.
-          if (!_searching) ...[
+          // A search or the saved list ignores the radius, so the picker
+          // would only confuse.
+          if (!_ignoresRadius) ...[
             const SizedBox(height: 8),
             _buildRadiusSelector(),
           ],
@@ -596,37 +900,22 @@ class _DriverParkingCard extends StatelessWidget {
   const _DriverParkingCard({
     required this.data,
     required this.distanceMeters,
+    required this.saved,
+    this.onToggleSaved,
+    this.onDirections,
     this.onTap,
   });
 
   final Map<String, dynamic> data;
   final double? distanceMeters;
+  final bool saved;
+  final VoidCallback? onToggleSaved;
+  final VoidCallback? onDirections;
   final VoidCallback? onTap;
 
   /// Lowest base rate (first [spBaseStayHours] hours) across vehicle types,
   /// or null if unknown.
-  double? _startingPrice() {
-    final Map<dynamic, dynamic> rates =
-        ((data['rates'] ?? data['ratesByType']) as Map<dynamic, dynamic>?) ??
-        <dynamic, dynamic>{};
-    double? lowest;
-    for (final dynamic value in rates.values) {
-      final dynamic raw = value is Map
-          ? (value['initial'] ?? value['hourly'])
-          : value;
-      final double? price = double.tryParse('${raw ?? ''}'.trim());
-      if (price != null && price > 0 && (lowest == null || price < lowest)) {
-        lowest = price;
-      }
-    }
-    if (lowest != null) {
-      return lowest;
-    }
-    final Match? match = RegExp(
-      r'\d+(?:\.\d+)?',
-    ).firstMatch((data['pricing'] as String?) ?? '');
-    return match == null ? null : double.tryParse(match.group(0)!);
-  }
+  double? _startingPrice() => DriverEstablishmentService.startingPrice(data);
 
   String _formatDistance(double meters) => meters < 1000
       ? '${meters.round()} m'
@@ -809,6 +1098,23 @@ class _DriverParkingCard extends StatelessWidget {
                             ),
                           ),
                         ],
+                        if (onToggleSaved != null)
+                          IconButton(
+                            onPressed: onToggleSaved,
+                            tooltip: saved
+                                ? 'Remove from saved parking'
+                                : 'Save this parking',
+                            visualDensity: VisualDensity.compact,
+                            icon: Icon(
+                              saved
+                                  ? Icons.favorite_rounded
+                                  : Icons.favorite_border_rounded,
+                              size: 20,
+                              color: saved
+                                  ? AppTheme.danger
+                                  : AppTheme.textMuted,
+                            ),
+                          ),
                       ],
                     ),
                     const SizedBox(height: 3),
@@ -937,6 +1243,28 @@ class _DriverParkingCard extends StatelessWidget {
                                   ),
                                 ),
                         ),
+                        if (onDirections != null) ...[
+                          TextButton.icon(
+                            onPressed: onDirections,
+                            icon: const Icon(
+                              Icons.directions_rounded,
+                              size: 16,
+                            ),
+                            label: const Text('Directions'),
+                            style: TextButton.styleFrom(
+                              foregroundColor: spExitColor,
+                              visualDensity: VisualDensity.compact,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                              ),
+                              textStyle: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                        ],
                         Text(
                           'View details',
                           style: TextStyle(

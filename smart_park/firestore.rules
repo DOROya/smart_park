@@ -668,6 +668,28 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // Who did what to facilities, staff, refunds, warnings and reports.
+    // Written only by Cloud Functions (src/audit.js) and never changed.
+    // Admins read every entry; an owner reads the ones about their own
+    // facility and staff (entries carrying their ownerId).
+    match /audit_logs/{entryId} {
+      allow read: if isAdmin() ||
+        (signedIn() && resource.data.ownerId == uid());
+      allow write: if false;
+    }
+
+    // Daily payment-health counters (src/payment_health.js). Server only;
+    // admins read a summary through the getPaymentHealth function.
+    match /payment_health_daily/{day} {
+      allow read, write: if false;
+    }
+
+    // When each account last downloaded its data (a rate limit kept by
+    // the exportMyData function). Server only.
+    match /data_exports/{userId} {
+      allow read, write: if false;
+    }
+
     // Anything not listed above is closed.
     match /{document=**} {
       allow read, write: if false;

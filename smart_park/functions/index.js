@@ -5,8 +5,14 @@ const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { onDocumentWritten, onDocumentCreated } = require("firebase-functions/v2/firestore");
 const { onObjectFinalized } = require("firebase-functions/v2/storage");
 const { getStorage } = require("firebase-admin/storage");
+const { onDocumentWrittenWithAuthContext } = require("firebase-functions/v2/firestore");
 const { setGlobalOptions } = require("firebase-functions/v2");
-const { defineSecret } = require("firebase-functions/params");
+const { defineSecret, defineBoolean } = require("firebase-functions/params");
+
+const audit = require("./src/audit");
+const dataExport = require("./src/data_export");
+const paymentHealth = require("./src/payment_health");
+const privacyCleanup = require("./src/privacy_cleanup");
 
 const alerts = require("./src/alerts");
 const authEmails = require("./src/auth_emails");
@@ -34,13 +40,24 @@ const PAYMONGO_SECRET_KEY = defineSecret("PAYMONGO_SECRET_KEY");
 // App password for smartpark.noreply@gmail.com (see src/auth_emails.js).
 const GMAIL_APP_PASSWORD = defineSecret("GMAIL_APP_PASSWORD");
 
-exports.sendVerificationEmail = onCall(
+// Firebase App Check (see lib/services/app_check.dart). When true, every
+// callable below refuses requests that don't come from the real app on a
+// real phone. Set in functions/.env; turn it on only after the App Check
+// page in the Firebase console shows the app's requests as verified.
+const ENFORCE_APP_CHECK = defineBoolean("ENFORCE_APP_CHECK", { default: false });
+
+/** onCall with the App Check setting applied. */
+function callable(options, handler) {
+  return onCall({ enforceAppCheck: ENFORCE_APP_CHECK, ...options }, handler);
+}
+
+exports.sendVerificationEmail = callable(
   { secrets: [GMAIL_APP_PASSWORD] },
   (request) =>
     authEmails.sendVerificationEmail(request, GMAIL_APP_PASSWORD.value()),
 );
 
-exports.sendPasswordResetEmail = onCall(
+exports.sendPasswordResetEmail = callable(
   { secrets: [GMAIL_APP_PASSWORD] },
   (request) =>
     authEmails.sendPasswordResetEmail(request, GMAIL_APP_PASSWORD.value()),
@@ -48,43 +65,43 @@ exports.sendPasswordResetEmail = onCall(
 
 // Temporary QRs: the driver pays only at the gate (see src/gate_pass.js).
 // The secret checks a card the app saved with PayMongo.
-exports.createParkingPass = onCall(
+exports.createParkingPass = callable(
   { secrets: [PAYMONGO_SECRET_KEY] },
   (request) => gatePass.createParkingPass(request, PAYMONGO_SECRET_KEY.value()),
 );
 
-exports.cancelParkingPass = onCall((request) => gatePass.cancelParkingPass(request));
+exports.cancelParkingPass = callable({}, (request) => gatePass.cancelParkingPass(request));
 
 // Extra hours on a paid ticket, e.g. from the "time almost up" reminder.
-exports.addTicketHours = onCall(
+exports.addTicketHours = callable(
   { secrets: [PAYMONGO_SECRET_KEY] },
   (request) => extraHours.addTicketHours(request, PAYMONGO_SECRET_KEY.value()),
 );
 
 // The driver's Confirm tap at the gate: pays with the details saved on the QR.
-exports.payGatePass = onCall(
+exports.payGatePass = callable(
   { secrets: [PAYMONGO_SECRET_KEY] },
   (request) => gatePass.payGatePass(request, PAYMONGO_SECRET_KEY.value()),
 );
 
-exports.findGatePass = onCall((request) => gatePass.findGatePass(request));
+exports.findGatePass = callable({}, (request) => gatePass.findGatePass(request));
 
-exports.startGatePayment = onCall(
+exports.startGatePayment = callable(
   { secrets: [PAYMONGO_SECRET_KEY] },
   (request) => gatePass.startGatePayment(request, PAYMONGO_SECRET_KEY.value()),
 );
 
-exports.checkGatePayment = onCall(
+exports.checkGatePayment = callable(
   { secrets: [PAYMONGO_SECRET_KEY] },
   (request) => gatePass.checkGatePayment(request, PAYMONGO_SECRET_KEY.value()),
 );
 
-exports.cancelGatePayment = onCall(
+exports.cancelGatePayment = callable(
   { secrets: [PAYMONGO_SECRET_KEY] },
   (request) => gatePass.cancelGatePayment(request, PAYMONGO_SECRET_KEY.value()),
 );
 
-exports.confirmParkingCheckout = onCall(
+exports.confirmParkingCheckout = callable(
   { secrets: [PAYMONGO_SECRET_KEY] },
   (request) =>
     checkout.confirmParkingCheckout(request, PAYMONGO_SECRET_KEY.value()),
@@ -139,6 +156,9 @@ exports.refundLongSuspensions = onSchedule(
     await refunds.refundLongSuspensions(PAYMONGO_SECRET_KEY.value());
     // Same daily run: tell owners whose business permit is about to lapse.
     await permits.remindExpiringPermits();
+    // And delete business documents of facilities rejected or deactivated
+    // 90 days ago (src/privacy_cleanup.js, as the Privacy Notice says).
+    await privacyCleanup.deleteStaleBusinessDocuments();
   },
 );
 
@@ -166,23 +186,130 @@ exports.sendParkingReminders = onSchedule(
   () => reminders.sendParkingReminders(),
 );
 
-exports.requestRefund = onCall((request) => refunds.requestRefund(request));
+exports.requestRefund = callable({}, (request) => refunds.requestRefund(request));
 
-exports.decideRefund = onCall(
+exports.decideRefund = callable(
   { secrets: [PAYMONGO_SECRET_KEY] },
-  (request) => refunds.decideRefund(request, PAYMONGO_SECRET_KEY.value()),
+  audit.audited(
+    (request) => refunds.decideRefund(request, PAYMONGO_SECRET_KEY.value()),
+    (request, _, db) => {
+      const approve = request.data?.approve === true;
+      return audit.refundEntry(
+        db,
+        String(request.data?.ticketId || "").trim(),
+        approve ? "refund.approved" : "refund.rejected",
+        approve ? "Approved a refund" : "Rejected a refund",
+        { note: String(request.data?.note || "").slice(0, 300) },
+      );
+    },
+  ),
 );
 
 // Owners may dispute a refund charged to them; admins decide, and record
 // balances owners pay directly.
-exports.disputeRefundCharge = onCall((request) => refunds.disputeRefundCharge(request));
+exports.disputeRefundCharge = callable(
+  {},
+  audit.audited(
+    (request) => refunds.disputeRefundCharge(request),
+    (request, _, db) =>
+      audit.refundEntry(
+        db,
+        String(request.data?.ticketId || "").trim(),
+        "refund.charge_disputed",
+        "Disputed a refund charge",
+        { message: String(request.data?.message || "").slice(0, 500) },
+      ),
+  ),
+);
 
-exports.resolveRefundDispute = onCall((request) => refunds.resolveRefundDispute(request));
+exports.resolveRefundDispute = callable(
+  {},
+  audit.audited(
+    (request) => refunds.resolveRefundDispute(request),
+    (request, _, db) => {
+      const uphold = request.data?.uphold === true;
+      return audit.refundEntry(
+        db,
+        String(request.data?.ticketId || "").trim(),
+        uphold ? "refund.dispute_upheld" : "refund.dispute_rejected",
+        uphold ? "Upheld an owner's refund dispute" : "Rejected an owner's refund dispute",
+        { note: String(request.data?.note || "").slice(0, 300) },
+      );
+    },
+  ),
+);
 
-exports.recordOwnerRepayment = onCall((request) => refunds.recordOwnerRepayment(request));
+exports.recordOwnerRepayment = callable(
+  {},
+  audit.audited(
+    (request) => refunds.recordOwnerRepayment(request),
+    async (request, result, db) => {
+      const ownerId = String(request.data?.ownerId || "").trim();
+      const centavos = Math.floor(Number(request.data?.amountCentavos)) || 0;
+      const owner = await audit.resolveActor(db, ownerId);
+      return {
+        action: "refund.owner_repayment",
+        summary:
+          `Recorded a PHP ${(centavos / 100).toFixed(2)} repayment from ${owner.actorName}` +
+          ` (PHP ${((result?.owedCentavos || 0) / 100).toFixed(2)} still owed)`,
+        targetType: "owner",
+        targetId: ownerId,
+        ownerId,
+        details: { amountCentavos: centavos, owedCentavosAfter: result?.owedCentavos ?? null },
+      };
+    },
+  ),
+);
 
-// Deletes the caller's own account (see src/account.js).
-exports.deleteMyAccount = onCall((request) => account.deleteMyAccount(request));
+// Deletes the caller's own account (see src/account.js). The audit entry
+// keeps the uid and role only: the name goes with the account.
+exports.deleteMyAccount = callable(
+  {},
+  audit.audited(
+    (request) => account.deleteMyAccount(request),
+    () => ({
+      action: "account.deleted",
+      summary: "Deleted their own account",
+      targetType: "user",
+      ownerId: "",
+    }),
+  ),
+);
+
+// A copy of the caller's own data, from Profile > Download My Data
+// (see src/data_export.js).
+exports.exportMyData = callable(
+  { timeoutSeconds: 120, memory: "512MiB" },
+  audit.audited(
+    (request) => dataExport.exportMyData(request),
+    (request) => ({
+      action: "account.data_exported",
+      summary: "Downloaded a copy of their data",
+      targetType: "user",
+      targetId: request.auth?.uid || "",
+      ownerId: "",
+    }),
+  ),
+);
+
+// Admin dashboard: payments confirmed in the app vs rescued by the 15-minute
+// check, unfinished gate payments, stuck payments and refunds
+// (see src/payment_health.js).
+exports.getPaymentHealth = callable({}, (request) => paymentHealth.getPaymentHealth(request));
+
+// Audit trail of direct changes made in the app (see src/audit.js).
+for (const [collection, name] of [
+  ["establishment_details", "auditFacilityDetails"],
+  ["establishments", "auditFacilityListing"],
+  ["staff_accounts", "auditStaffAccounts"],
+  ["driver_warnings", "auditDriverWarnings"],
+  ["driver_reports", "auditDriverReports"],
+  ["facility_reports", "auditFacilityReports"],
+]) {
+  exports[name] = onDocumentWrittenWithAuthContext(`${collection}/{docId}`, (event) =>
+    audit.onWatchedWrite(collection, event),
+  );
+}
 
 // Keeps establishment_occupancy/{id} in step with checked-in tickets.
 exports.updateOccupancy = onDocumentWritten("transactions/{transactionId}", async (event) => {
@@ -207,16 +334,34 @@ exports.setStaffSignInState = onDocumentWritten("staff_accounts/{staffId}", (eve
 );
 
 // Owner-only emergency password reset for one of their staff members.
-exports.resetStaffPassword = onCall((request) => staff.resetStaffPassword(request));
+// The audit entry never holds the new password from the result.
+exports.resetStaffPassword = callable(
+  {},
+  audit.audited(
+    (request) => staff.resetStaffPassword(request),
+    async (request, _, db) => {
+      const staffId = String(request.data?.staffId || "").trim();
+      const record = (await db.collection("staff_accounts").doc(staffId).get()).data() || {};
+      return {
+        action: "staff.password_reset",
+        summary: `Reset the password of staff member ${record.name || staffId}`,
+        targetType: "staff",
+        targetId: staffId,
+        establishmentId: record.facilityId || record.establishmentID || "",
+        ownerId: record.ownerId || "",
+      };
+    },
+  ),
+);
 
 /**
  * Admin-only: rebuilds `stats_daily` and `stats/platform` from every paid
  * payment, and recounts every establishment's slot occupancy. Run once after deploying (Settings > Rebuild statistics), and
  * again only if the totals ever look wrong.
  */
-exports.rebuildDailyStats = onCall(
+exports.rebuildDailyStats = callable(
   { timeoutSeconds: 300, memory: "512MiB" },
-  async (request) => {
+  audit.audited(async (request) => {
     if (!request.auth) {
       throw new HttpsError("unauthenticated", "Please sign in again.");
     }
@@ -286,7 +431,11 @@ exports.rebuildDailyStats = onCall(
     }
 
     return { days: days.size, ...total };
-  },
+  }, (_, result) => ({
+    action: "maintenance.stats_rebuilt",
+    summary: `Rebuilt statistics (${result?.paymentCount ?? 0} payments over ${result?.days ?? 0} days)`,
+    targetType: "platform",
+  })),
 );
 
 // Re-encodes each facility photo / business document an owner uploads to a
@@ -313,9 +462,9 @@ exports.compressFacilityPhoto = onObjectFinalized(
  * compressFacilityPhoto existed. Safe to run again; finished files are
  * skipped. Run from Settings > Compress existing photos.
  */
-exports.compressExistingPhotos = onCall(
+exports.compressExistingPhotos = callable(
   { memory: "1GiB", timeoutSeconds: 540 },
-  async (request) => {
+  audit.audited(async (request) => {
     if (!request.auth) {
       throw new HttpsError("unauthenticated", "Please sign in again.");
     }
@@ -327,5 +476,9 @@ exports.compressExistingPhotos = onCall(
       throw new HttpsError("permission-denied", "Admins only.");
     }
     return photoCompress.compressAllExisting(getStorage().bucket());
-  },
+  }, () => ({
+    action: "maintenance.photos_compressed",
+    summary: "Compressed existing facility photos",
+    targetType: "platform",
+  })),
 );

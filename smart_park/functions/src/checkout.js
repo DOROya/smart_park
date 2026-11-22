@@ -17,6 +17,7 @@ const {
 const paymongo = require("./paymongo");
 const { dayKeyManila, dayStartManila } = require("./dates");
 const { settleRecoveryInTx } = require("./refunds");
+const paymentHealth = require("./payment_health");
 
 const CHECKOUTS = "parking_checkouts";
 
@@ -222,9 +223,11 @@ async function fetchPaidPayment(secretKey, c) {
 /**
  * Marks a checkout paid and writes the ticket, payment, split and stats in
  * one Firestore transaction. Safe to call repeatedly: a checkout that is
- * already paid is left as it is.
+ * already paid is left as it is. [confirmedBy] says what noticed the
+ * payment: "app" (the driver's or staff's phone) or "reconcile" (the
+ * 15-minute check, for a payment the phone never confirmed).
  */
-async function finalizePaidCheckout(db, checkoutRef, session) {
+async function finalizePaidCheckout(db, checkoutRef, session, confirmedBy = "app") {
   return db.runTransaction(async (tx) => {
     const snap = await tx.get(checkoutRef);
     if (!snap.exists) throw new Error(`Checkout ${checkoutRef.id} vanished.`);
@@ -340,9 +343,12 @@ async function finalizePaidCheckout(db, checkoutRef, session) {
       { merge: true },
     );
     settleRecoveryInTx(tx, db, c.ownerId, recovery, true);
+    const rescued = confirmedBy === "reconcile";
+    paymentHealth.countInTx(tx, db, rescued ? "rescued" : "confirmedInApp");
     tx.update(checkoutRef, {
       status: "paid",
       paidAt: FieldValue.serverTimestamp(),
+      confirmedBy: rescued ? "reconcile" : "app",
       // Paid checkouts are kept; only unused temporary QRs are auto-deleted.
       deleteAt: FieldValue.delete(),
       "paymongo.status": "paid",
@@ -399,6 +405,7 @@ async function reconcilePendingCheckouts(secretKey) {
 
   let paid = 0;
   let expired = 0;
+  let errors = 0;
   // Required here, not at the top: gate_pass.js builds on this module.
   const gatePass = require("./gate_pass");
   let reverted = 0;
@@ -413,7 +420,7 @@ async function reconcilePendingCheckouts(secretKey) {
       }
       const paidPayment = await fetchPaidPayment(secretKey, c);
       if (paidPayment) {
-        await finalizePaidCheckout(db, doc.ref, paidPayment);
+        await finalizePaidCheckout(db, doc.ref, paidPayment, "reconcile");
         paid++;
       } else if (gatePass.isPass(c)) {
         // Unfinished gate payment: back to waiting once it times out.
@@ -425,12 +432,21 @@ async function reconcilePendingCheckouts(secretKey) {
           status: "expired",
           updatedAt: FieldValue.serverTimestamp(),
         });
+        await paymentHealth.count(db, "checkoutsAbandoned");
         expired++;
       }
     } catch (error) {
+      errors++;
       logger.warn(`Reconcile failed for checkout ${doc.id}`, error);
     }
   }
+  await paymentHealth.recordReconcileRun(db, {
+    checked: pending.size,
+    paid,
+    expired,
+    reverted,
+    errors,
+  });
   logger.info(
     `Reconciled checkouts: ${paid} paid, ${expired} expired, ${reverted} gate payments ended.`,
   );

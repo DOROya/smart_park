@@ -7,6 +7,7 @@ import '../theme/theme_controller.dart';
 import '../utils/friendly_error.dart';
 import 'smartpark_ui.dart';
 import 'sp_delete_account.dart';
+import 'sp_download_data.dart';
 import 'sp_terms_view.dart';
 
 /// Profile tab shared by drivers and parking owners: identity card,
@@ -135,6 +136,10 @@ class _SpProfileViewState extends State<SpProfileView> {
                     const SpChangePasswordCard(),
                     const SizedBox(height: 12),
                     const SpAppearanceCard(),
+                    for (final Widget card in widget.extraCards) ...[
+                      const SizedBox(height: 12),
+                      card,
+                    ],
                   ],
                 ),
               ),
@@ -146,6 +151,8 @@ class _SpProfileViewState extends State<SpProfileView> {
                     _personalInfoCard(),
                     const SizedBox(height: 12),
                     SpTermsCard(role: widget.roleLabel),
+                    const SizedBox(height: 12),
+                    const SpDownloadDataCard(),
                     const SizedBox(height: 12),
                     SpDeleteAccountCard(roleLabel: widget.roleLabel),
                   ],
@@ -175,6 +182,8 @@ class _SpProfileViewState extends State<SpProfileView> {
         ],
         const SizedBox(height: 12),
         SpTermsCard(role: widget.roleLabel),
+        const SizedBox(height: 12),
+        const SpDownloadDataCard(),
         const SizedBox(height: 12),
         SpDeleteAccountCard(roleLabel: widget.roleLabel),
         const SizedBox(height: 12),

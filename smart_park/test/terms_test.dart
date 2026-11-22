@@ -92,9 +92,25 @@ void main() {
       expect(owner, contains('Post a notice at your gate'));
     });
 
+    test('the Privacy Notice covers the audit log, data download and '
+        'document deletion', () {
+      final String driver = allText(kDriverRole);
+      final String owner = allText(kParkingOwnerRole);
+      final String staff = allText(kStaffRole);
+      for (final String text in <String>[driver, owner, staff]) {
+        expect(text, contains('audit log'));
+      }
+      expect(driver, contains('Download My Data'));
+      expect(owner, contains('Download My Data'));
+      // Staff have no Profile screen to download from.
+      expect(staff, isNot(contains('Download My Data')));
+      expect(owner, contains('deleted 90 days later'));
+      expect(driver, isNot(contains('deleted 90 days later')));
+    });
+
     test('the version is the date the terms were last changed', () {
-      expect(kTermsVersion, startsWith('2026-11-20'));
-      expect(kTermsUpdatedLabel, 'November 20, 2026');
+      expect(kTermsVersion, startsWith('2026-11-22'));
+      expect(kTermsUpdatedLabel, 'November 22, 2026');
     });
   });
 
