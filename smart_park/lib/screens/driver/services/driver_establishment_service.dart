@@ -2,12 +2,106 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
+
 import '../../../services/operating_hours.dart';
 
-enum DriverSortOption { none, nearest, mostSlots }
+/// How the driver's parking list is ordered. [none] is nearest first when
+/// the driver's location is known.
+enum DriverSortOption {
+  none('Nearest', Icons.near_me_rounded),
+  nearest('Nearest', Icons.near_me_rounded),
+  cheapest('Cheapest', Icons.payments_outlined),
+  topRated('Top rated', Icons.star_outline_rounded),
+  mostSlots('Most slots', Icons.local_parking_rounded);
+
+  const DriverSortOption(this.label, this.icon);
+
+  final String label;
+  final IconData icon;
+}
 
 class DriverEstablishmentService {
   const DriverEstablishmentService._();
+
+  /// Lowest base rate (the first hours) across the facility's vehicle types,
+  /// or null if it has none on record.
+  static double? startingPrice(Map<String, dynamic> data) {
+    final Object? rawRates = data['rates'] ?? data['ratesByType'];
+    final Map<dynamic, dynamic> rates = rawRates is Map
+        ? rawRates
+        : <dynamic, dynamic>{};
+    double? lowest;
+    for (final dynamic value in rates.values) {
+      final dynamic raw = value is Map
+          ? (value['initial'] ?? value['hourly'])
+          : value;
+      final double? price = double.tryParse('${raw ?? ''}'.trim());
+      if (price != null && price > 0 && (lowest == null || price < lowest)) {
+        lowest = price;
+      }
+    }
+    if (lowest != null) return lowest;
+    final Match? match = RegExp(
+      r'\d+(?:\.\d+)?',
+    ).firstMatch((data['pricing'] as String?) ?? '');
+    return match == null ? null : double.tryParse(match.group(0)!);
+  }
+
+  /// Total slots across vehicle types, from `slotCounts` (kept up to date by
+  /// the owner), else the count given at registration.
+  static int capacity(Map<String, dynamic> data) {
+    final Object? counts = data['slotCounts'];
+    if (counts is Map) {
+      int total = 0;
+      for (final MapEntry<dynamic, dynamic> e in counts.entries) {
+        if (e.key == 'motor') continue; // legacy duplicate of motorcycle
+        if (e.value is num && (e.value as num) > 0) {
+          total += (e.value as num).toInt();
+        }
+      }
+      if (total > 0) return total;
+    }
+    return ((data['availability'] as num?) ?? 0).toInt();
+  }
+
+  /// Whether the facility has slots for [vehicleType] ("car", "motorcycle",
+  /// or a custom type key).
+  static bool takesVehicle(Map<String, dynamic> data, String vehicleType) {
+    final Object? counts = data['slotCounts'];
+    if (counts is! Map) return false;
+    final Object? slots =
+        counts[vehicleType] ??
+        (vehicleType == 'motorcycle' ? counts['motor'] : null);
+    return slots is num && slots > 0;
+  }
+
+  /// A Google Maps route from the driver's location to the facility, or
+  /// null when it has neither a pin nor an address.
+  static Uri? directionsUri(Map<String, dynamic> data) {
+    final LatLng? point = extractLatLng(data);
+    final String address = ((data['address'] as String?) ?? '').trim();
+    final String destination = point != null
+        ? '${point.latitude},${point.longitude}'
+        : Uri.encodeComponent(address);
+    if (destination.isEmpty) return null;
+    return Uri.parse(
+      'https://www.google.com/maps/dir/?api=1'
+      '&destination=$destination&travelmode=driving',
+    );
+  }
+
+  /// Opens [directionsUri] in Google Maps (or the browser). Returns false
+  /// when there is no location or nothing could open it.
+  static Future<bool> openDirections(Map<String, dynamic> data) async {
+    final Uri? uri = directionsUri(data);
+    if (uri == null) return false;
+    try {
+      return await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } catch (_) {
+      return false;
+    }
+  }
 
   static const LatLng fallbackCenter = LatLng(14.5995, 120.9842);
 
@@ -56,12 +150,17 @@ class DriverEstablishmentService {
   static bool isOpenNow(Map<String, dynamic> establishment) =>
       OperatingHours.parse(establishment).isOpenAt(DateTime.now());
 
+  /// The list the driver sees. [vehicleType] keeps only facilities with
+  /// slots for it; [onlyIds] (the driver's saved facilities) keeps only
+  /// those. Ties in a sort fall back to the nearest first.
   static List<Map<String, dynamic>> filterAndSort({
     required List<Map<String, dynamic>> establishments,
     required String searchQuery,
     required bool openNowOnly,
     required DriverSortOption sortOption,
     required Position? currentPosition,
+    String? vehicleType,
+    Set<String>? onlyIds,
   }) {
     final String query = searchQuery.trim().toLowerCase();
 
@@ -77,15 +176,19 @@ class DriverEstablishmentService {
     final List<Map<String, dynamic>> displayed = filtered.where((
       Map<String, dynamic> establishment,
     ) {
-      if (!openNowOnly) {
-        return true;
+      if (openNowOnly && !isOpenNow(establishment)) return false;
+      if (vehicleType != null && !takesVehicle(establishment, vehicleType)) {
+        return false;
       }
-      return isOpenNow(establishment);
+      if (onlyIds != null &&
+          !onlyIds.contains(establishment['establishmentID'])) {
+        return false;
+      }
+      return true;
     }).toList();
 
-    if (sortOption == DriverSortOption.nearest) {
-      displayed.sort((Map<String, dynamic> a, Map<String, dynamic> b) {
-        return distanceToUserMeters(
+    int nearer(Map<String, dynamic> a, Map<String, dynamic> b) =>
+        distanceToUserMeters(
           establishment: a,
           currentPosition: currentPosition,
         ).compareTo(
@@ -94,13 +197,38 @@ class DriverEstablishmentService {
             currentPosition: currentPosition,
           ),
         );
-      });
-    } else if (sortOption == DriverSortOption.mostSlots) {
-      displayed.sort((Map<String, dynamic> a, Map<String, dynamic> b) {
-        final int aSlots = ((a['availability'] as num?) ?? 0).toInt();
-        final int bSlots = ((b['availability'] as num?) ?? 0).toInt();
-        return bSlots.compareTo(aSlots);
-      });
+
+    switch (sortOption) {
+      case DriverSortOption.none:
+        // Nearest first is applied by the caller when location is known.
+        break;
+      case DriverSortOption.nearest:
+        displayed.sort(nearer);
+      case DriverSortOption.cheapest:
+        // Facilities without a rate on record go last.
+        displayed.sort((Map<String, dynamic> a, Map<String, dynamic> b) {
+          final double pa = startingPrice(a) ?? double.infinity;
+          final double pb = startingPrice(b) ?? double.infinity;
+          final int byPrice = pa.compareTo(pb);
+          return byPrice != 0 ? byPrice : nearer(a, b);
+        });
+      case DriverSortOption.topRated:
+        // Unrated facilities go last; more ratings win a tie.
+        displayed.sort((Map<String, dynamic> a, Map<String, dynamic> b) {
+          final double ra = ((a['rating'] as num?) ?? 0).toDouble();
+          final double rb = ((b['rating'] as num?) ?? 0).toDouble();
+          final int byRating = rb.compareTo(ra);
+          if (byRating != 0) return byRating;
+          final int ca = ((a['ratingCount'] as num?) ?? 0).toInt();
+          final int cb = ((b['ratingCount'] as num?) ?? 0).toInt();
+          final int byCount = cb.compareTo(ca);
+          return byCount != 0 ? byCount : nearer(a, b);
+        });
+      case DriverSortOption.mostSlots:
+        displayed.sort((Map<String, dynamic> a, Map<String, dynamic> b) {
+          final int bySlots = capacity(b).compareTo(capacity(a));
+          return bySlots != 0 ? bySlots : nearer(a, b);
+        });
     }
 
     return displayed;

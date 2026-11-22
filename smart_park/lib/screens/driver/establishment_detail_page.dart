@@ -4,8 +4,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart' show LatLng;
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../services/error_reporter.dart';
 import '../../services/operating_hours.dart';
@@ -21,6 +19,7 @@ import 'driver_parking_pass_page.dart';
 import 'driver_payment_page.dart';
 import 'driver_vehicle_selection_page.dart';
 import 'services/driver_establishment_service.dart';
+import 'widgets/save_parking_button.dart';
 
 part 'establishment_detail/rate_display.dart';
 
@@ -135,20 +134,12 @@ class _EstablishmentDetailPageState extends State<EstablishmentDetailPage>
   }
 
   Future<void> _openInMaps(Map<String, dynamic> data) async {
-    final LatLng? point = DriverEstablishmentService.extractLatLng(data);
-    final String query = point == null
-        ? Uri.encodeComponent(_readText(data['address'], fallback: ''))
-        : '${point.latitude},${point.longitude}';
-    if (query.isEmpty) {
+    if (DriverEstablishmentService.directionsUri(data) == null) {
       _showSnackBar('No location available for this establishment.');
       return;
     }
     // A route from the driver's location, ready to start navigating.
-    final Uri uri = Uri.parse(
-      'https://www.google.com/maps/dir/?api=1'
-      '&destination=$query&travelmode=driving',
-    );
-    if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+    if (!await DriverEstablishmentService.openDirections(data)) {
       _showSnackBar('Unable to open maps.');
     }
   }
@@ -1071,6 +1062,12 @@ class _EstablishmentDetailPageState extends State<EstablishmentDetailPage>
                         backgroundColor: AppTheme.surface,
                         surfaceTintColor: AppTheme.surface,
                         title: const Text('Parking Details'),
+                        actions: <Widget>[
+                          DriverSaveParkingButton(
+                            establishmentId: widget.establishmentId,
+                          ),
+                          const SizedBox(width: 4),
+                        ],
                       ),
                       body: _buildBody(data),
                       bottomNavigationBar: _buildBottomBar(data),

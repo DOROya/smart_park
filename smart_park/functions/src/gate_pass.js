@@ -24,6 +24,7 @@ const { logger } = require("firebase-functions");
 const paymongo = require("./paymongo");
 const { reserveRecovery, releaseRecovery } = require("./refunds");
 const { notifyUser, peso } = require("./notify");
+const paymentHealth = require("./payment_health");
 const {
   CHECKOUTS,
   asString,
@@ -202,9 +203,11 @@ async function cancelIntentQuietly(secretKey, intentId) {
 /**
  * Ends an unfinished gate payment. The payment is closed first and then
  * re-checked, so one that landed at the last second is finalized instead of
- * lost. Returns the new status.
+ * lost. Returns the new status. [reason] ("timed_out", "cancelled" or
+ * "failed_to_start") is counted for the admins' payment health card;
+ * [confirmedBy] is passed on if the payment turns out to have gone through.
  */
-async function endGatePayment(db, ref, secretKey, c) {
+async function endGatePayment(db, ref, secretKey, c, { reason = "cancelled", confirmedBy = "app" } = {}) {
   const fresh = (await ref.get()).data() || c;
   const sessionId = fresh.paymongo?.sessionId;
   const intentId = fresh.paymongo?.intentId;
@@ -213,10 +216,14 @@ async function endGatePayment(db, ref, secretKey, c) {
   if (sessionId || intentId) {
     const paid = await fetchPaidPayment(secretKey, fresh);
     if (paid) {
-      await finalizePaidCheckout(db, ref, paid);
+      await finalizePaidCheckout(db, ref, paid, confirmedBy);
       return "paid";
     }
   }
+  await paymentHealth.count(
+    db,
+    reason === "timed_out" ? "gateTimedOut" : reason === "failed_to_start" ? "gateFailedToStart" : "gateCancelled",
+  );
   const status = isExpired(c, Date.now()) ? "expired" : "awaiting_gate";
   // Unpaid: the owner's refund debt set aside for this sale goes back.
   await releaseRecovery(db, fresh.ownerId, fresh.refundRecoveryCentavos || 0);
@@ -597,7 +604,7 @@ async function startGatePayment(request, secretKey) {
       refundRecoveryCentavos: recovery,
     });
   } catch (error) {
-    await endGatePayment(db, ref, secretKey, claimed.c);
+    await endGatePayment(db, ref, secretKey, claimed.c, { reason: "failed_to_start" });
     if (error instanceof HttpsError) throw error;
     logger.error(`Gate payment for ${ref.id} could not start`, error);
     throw new HttpsError("unavailable", "Could not open the payment. Try again.");
@@ -654,7 +661,7 @@ async function checkGatePayment(request, secretKey) {
     return { status: "paid", transactionId: c.transactionId };
   }
   if (gatePaymentTimedOut(c, Date.now())) {
-    const status = await endGatePayment(db, ref, secretKey, c);
+    const status = await endGatePayment(db, ref, secretKey, c, { reason: "timed_out" });
     return { status: status === "paid" ? "paid" : "timed_out", transactionId: c.transactionId };
   }
   return { status: "pending", stage: paymentStage(c), transactionId: c.transactionId };
@@ -688,7 +695,7 @@ async function cancelGatePayment(request, secretKey) {
 /** For the scheduled reconcile: a pending pass nobody is finishing. */
 async function reconcileGatePass(db, ref, secretKey, c, nowMs) {
   if (!gatePaymentTimedOut(c, nowMs)) return null;
-  return endGatePayment(db, ref, secretKey, c);
+  return endGatePayment(db, ref, secretKey, c, { reason: "timed_out", confirmedBy: "reconcile" });
 }
 
 module.exports = {

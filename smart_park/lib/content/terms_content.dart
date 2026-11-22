@@ -17,9 +17,9 @@ import '../services/platform_fees.dart' show kPlatformFeeRate;
 /// they agreed (`termsVersion`, `termsAcceptedAt`). Anyone whose saved version
 /// differs is asked to accept the current terms when they open the app (see
 /// terms_update_gate.dart), so bump this with every change to the text.
-const String kTermsVersion = '2026-11-20';
+const String kTermsVersion = '2026-11-22';
 
-const String kTermsUpdatedLabel = 'November 20, 2026';
+const String kTermsUpdatedLabel = 'November 22, 2026';
 
 const String kSupportEmail = 'smartpark.noreply@gmail.com';
 
@@ -32,6 +32,10 @@ const String kStaffRole = 'staff';
 
 /// Days an owner has to settle a refund balance once SmartPark asks for it.
 const int kRefundBalanceDueDays = 15;
+
+/// Days a rejected or deactivated facility's business documents are kept.
+/// Must match DOCUMENT_RETENTION_DAYS in functions/src/privacy_cleanup.js.
+const int kBusinessDocumentRetentionDays = 90;
 
 /// Upheld warnings within a year after which an account may be suspended.
 const int kWarningsBeforeSuspension = 3;
@@ -444,11 +448,27 @@ TermsSection _privacy(_Reader reader) =>
           'PayMongo for payments. Your information is stored on Google '
           'servers outside the Philippines, in Singapore and the United '
           'States.',
+      'SmartPark keeps an audit log of important actions: facility reviews, '
+          'suspensions and edits, rate and staff changes, refund decisions, '
+          'warnings, report decisions, data downloads and account deletions. '
+          'Each entry records who acted and when, so actions can be checked '
+          'later. Administrators see all entries; a parking owner sees the '
+          'ones about their own facility and staff.',
       'Account details are kept while your account is active and removed '
-          'when it is deleted. Payment, ticket, refund and gate records are '
-          'kept for 5 years for payment and dispute purposes, without your '
-          'name once your account is deleted. Reports and warnings are kept '
-          'for 2 years. Unused temporary QRs are deleted when they expire.',
+          'when it is deleted. Payment, ticket, refund and gate records, and '
+          'the audit log, are kept for 5 years for payment and dispute '
+          'purposes, without your name once your account is deleted. Reports '
+          'and warnings are kept for 2 years. Unused temporary QRs are '
+          'deleted when they expire.',
+      if (reader == _Reader.owner)
+        'Business documents are kept while your facility is listed or under '
+            'review. If SmartPark rejects or deactivates your facility, its '
+            'business documents are deleted $kBusinessDocumentRetentionDays '
+            'days later. To apply again '
+            'after that, upload them again.',
+      if (reader != _Reader.staff)
+        'You can save a copy of the personal data SmartPark keeps about you '
+            'at any time from your Profile, with Download My Data.',
       'You may ask to see, correct or delete your personal information, or '
           'withdraw consent, by emailing $kSupportEmail. Some records, such '
           'as payments, may have to be kept.',
