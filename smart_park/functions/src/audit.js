@@ -70,25 +70,121 @@ function sameValue(a, b) {
   }
 }
 
+function isPlainObject(value) {
+  return (
+    value !== null &&
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    !(value instanceof Timestamp) &&
+    !(value instanceof Date) &&
+    !(value instanceof GeoPoint) &&
+    Object.getPrototypeOf(value) === Object.prototype
+  );
+}
+
 /**
  * The fields that changed between [before] and [after] (either may be
  * missing), as { field: { from, to } }, leaving out bookkeeping fields.
+ * Maps changed on both sides are compared inside, so a rate edit shows as
+ * "ratesByType.car.succeedingDaily: 250 -> 251", not two whole maps.
  */
 function fieldChanges(before, after) {
   const changes = {};
-  const keys = new Set([...Object.keys(before || {}), ...Object.keys(after || {})]);
-  for (const key of [...keys].sort()) {
-    if (IGNORED_FIELDS.has(key)) continue;
-    const from = before?.[key];
-    const to = after?.[key];
-    if (sameValue(from, to)) continue;
-    if (Object.keys(changes).length >= MAX_CHANGED_FIELDS) {
-      changes["..."] = { from: null, to: "more fields changed" };
-      break;
+  let full = false;
+  const walk = (from, to, prefix) => {
+    const keys = new Set([...Object.keys(from || {}), ...Object.keys(to || {})]);
+    for (const key of [...keys].sort()) {
+      if (full) return;
+      if (!prefix && IGNORED_FIELDS.has(key)) continue;
+      const a = from?.[key];
+      const b = to?.[key];
+      if (sameValue(a, b)) continue;
+      const path = prefix ? `${prefix}.${key}` : key;
+      if (isPlainObject(a) && isPlainObject(b)) {
+        walk(a, b, path);
+        continue;
+      }
+      if (Object.keys(changes).length >= MAX_CHANGED_FIELDS) {
+        changes["..."] = { from: null, to: "more fields changed" };
+        full = true;
+        return;
+      }
+      changes[path] = { from: summarizeValue(a), to: summarizeValue(b) };
     }
-    changes[key] = { from: summarizeValue(from), to: summarizeValue(to) };
-  }
+  };
+  walk(before || {}, after || {}, "");
   return changes;
+}
+
+// The parts of a rate, as the owner's form names them.
+const RATE_PART_LABELS = {
+  initial: "base rate",
+  hourly: "base rate",
+  succeedingHour: "rate per extra hour",
+  succeedingDaily: "daily rate",
+  daily: "daily rate",
+  weekly: "weekly rate",
+  monthly: "monthly rate",
+  overtime: "overtime rate",
+  overtimeRate: "overtime rate",
+};
+
+/**
+ * A facility's rates are stored three ways: `ratesByType` (the source),
+ * `rates` (an older copy) and `pricing` (a line of text built from them).
+ * Keeps one: `ratesByType` changes, as "Car daily rate", dropping the
+ * duplicates. Returns { changes, rateLines } where rateLines are readable
+ * "Car daily rate: PHP 250 -> PHP 251" lines.
+ */
+function readableRateChanges(changes) {
+  const rateKeys = Object.keys(changes).filter((k) => /^ratesByType\./.test(k));
+  const source = rateKeys.length > 0 ? "ratesByType" : "rates";
+  const lines = [];
+  const out = {};
+  for (const [key, value] of Object.entries(changes)) {
+    const match = key.match(/^(ratesByType|rates)\.([^.]+)\.([^.]+)$/);
+    if (match) {
+      if (match[1] !== source) continue; // the duplicate copy
+      const [, , type, part] = match;
+      const vehicle = type === "motorcycle" || type === "motor" ? "Motorcycle" : type === "car" ? "Car" : type.replace(/_/g, " ").replace(/^\w/, (c) => c.toUpperCase());
+      const label = `${vehicle} ${RATE_PART_LABELS[part] || part}`;
+      const peso = (v) => (v === null || v === "" ? "none" : `PHP ${v}`);
+      out[label] = { from: peso(value.from), to: peso(value.to) };
+      lines.push({ label, from: peso(value.from), to: peso(value.to) });
+      continue;
+    }
+    // The text summary only repeats the rates.
+    if (key === "pricing" && lines.length + rateKeys.length > 0) continue;
+    if (/^(ratesByType|rates)$/.test(key) || /^(ratesByType|rates)\./.test(key)) {
+      if (key.startsWith(source)) out[key] = value;
+      continue;
+    }
+    out[key] = value;
+  }
+  return { changes: out, rateLines: lines };
+}
+
+function isRateField(field) {
+  return /^(ratesByType|rates|pricing|gracePeriodMinutes|overtime)/.test(field) || /rate|price|fee/i.test(field);
+}
+
+/**
+ * One rate: "Changed the car daily rate from PHP 250 to PHP 251".
+ * Several: "Changed 3 rates: car base rate, car weekly rate and
+ * motorcycle base rate" (the amounts are in the entry's details).
+ */
+function rateSummary(rateLines, otherFields) {
+  if (rateLines.length === 0) {
+    return `Changed rates (${otherFields.join(", ")})`;
+  }
+  if (rateLines.length === 1) {
+    const { label, from, to } = rateLines[0];
+    return `Changed the ${label.toLowerCase()} from ${from} to ${to}`;
+  }
+  const names = rateLines.map((l) => l.label.toLowerCase());
+  const shown = names.length > 4 ? [...names.slice(0, 3), `${names.length - 3} more`] : names;
+  const list = `${shown.slice(0, -1).join(", ")} and ${shown[shown.length - 1]}`;
+  return `Changed ${rateLines.length} rates: ${list}`;
 }
 
 /**
@@ -126,28 +222,48 @@ function describeFacilityDetails(before, after, changes) {
     const reason = after.rejectionReason || after.restrictionReason;
     return { action, summary: reason && status !== "approved" ? `${summary}: ${reason}` : summary };
   }
-  if (changes.complianceNotice) {
+  if (touched(changes, "complianceNotice")) {
     return after.complianceNotice
       ? { action: "facility.notice_given", summary: "Gave the facility a notice to fix something" }
       : { action: "facility.notice_cleared", summary: "Cleared the facility's notice" };
   }
-  return {
-    action: "facility.details_updated",
-    summary: `Edited facility details (${Object.keys(changes).join(", ")})`,
-  };
+  return describeEdit(changes, "facility.details_updated", "Edited facility details");
 }
 
 /** establishments: the listing drivers see, including the rates. */
 function describeEstablishment(before, after, changes) {
   if (!before && after) return { action: "facility.created", summary: "Created the facility listing" };
   if (before && !after) return { action: "facility.deleted", summary: "Deleted the facility listing" };
-  const fields = Object.keys(changes);
-  if (fields.length === 0) return null;
-  const rateFields = fields.filter((f) => /rate|price|fee|grace|overtime/i.test(f));
-  if (rateFields.length > 0) {
-    return { action: "facility.rates_changed", summary: `Changed rates (${fields.join(", ")})` };
+  if (Object.keys(changes).length === 0) return null;
+  return describeEdit(changes, "facility.updated", "Edited the facility listing");
+}
+
+/** Whether [field], or anything inside it, changed. */
+function touched(changes, field) {
+  return Object.keys(changes).some((k) => k === field || k.startsWith(`${field}.`));
+}
+
+/** The top-level fields among [changes], e.g. "rates, name". */
+function topFields(changes) {
+  return [...new Set(Object.keys(changes).map((k) => k.split(".")[0]))];
+}
+
+/**
+ * An edit to a facility: "Changed rates: Car daily rate PHP 250 -> PHP 251"
+ * when rates changed (with the rate changes made readable), else
+ * "[editLabel] (name, address)".
+ */
+function describeEdit(changes, editAction, editLabel) {
+  const fields = topFields(changes);
+  if (fields.some(isRateField)) {
+    const readable = readableRateChanges(changes);
+    return {
+      action: "facility.rates_changed",
+      summary: rateSummary(readable.rateLines, fields.filter(isRateField)),
+      changes: readable.changes,
+    };
   }
-  return { action: "facility.updated", summary: `Edited the facility listing (${fields.join(", ")})` };
+  return { action: editAction, summary: `${editLabel} (${fields.join(", ")})` };
 }
 
 /** staff_accounts: added, deactivated, reactivated, removed. */
@@ -163,7 +279,7 @@ function describeStaff(before, after, changes) {
   }
   return {
     action: "staff.updated",
-    summary: `Edited staff member ${name} (${Object.keys(changes).join(", ")})`,
+    summary: `Edited staff member ${name} (${topFields(changes).join(", ")})`,
   };
 }
 
@@ -322,7 +438,8 @@ async function entryForWrite(collection, docId, before, after, actorId, lookup) 
     establishmentId,
     establishmentName: facility.establishmentName,
     ownerId: watched.ownerVisible ? facility.ownerId || data?.ownerId || "" : "",
-    changes,
+    // A describer may give readable changes (rates); else the raw ones.
+    changes: described.changes || changes,
   };
 }
 

@@ -80,51 +80,55 @@ class _DriverHomePageState extends State<DriverHomePage>
   void initState() {
     super.initState();
     final String? uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid != null) {
-      _warnings = DriverWarningWatcher(() => context, uid)..start();
-      // Parking reminders from the server; shown in-app while open.
-      unawaited(
-        ParkingPush.register(
-          uid,
-          onForeground: (String title, String body) {
-            if (!mounted) return;
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text('$title\n$body'),
-                duration: const Duration(seconds: 8),
-              ),
-            );
-          },
-          onOpen: (Map<String, dynamic> data) {
-            final Object? id = data['checkoutId'];
-            if (data['kind'] == ParkingPush.kGateConfirm && id is String) {
-              _openPass(id);
-            }
-            // "Time almost up" / "overtime started": buy more hours.
-            final Object? ticketId = data['ticketId'];
-            if ((data['kind'] == 'reminder' || data['kind'] == 'overtime') &&
-                ticketId is String) {
-              unawaited(_openAddHours(ticketId));
-            }
-          },
-        ),
-      );
-      _watchPasses(uid);
-    }
+    if (uid != null) _watchPasses(uid);
     WidgetsBinding.instance.addObserver(this);
     _searchController.addListener(_onSearchChanged);
     _userFuture = _fetchUserDocument();
-    unawaited(_startUp());
+    unawaited(_startUp(uid));
   }
 
-  /// First sign-in on this phone: the guide first, then the location
-  /// prompt, so the two don't open over each other.
-  Future<void> _startUp() async {
+  /// First sign-in on this phone: the guide first, then the notification
+  /// and location prompts and any warnings, so none open over the guide.
+  Future<void> _startUp(String? uid) async {
     await WidgetsBinding.instance.endOfFrame;
     if (!mounted) return;
     await DriverGuide.showIfFirstRun(context);
     if (!mounted) return;
+    if (uid != null) {
+      _warnings = DriverWarningWatcher(() => context, uid)..start();
+      _registerPush(uid);
+    }
     await _initializeDriverPermissions();
+  }
+
+  /// Parking reminders from the server; shown in-app while open.
+  void _registerPush(String uid) {
+    unawaited(
+      ParkingPush.register(
+        uid,
+        onForeground: (String title, String body) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('$title\n$body'),
+              duration: const Duration(seconds: 8),
+            ),
+          );
+        },
+        onOpen: (Map<String, dynamic> data) {
+          final Object? id = data['checkoutId'];
+          if (data['kind'] == ParkingPush.kGateConfirm && id is String) {
+            _openPass(id);
+          }
+          // "Time almost up" / "overtime started": buy more hours.
+          final Object? ticketId = data['ticketId'];
+          if ((data['kind'] == 'reminder' || data['kind'] == 'overtime') &&
+              ticketId is String) {
+            unawaited(_openAddHours(ticketId));
+          }
+        },
+      ),
+    );
   }
 
   void _openHelp() {

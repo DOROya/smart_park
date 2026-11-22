@@ -40,9 +40,47 @@ test("fieldChanges compares maps and timestamps by value", () => {
     fieldChanges({ rates: { car: 50 }, at: t }, { rates: { car: 50 }, at: Timestamp.fromMillis(1000) }),
     {},
   );
-  assert.deepEqual(fieldChanges({ rates: { car: 50 } }, { rates: { car: 60 } }), {
-    rates: { from: '{"car":50}', to: '{"car":60}' },
+  // Inside a map changed on both sides, only what changed is listed.
+  assert.deepEqual(fieldChanges({ rates: { car: 50, moto: 20 } }, { rates: { car: 60, moto: 20 } }), {
+    "rates.car": { from: 50, to: 60 },
   });
+  // A map appearing or going away is shown whole.
+  assert.deepEqual(fieldChanges({}, { notice: { a: 1 } }), {
+    notice: { from: null, to: '{"a":1}' },
+  });
+});
+
+test("a rate edit reads as one plain line, without the duplicate copies", async () => {
+  // The edit made on the phone: car daily rate 251 -> 250, stored three ways.
+  const rate = (daily) => ({
+    car: { initial: "100", succeedingHour: "20", succeedingDaily: daily },
+    motorcycle: { initial: "30", succeedingDaily: "100" },
+  });
+  const before = { status: "approved", ratesByType: rate("251"), rates: rate("251"), pricing: "Car: 100 (251/day)" };
+  const after = { status: "approved", ratesByType: rate("250"), rates: rate("250"), pricing: "Car: 100 (250/day)" };
+  const entry = await entryForWrite("establishment_details", "est1", before, after, "owner1", lookup);
+  assert.equal(entry.action, "facility.rates_changed");
+  assert.equal(entry.summary, "Changed the car daily rate from PHP 251 to PHP 250");
+  assert.deepEqual(entry.changes, { "Car daily rate": { from: "PHP 251", to: "PHP 250" } });
+});
+
+test("several rate changes are summed up", () => {
+  const changes = fieldChanges(
+    { ratesByType: { car: { initial: "100", weekly: "550" }, motorcycle: { initial: "30" } } },
+    { ratesByType: { car: { initial: "120", weekly: "600" }, motorcycle: { initial: "35" } } },
+  );
+  const d = describeFacilityDetails({ a: 1 }, { a: 1 }, changes);
+  assert.equal(d.action, "facility.rates_changed");
+  assert.equal(d.summary, "Changed 3 rates: car base rate, car weekly rate and motorcycle base rate");
+  assert.equal(Object.keys(d.changes).length, 3);
+});
+
+test("a notice changed inside still reads as a notice", () => {
+  const changes = fieldChanges(
+    { status: "approved", complianceNotice: { reason: "a" } },
+    { status: "approved", complianceNotice: { reason: "b" } },
+  );
+  assert.equal(describeFacilityDetails({ a: 1 }, { complianceNotice: {} }, changes).action, "facility.notice_given");
 });
 
 test("summarizeValue shortens long values and shows timestamps as ISO", () => {

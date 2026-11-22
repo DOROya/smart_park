@@ -30,16 +30,27 @@ class DriverGuide {
     }
   }
 
+  /// The guide on screen now, so a second caller waits for it instead of
+  /// opening another (on first sign-in the driver home can be built twice).
+  static Future<void>? _showing;
+
   /// Shows the guide once per phone, the first time a driver signs in.
-  static Future<void> showIfFirstRun(BuildContext context) async {
+  /// Returns when it has been closed (at once if it was seen before).
+  static Future<void> showIfFirstRun(BuildContext context) {
+    return _showing ??= _showOnce(context).whenComplete(() => _showing = null);
+  }
+
+  static Future<void> _showOnce(BuildContext context) async {
     if (await seen() || !context.mounted) return;
+    // Marked first: closing the app mid-guide doesn't bring it back.
+    await markSeen();
+    if (!context.mounted) return;
     await Navigator.of(context).push<void>(
       MaterialPageRoute<void>(
         fullscreenDialog: true,
         builder: (_) => const DriverGuidePage(),
       ),
     );
-    await markSeen();
   }
 }
 

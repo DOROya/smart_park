@@ -287,6 +287,34 @@ void main() {
       expect(find.text(kDriverGuideSteps.first.title), findsNothing);
     });
 
+    testWidgets('two callers at once open only one guide', (
+      WidgetTester tester,
+    ) async {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Builder(
+            builder: (BuildContext context) => TextButton(
+              onPressed: () {
+                // As when the driver home is built twice on first sign-in.
+                DriverGuide.showIfFirstRun(context);
+                DriverGuide.showIfFirstRun(context);
+              },
+              child: const Text('go'),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('go'));
+      await tester.pumpAndSettle();
+      expect(find.byType(DriverGuidePage), findsOneWidget);
+      await tester.tap(find.text('Skip'));
+      await tester.pumpAndSettle();
+      // Closed once and gone: no second copy underneath.
+      expect(find.byType(DriverGuidePage), findsNothing);
+      expect(find.text('go'), findsOneWidget);
+    });
+
     testWidgets('Skip closes it and counts as seen', (
       WidgetTester tester,
     ) async {

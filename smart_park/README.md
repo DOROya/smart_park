@@ -76,28 +76,16 @@ and their business documents to the private `establishment_private` doc.
 Admins are regular users whose `users/{uid}.role` is `admin`, set by hand
 in the Firebase console. The app never lets anyone give themselves that role.
 
-## App Check
+## App Check (not used)
 
-The app turns on Firebase App Check at startup (`lib/services/app_check.dart`):
-Play Integrity on Android and App Attest on iOS in release builds, and the
-debug provider in debug builds. Requests then carry a token proving they come
-from the real app. Nothing is refused until enforcement is switched on:
-
-1. Firebase console > App Check > Apps: register the Android app with Play
-   Integrity. It needs the SHA-256 of the signing key: the upload key from
-   Codemagic, plus Play's app signing key once the app is on Play.
-2. For debug builds, run with `--dart-define=APP_CHECK_DEBUG_TOKEN=<uuid>` and
-   add that uuid under **Manage debug tokens**. Without the define, the token
-   is printed to logcat on first run.
-3. Wait until the App Check metrics show nearly all requests as verified.
-   Then set `ENFORCE_APP_CHECK=true` in `functions/.env` and deploy the
-   functions. Firestore and Storage are enforced separately, from the same
-   console page.
-
-Play Integrity is meant for apps installed from Google Play. Check the
-metrics with the APK you actually hand out before enforcing. If its
-requests show as unverified, leave enforcement off, or register those phones'
-debug tokens.
+Firebase App Check was tried on 2026-11-22 and taken out of the app. Builds
+installed outside Google Play (the Codemagic APKs) were rejected by Play
+Integrity ("403 App attestation failed") even with the Play-recognition
+requirement off and the device level at basic. The server side stays ready:
+every callable reads `ENFORCE_APP_CHECK` from `functions/.env`, which must
+stay `false` while the app sends no App Check token. To try again once the
+app is on Google Play, add `firebase_app_check`, activate it in `main.dart`,
+check the App Check metrics, then set the flag to `true`.
 
 ## Audit log
 
