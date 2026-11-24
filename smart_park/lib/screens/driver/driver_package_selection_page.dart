@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../services/parking_pricing.dart';
 import '../../theme/app_theme.dart';
@@ -91,6 +92,60 @@ class _DriverPackageSelectionPageState
     super.initState();
     _selectedPlan = widget.options.first.key;
     _duration = widget.options.first.minDuration;
+    WidgetsBinding.instance.addPostFrameCallback((_) => _maybeShowNotice());
+  }
+
+  static const String _hideNoticeKey = 'hide_not_reservation_notice';
+
+  /// Pops up the not-a-reservation notice each time the driver reaches this
+  /// step, until they tick "Do not show again".
+  Future<void> _maybeShowNotice() async {
+    SharedPreferences? prefs;
+    try {
+      prefs = await SharedPreferences.getInstance();
+      if (prefs.getBool(_hideNoticeKey) ?? false) return;
+    } catch (_) {}
+    if (!mounted) return;
+    bool dontShow = false;
+    await showDialog<void>(
+      context: context,
+      builder: (BuildContext ctx) => StatefulBuilder(
+        builder: (BuildContext ctx, StateSetter setLocal) => AlertDialog(
+          icon: Icon(Icons.info_outline_rounded, color: AppTheme.textDark),
+          title: const Text('This is not a reservation'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'This ticket pays for your parking time. It does not hold '
+                'a slot for you. If the lot is full when you arrive, or if '
+                'you leave and come back, a space may not be available. It '
+                'is meant to make paying and passing the gate quicker.',
+              ),
+              const SizedBox(height: 8),
+              CheckboxListTile(
+                value: dontShow,
+                onChanged: (bool? v) => setLocal(() => dontShow = v ?? false),
+                contentPadding: EdgeInsets.zero,
+                controlAffinity: ListTileControlAffinity.leading,
+                title: const Text('Do not show again'),
+              ),
+            ],
+          ),
+          actions: [
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('I understand'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (dontShow) {
+      try {
+        await prefs?.setBool(_hideNoticeKey, true);
+      } catch (_) {}
+    }
   }
 
   DriverPackageOption get _selectedOption => widget.options.firstWhere(
@@ -451,57 +506,6 @@ class _DriverPackageSelectionPageState
     );
   }
 
-  /// Packages of a day or more, which drivers come and go on.
-  static bool _isLongStay(String plan) =>
-      plan == 'daily' || plan == 'weekly' || plan == 'monthly';
-
-  /// Shown with day, week and month packages: the ticket pays for time, it
-  /// does not keep a slot while the driver is away.
-  Widget _buildNotReservedNote() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: AppTheme.warningSoft,
-        borderRadius: BorderRadius.circular(AppTheme.radius),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(Icons.info_outline_rounded, size: 18, color: AppTheme.textDark),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'This is not a reservation',
-                  style: TextStyle(
-                    color: AppTheme.textDark,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  'This ticket pays for your parking time. It does not hold '
-                  'a slot for you. If you leave and come back, a space may '
-                  'not be available. It is meant to make paying and passing '
-                  'the gate quicker.',
-                  style: TextStyle(
-                    color: AppTheme.textSecondary,
-                    fontSize: 12,
-                    height: 1.4,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildSummary(DriverPackageOption option, int duration, double total) {
     final String unit = _durationUnit(option.key, duration);
     final List<Widget> lines = switch (option.key) {
@@ -674,10 +678,6 @@ class _DriverPackageSelectionPageState
                       if (_hasDuration(_selectedPlan)) ...[
                         const SizedBox(height: 6),
                         _buildDurationStepper(),
-                      ],
-                      if (_isLongStay(_selectedPlan)) ...[
-                        const SizedBox(height: 12),
-                        _buildNotReservedNote(),
                       ],
                       const SizedBox(height: 12),
                       _buildSummary(
