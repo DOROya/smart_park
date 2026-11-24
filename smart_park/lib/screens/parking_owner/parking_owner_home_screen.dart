@@ -862,7 +862,13 @@ class _ParkingOwnerHomePageState extends State<ParkingOwnerHomePage>
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => SpBackToHomeTab(
+    onHomeTab: _selectedIndex == 0,
+    goHome: () => setState(() => _selectedIndex = 0),
+    child: _buildScreen(context),
+  );
+
+  Widget _buildScreen(BuildContext context) {
     return FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
       future: _userFuture,
       builder: (context, snapshot) {

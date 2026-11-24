@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../services/driver_transactions.dart';
 import '../../services/parking_refunds.dart';
+import '../../services/sales_report.dart' show kSalesMonthNames;
 import '../../theme/app_theme.dart';
 import '../../widgets/smartpark_ui.dart';
 import '../../widgets/sp_connection.dart';
@@ -170,10 +171,48 @@ class _DriverTransactionHistoryPageState
             },
           )
         else
-          for (final DriverTransaction t in shown) _TransactionRow(t: t),
+          SpShowMore(
+            key: ValueKey<_Filter>(_filter),
+            pageSize: 15,
+            children: _withMonthHeaders(shown),
+          ),
       ],
     );
   }
+}
+
+/// One row per transaction (newest first), with a "November 2026" heading
+/// on the first row of each month. The heading rides on its row so "Show
+/// more" still counts transactions, not headings.
+List<Widget> _withMonthHeaders(List<DriverTransaction> shown) {
+  final List<Widget> rows = <Widget>[];
+  String? month;
+  for (final DriverTransaction t in shown) {
+    final DateTime? at = t.at;
+    final String? key = at == null
+        ? null
+        : '${kSalesMonthNames[at.month - 1]} ${at.year}';
+    final bool newMonth = key != null && key != month;
+    if (key != null) month = key;
+    rows.add(
+      newMonth
+          ? Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                Padding(
+                  padding: EdgeInsets.only(
+                    top: rows.isEmpty ? 0 : 12,
+                    bottom: 8,
+                  ),
+                  child: SpSectionLabel(key),
+                ),
+                _TransactionRow(t: t),
+              ],
+            )
+          : _TransactionRow(t: t),
+    );
+  }
+  return rows;
 }
 
 class _TransactionRow extends StatelessWidget {

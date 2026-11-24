@@ -4,6 +4,8 @@
 //     the driver's choice; 30 by default)
 //   - an alert once overtime has started (after the facility's grace period)
 // Each is sent at most once per visit. Drivers turn them off in Profile.
+// It also warns drivers once when an unused temporary QR (gate pass) has
+// PASS_EXPIRY_LEAD_MS left, so they don't reach the gate with a dead QR.
 //
 // users/{uid}: fcmTokens (device tokens), notificationPrefs
 //   { parkingReminders: bool, leadMinutes: 15 | 30 | 60, overtimeAlerts: bool }
@@ -146,6 +148,35 @@ function noticeText(kind, ticket, nowMs) {
   };
 }
 
+const PASS_EXPIRY_LEAD_MS = 12 * HOUR_MS;
+
+/** Whether an unused temporary QR should get its "expires soon" notice. */
+function passExpiryDue(pass, prefs, nowMs) {
+  const expiresAt = millis(pass.expiresAt);
+  return (
+    prefs.parkingReminders &&
+    pass.status === "awaiting_gate" &&
+    pass.expiryReminderSent !== true &&
+    expiresAt !== null &&
+    nowMs < expiresAt &&
+    nowMs >= expiresAt - PASS_EXPIRY_LEAD_MS
+  );
+}
+
+/** Title and body for the "temporary QR expires soon" notice. */
+function passExpiryText(pass, nowMs) {
+  const facility = pass.establishmentName || "the parking facility";
+  const expiresAt = millis(pass.expiresAt);
+  const hours = Math.max(1, Math.round((expiresAt - nowMs) / HOUR_MS));
+  return {
+    title: "Temporary QR expires soon",
+    body:
+      `Your unused QR for ${facility} expires at ${manilaTime(expiresAt)} ` +
+      `(in about ${hours} h). Show it at the gate before then, or cancel ` +
+      "it in Tickets if you no longer need it.",
+  };
+}
+
 /** Sends to every device of a driver; drops tokens that no longer work. */
 async function sendToDriver(db, driverId, tokens, message) {
   if (!tokens.length) return 0;
@@ -227,7 +258,49 @@ async function sendParkingReminders() {
       logger.warn(`Reminder for ticket ${doc.id} failed`, error);
     }
   }
+  sent += await sendPassExpiryReminders(db, nowMs, userCache);
   if (sent) logger.info(`Sent ${sent} parking notifications.`);
+}
+
+/** Warns drivers whose unused temporary QR is about to expire. */
+async function sendPassExpiryReminders(db, nowMs, userCache) {
+  let sent = 0;
+  let passes;
+  try {
+    // Two equality filters: served by single-field indexes, no composite.
+    passes = await db
+      .collection("parking_checkouts")
+      .where("kind", "==", "gate_pass")
+      .where("status", "==", "awaiting_gate")
+      .get();
+  } catch (error) {
+    logger.warn("Temporary QR expiry check failed", error);
+    return 0;
+  }
+  for (const doc of passes.docs) {
+    const pass = doc.data();
+    if (!pass.driverId) continue;
+    try {
+      if (!userCache.has(pass.driverId)) {
+        const u = await db.collection("users").doc(pass.driverId).get();
+        userCache.set(pass.driverId, u.data() || {});
+      }
+      const user = userCache.get(pass.driverId);
+      if (!passExpiryDue(pass, prefsOf(user), nowMs)) continue;
+      const tokens = Array.isArray(user.fcmTokens) ? user.fcmTokens.filter(Boolean) : [];
+      const { title, body } = passExpiryText(pass, nowMs);
+      sent += await sendToDriver(db, pass.driverId, tokens, {
+        notification: { title, body },
+        data: { checkoutId: doc.id, kind: "pass_expiry" },
+        android: { priority: "high" },
+      });
+      // Marked even without a device, so a driver isn't told late.
+      await doc.ref.update({ expiryReminderSent: true });
+    } catch (error) {
+      logger.warn(`Expiry reminder for temporary QR ${doc.id} failed`, error);
+    }
+  }
+  return sent;
 }
 
 module.exports = {
@@ -237,5 +310,8 @@ module.exports = {
   openMinutesBetween,
   dueNotices,
   noticeText,
+  passExpiryDue,
+  passExpiryText,
+  PASS_EXPIRY_LEAD_MS,
   sendParkingReminders,
 };

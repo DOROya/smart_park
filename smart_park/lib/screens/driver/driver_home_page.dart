@@ -219,7 +219,8 @@ class _DriverHomePageState extends State<DriverHomePage>
           }
           final Object? id = data['checkoutId'];
           if ((data['kind'] == ParkingPush.kGateConfirm ||
-                  data['kind'] == ParkingPush.kGateTurnedAway) &&
+                  data['kind'] == ParkingPush.kGateTurnedAway ||
+                  data['kind'] == ParkingPush.kPassExpiry) &&
               id is String) {
             _openPass(id);
           }
@@ -722,7 +723,13 @@ class _DriverHomePageState extends State<DriverHomePage>
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => SpBackToHomeTab(
+    onHomeTab: _selectedIndex == 0,
+    goHome: () => setState(() => _selectedIndex = 0),
+    child: _buildScreen(context),
+  );
+
+  Widget _buildScreen(BuildContext context) {
     return FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
       future: _userFuture,
       builder:

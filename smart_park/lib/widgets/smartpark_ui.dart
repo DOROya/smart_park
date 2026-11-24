@@ -557,6 +557,186 @@ class SpGrid extends StatelessWidget {
   }
 }
 
+/// Shows the first [pageSize] of [children] with a "Show more" button, so a
+/// long history stays short on a phone until the user asks for more. Give it
+/// a key that changes with the list's filter/date/search so it starts short
+/// again when those change.
+class SpShowMore extends StatefulWidget {
+  const SpShowMore({
+    super.key,
+    required this.children,
+    this.pageSize = 10,
+    this.layout,
+  });
+
+  final List<Widget> children;
+  final int pageSize;
+
+  /// Lays out the shown children, e.g. as an [SpGrid] on tablets. A plain
+  /// column by default.
+  final Widget Function(List<Widget> shown)? layout;
+
+  @override
+  State<SpShowMore> createState() => _SpShowMoreState();
+}
+
+class _SpShowMoreState extends State<SpShowMore> {
+  late int _limit = widget.pageSize;
+
+  @override
+  Widget build(BuildContext context) {
+    final int total = widget.children.length;
+    final int count = _limit < total ? _limit : total;
+    final List<Widget> shown = widget.children.sublist(0, count);
+    final int left = total - count;
+    final int next = left < widget.pageSize ? left : widget.pageSize;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        widget.layout?.call(shown) ??
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: shown,
+            ),
+        if (left > 0)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: OutlinedButton.icon(
+              onPressed: () => setState(() => _limit += widget.pageSize),
+              icon: const Icon(Icons.expand_more_rounded),
+              label: Text('Show $next more ($left left)'),
+            ),
+          )
+        else if (total > widget.pageSize)
+          TextButton.icon(
+            onPressed: () => setState(() => _limit = widget.pageSize),
+            icon: const Icon(Icons.expand_less_rounded),
+            label: const Text('Show less'),
+          ),
+      ],
+    );
+  }
+}
+
+/// On a home screen with tabs, the back button returns to the first tab
+/// before it leaves the app.
+class SpBackToHomeTab extends StatelessWidget {
+  const SpBackToHomeTab({
+    super.key,
+    required this.onHomeTab,
+    required this.goHome,
+    required this.child,
+  });
+
+  final bool onHomeTab;
+  final VoidCallback goHome;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return PopScope(
+      canPop: onHomeTab,
+      onPopInvokedWithResult: (bool didPop, Object? _) {
+        if (!didPop) goHome();
+      },
+      child: child,
+    );
+  }
+}
+
+/// Adds a "Back to top" button over a long scrolling list once the user has
+/// scrolled down. [builder] must hand the controller to the list.
+class SpScrollToTop extends StatefulWidget {
+  const SpScrollToTop({super.key, required this.builder});
+
+  final Widget Function(BuildContext context, ScrollController controller)
+  builder;
+
+  @override
+  State<SpScrollToTop> createState() => _SpScrollToTopState();
+}
+
+class _SpScrollToTopState extends State<SpScrollToTop> {
+  final ScrollController _controller = ScrollController();
+  bool _show = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller.addListener(() {
+      final bool show = _controller.hasClients && _controller.offset > 600;
+      if (show != _show) setState(() => _show = show);
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      children: <Widget>[
+        Positioned.fill(child: widget.builder(context, _controller)),
+        Positioned(
+          right: 16,
+          bottom: 16,
+          child: IgnorePointer(
+            ignoring: !_show,
+            child: AnimatedScale(
+              scale: _show ? 1 : 0,
+              duration: const Duration(milliseconds: 200),
+              child: FloatingActionButton.small(
+                heroTag: null,
+                tooltip: 'Back to top',
+                onPressed: () => _controller.animateTo(
+                  0,
+                  duration: const Duration(milliseconds: 350),
+                  curve: Curves.easeOutCubic,
+                ),
+                child: const Icon(Icons.arrow_upward_rounded),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// "Today" and "Yesterday" chips beside a date picker, so the two most
+/// checked days are one tap away.
+class SpQuickDays extends StatelessWidget {
+  const SpQuickDays({super.key, required this.date, required this.onChanged});
+
+  final DateTime date;
+  final ValueChanged<DateTime> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final DateTime now = DateTime.now();
+    final DateTime today = DateTime(now.year, now.month, now.day);
+    final DateTime yesterday = DateTime(now.year, now.month, now.day - 1);
+    return Wrap(
+      spacing: 8,
+      children: <Widget>[
+        for (final (String label, DateTime day) in <(String, DateTime)>[
+          ('Today', today),
+          ('Yesterday', yesterday),
+        ])
+          ChoiceChip(
+            label: Text(label),
+            selected: spSameDate(date, day),
+            onSelected: (_) => onChanged(day),
+          ),
+      ],
+    );
+  }
+}
+
 /// Page title with an optional subtitle and trailing widget.
 class SpPageHeader extends StatelessWidget {
   const SpPageHeader({

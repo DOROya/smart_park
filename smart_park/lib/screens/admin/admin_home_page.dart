@@ -1837,7 +1837,13 @@ class _AdminHomePageState extends State<AdminHomePage>
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => SpBackToHomeTab(
+    onHomeTab: _selectedTab == _AdminTab.dashboard,
+    goHome: () => setState(() => _selectedTab = _AdminTab.dashboard),
+    child: _buildScreen(context),
+  );
+
+  Widget _buildScreen(BuildContext context) {
     final bool isTablet = spIsTablet(context);
     final Widget content = _buildContent(isTablet: isTablet);
 
