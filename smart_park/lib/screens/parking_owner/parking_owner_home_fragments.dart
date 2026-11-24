@@ -48,6 +48,7 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
       case 2:
         return _buildGateActivityTab(ownerId: ownerId, ownerData: ownerData);
       case 3:
+        if (_supervisor) return _buildSupervisorScannerTab();
         return _buildCommissionsTab(ownerId: ownerId, ownerData: ownerData);
       case 4:
         return _buildProfileTab();
@@ -107,12 +108,21 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
       builder: (String establishmentId, bool resolving) {
         final bool hasFacility = establishmentId.isNotEmpty;
         final DateTime now = DateTime.now();
-        final Widget heroButton = SpHeroButton(
-          icon: hasFacility ? Icons.edit_rounded : Icons.add_business_rounded,
-          label: hasFacility ? 'Update Facility' : 'Register Facility',
-          onPressed: () =>
-              _openFacilityDialog(ownerId: ownerId, ownerData: ownerData),
-        );
+        // A supervisor can't edit the facility; they can cover the gate.
+        final Widget heroButton = _supervisor
+            ? SpHeroButton(
+                icon: Icons.qr_code_scanner_rounded,
+                label: 'Open Gate Scanner',
+                onPressed: _openGateScanner,
+              )
+            : SpHeroButton(
+                icon: hasFacility
+                    ? Icons.edit_rounded
+                    : Icons.add_business_rounded,
+                label: hasFacility ? 'Update Facility' : 'Register Facility',
+                onPressed: () =>
+                    _openFacilityDialog(ownerId: ownerId, ownerData: ownerData),
+              );
         // A full-width button reads as a stray bar across a tablet banner.
         final Widget facilityButton = _isTablet
             ? Align(
@@ -133,7 +143,7 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
             children: [
               SpHeroBanner(
                 title: greeting,
-                badge: 'Owner',
+                badge: _supervisor ? 'Supervisor' : 'Owner',
                 details: <(IconData, String)>[
                   (Icons.storefront_rounded, 'No facility registered yet'),
                   (Icons.calendar_today_rounded, spFormatDate(now)),
@@ -213,7 +223,11 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
                       facilityId: establishmentId,
                       rates: _ratesOf(details),
                       graceMinutes: facilityGraceMinutes(details),
-                      hours: OperatingHours.parse(facility),
+                      // A temporary closure is closed time too.
+                      hours: hoursWithClosure(
+                        OperatingHours.parse(facility),
+                        details,
+                      ),
                     );
                     final SpOvertimeCash overtimeCash = SpOvertimeCash.from(
                       summary.dayLogs,
@@ -250,10 +264,12 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
                           establishmentId: establishmentId,
                           facility: facility,
                           details: details ?? <String, dynamic>{},
-                          onEdit: () => _openFacilityDialog(
-                            ownerId: ownerId,
-                            ownerData: ownerData,
-                          ),
+                          onEdit: _supervisor
+                              ? null
+                              : () => _openFacilityDialog(
+                                  ownerId: ownerId,
+                                  ownerData: ownerData,
+                                ),
                         ),
                       );
                     }
@@ -263,7 +279,7 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
                       children: [
                         SpHeroBanner(
                           title: greeting,
-                          badge: 'Owner',
+                          badge: _supervisor ? 'Supervisor' : 'Owner',
                           details: <(IconData, String)>[
                             (
                               Icons.storefront_rounded,
@@ -286,10 +302,20 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
                             ),
                             appealedAt: spParseDateTime(details['appealedAt']),
                             notice: ComplianceNotice.of(details),
-                            onAskForReview: () => showFacilityAppealDialog(
-                              context,
-                              establishmentId: establishmentId,
-                            ),
+                            // Only the owner answers for the facility.
+                            onAskForReview: _supervisor
+                                ? null
+                                : () => showFacilityAppealDialog(
+                                    context,
+                                    establishmentId: establishmentId,
+                                  ),
+                          ),
+                        ],
+                        if (details != null) ...[
+                          const SizedBox(height: 12),
+                          OwnerClosureCard(
+                            facilityId: establishmentId,
+                            details: details,
                           ),
                         ],
                         SpStaffFlagsCard(facilityId: establishmentId),
@@ -340,10 +366,12 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
                           establishmentId: establishmentId,
                           facility: facility,
                           details: details ?? <String, dynamic>{},
-                          onEdit: () => _openFacilityDialog(
-                            ownerId: ownerId,
-                            ownerData: ownerData,
-                          ),
+                          onEdit: _supervisor
+                              ? null
+                              : () => _openFacilityDialog(
+                                  ownerId: ownerId,
+                                  ownerData: ownerData,
+                                ),
                         ),
                       ],
                     );
@@ -378,7 +406,7 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
       children: [
         SpHeroBanner(
           title: greeting,
-          badge: 'Owner',
+          badge: _supervisor ? 'Supervisor' : 'Owner',
           details: <(IconData, String)>[
             (
               Icons.storefront_rounded,
@@ -396,11 +424,15 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
             restrictionReasons: facilityRestrictionReasons(details),
             appealedAt: spParseDateTime(details['appealedAt']),
             notice: ComplianceNotice.of(details),
-            onAskForReview: () => showFacilityAppealDialog(
-              context,
-              establishmentId: establishmentId,
-            ),
+            onAskForReview: _supervisor
+                ? null
+                : () => showFacilityAppealDialog(
+                    context,
+                    establishmentId: establishmentId,
+                  ),
           ),
+          const SizedBox(height: 12),
+          OwnerClosureCard(facilityId: establishmentId, details: details),
         ],
         SpStaffFlagsCard(facilityId: establishmentId),
         const SizedBox(height: 20),
@@ -534,7 +566,7 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
     required String establishmentId,
     required Map<String, dynamic> facility,
     required Map<String, dynamic> details,
-    required VoidCallback onEdit,
+    required VoidCallback? onEdit,
   }) {
     final Map<dynamic, dynamic> rates =
         ((details['rates'] ?? details['ratesByType'])
@@ -629,15 +661,17 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
               ],
             ),
           ),
-          const SizedBox(height: 4),
-          Align(
-            alignment: Alignment.centerRight,
-            child: TextButton.icon(
-              onPressed: onEdit,
-              icon: const Icon(Icons.edit_outlined, size: 18),
-              label: const Text('Edit'),
+          if (onEdit != null) ...[
+            const SizedBox(height: 4),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton.icon(
+                onPressed: onEdit,
+                icon: const Icon(Icons.edit_outlined, size: 18),
+                label: const Text('Edit'),
+              ),
             ),
-          ),
+          ],
         ],
       ),
     );
@@ -673,6 +707,7 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
         return _GateActivityContent(
           facilityId: facilityId,
           ownerId: ownerId,
+          staffByFacility: _supervisor,
           staffFilter: _activityStaffId,
           onStaffFilterChanged: (String? staffId) =>
               setState(() => _activityStaffId = staffId),
@@ -729,6 +764,25 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
                   },
                 ),
                 const SizedBox(height: 12),
+                SpSegmentedControl<bool>(
+                  options: const <(bool, String)>[
+                    (false, 'Gate staff'),
+                    (true, 'Supervisor'),
+                  ],
+                  selected: _newStaffIsSupervisor,
+                  onChanged: (bool value) =>
+                      setState(() => _newStaffIsSupervisor = value),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  _newStaffIsSupervisor
+                      ? 'Runs the facility day to day: gate activity, staff '
+                            'on duty, cash handovers and flags. Not your '
+                            'prices, earnings, refunds or hiring.'
+                      : 'Scans tickets and logs walk-ins at the gate.',
+                  style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
+                ),
+                const SizedBox(height: 12),
                 SpPrimaryButton(
                   icon: Icons.person_add_alt_1_rounded,
                   label: _addingStaff ? 'Adding Staff...' : 'Add Staff',
@@ -744,12 +798,18 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
         );
         final Widget
         staffListCard = StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+          // A supervisor may read their facility's staff, not the owner's.
           stream: cachedStream(
-            'staff_$ownerId',
-            () => FirebaseFirestore.instance
-                .collection('staff_accounts')
-                .where('ownerId', isEqualTo: ownerId)
-                .snapshots(),
+            _supervisor ? 'staff_facility_$facilityId' : 'staff_$ownerId',
+            () => _supervisor
+                ? FirebaseFirestore.instance
+                      .collection('staff_accounts')
+                      .where('facilityId', isEqualTo: facilityId)
+                      .snapshots()
+                : FirebaseFirestore.instance
+                      .collection('staff_accounts')
+                      .where('ownerId', isEqualTo: ownerId)
+                      .snapshots(),
           ),
           builder:
               (
@@ -847,11 +907,13 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
               },
         );
 
-        const Widget header = SpPageHeader(
+        final Widget header = SpPageHeader(
           title: 'Staff',
-          subtitle:
-              'Manage staff accounts, the cash they hand over and their '
-              'duty log.',
+          subtitle: _supervisor
+              ? 'Who is on duty and the cash they hand over. The owner adds '
+                    'and removes staff.'
+              : 'Manage staff accounts, the cash they hand over and their '
+                    'duty log.',
         );
         // Cash handovers and the duty log, once the facility is known.
         final Widget cashCard = hasFacilityId
@@ -877,7 +939,13 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
               SpTabletColumns(
                 leftFlex: 2,
                 rightFlex: 3,
-                left: [addStaffCard, const SizedBox(height: 12), dutyCard],
+                left: [
+                  if (!_supervisor) ...[
+                    addStaffCard,
+                    const SizedBox(height: 12),
+                  ],
+                  dutyCard,
+                ],
                 right: [cashCard, const SizedBox(height: 12), staffListCard],
               ),
             ],
@@ -893,8 +961,7 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
             const SizedBox(height: 12),
             dutyCard,
             const SizedBox(height: 12),
-            addStaffCard,
-            const SizedBox(height: 12),
+            if (!_supervisor) ...[addStaffCard, const SizedBox(height: 12)],
             staffListCard,
           ],
         );
@@ -1125,7 +1192,9 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Text(
-                        'Gate Staff',
+                        data['role'] == 'supervisor'
+                            ? 'Supervisor'
+                            : 'Gate Staff',
                         style: TextStyle(
                           color: AppTheme.textMuted,
                           fontSize: 13,
@@ -1226,7 +1295,9 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
                   ],
                   const SizedBox(height: 20),
                   // Stacked full-width so labels never wrap on large text.
-                  if (!deactivated) ...[
+                  // A supervisor resets gate staff only, never a supervisor.
+                  if (!deactivated &&
+                      !(_supervisor && data['role'] == 'supervisor')) ...[
                     FilledButton.icon(
                       onPressed: resetting
                           ? null
@@ -1338,14 +1409,30 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                name,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: AppTheme.textDark,
-                  fontWeight: FontWeight.w700,
-                ),
+              Row(
+                children: [
+                  Flexible(
+                    child: Text(
+                      name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: AppTheme.textDark,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  if (doc.data()['role'] == 'supervisor') ...[
+                    const SizedBox(width: 6),
+                    SpChip(label: 'Supervisor', color: AppTheme.accent),
+                  ],
+                  // A supervisor sees their own record in the list.
+                  if (_staffUid(doc) ==
+                      FirebaseAuth.instance.currentUser?.uid) ...[
+                    const SizedBox(width: 6),
+                    SpChip(label: 'You', color: AppTheme.success),
+                  ],
+                ],
               ),
               const SizedBox(height: 2),
               Row(
@@ -1430,6 +1517,9 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
               child: CircularProgressIndicator(strokeWidth: 2),
             ),
           )
+        // Hiring and firing stay with the owner.
+        else if (_supervisor)
+          const SizedBox.shrink()
         else if (deactivated)
           TextButton(
             onPressed: () => _setStaffActive(doc.id, name, active: true),
@@ -1490,7 +1580,8 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
 
   Widget _buildProfileTab() {
     return SpProfileView(
-      roleLabel: 'Parking Owner',
+      roleLabel: _supervisor ? 'Supervisor' : 'Parking Owner',
+      allowDeleteAccount: !_supervisor,
       firstNameController: _profileFirstNameController,
       lastNameController: _profileLastNameController,
       email: _profileEmailController.text.isNotEmpty
@@ -1499,7 +1590,49 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
       onSignOut: _signOut,
       padding: const EdgeInsets.only(top: 8),
       wide: _isTablet,
-      extraCards: const <Widget>[SpAuditLogCard(admin: false)],
+      // Change History is the owner's check on everyone, supervisors too.
+      extraCards: _supervisor
+          ? const <Widget>[SpAnnouncementsCard(role: 'supervisor')]
+          : <Widget>[
+              if (FirebaseAuth.instance.currentUser?.uid case final String uid)
+                OwnerDailySummaryCard(ownerId: uid),
+              const SpAnnouncementsCard(role: 'Parking Owner'),
+              const SpAuditLogCard(admin: false),
+            ],
+    );
+  }
+
+  void _openGateScanner({bool scannerTab = false}) {
+    Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => StaffHomePage(initialTab: scannerTab ? 1 : 0),
+      ),
+    );
+  }
+
+  /// A supervisor covers the gate with the staff scanner.
+  Widget _buildSupervisorScannerTab() {
+    return ListView(
+      padding: const EdgeInsets.only(top: 8),
+      children: [
+        const SpPageHeader(
+          title: 'Scanner',
+          subtitle: 'Cover the gate: scan tickets and log walk-ins.',
+        ),
+        const SizedBox(height: 16),
+        SpSectionCard(
+          icon: Icons.qr_code_scanner_rounded,
+          title: 'Gate Scanner',
+          subtitle:
+              'Opens the same scanner your gate staff use. Your scans are '
+              'recorded under your name.',
+          child: SpPrimaryButton(
+            icon: Icons.qr_code_scanner_rounded,
+            label: 'Open Gate Scanner',
+            onPressed: _openGateScanner,
+          ),
+        ),
+      ],
     );
   }
 }

@@ -55,7 +55,7 @@ function extraHoursDenial(ticket, driverId) {
  * Prices [hours] at [rate]: { amountCentavos, ... } or throws an
  * HttpsError the driver can act on.
  */
-function priceExtraHours(hours, rate, paymentMethod) {
+function priceExtraHours(hours, rate, paymentMethod, commissionRate = undefined) {
   if (!Number.isInteger(hours) || hours < 1 || hours > MAX_HOURS) {
     throw new HttpsError("invalid-argument", `Add 1 to ${MAX_HOURS} hours.`);
   }
@@ -70,11 +70,12 @@ function priceExtraHours(hours, rate, paymentMethod) {
       `Online payments start at PHP 20. Add at least ${least} hour${least === 1 ? "" : "s"}.`,
     );
   }
-  const platformFeeCentavos = platformFeeCentavosFor(amountCentavos);
+  const platformFeeCentavos = platformFeeCentavosFor(amountCentavos, commissionRate);
   const estimatedProcessorFeeCentavos = estimateProcessorFeeCentavos(amountCentavos, paymentMethod);
   return {
     amountCentavos,
     amount: amountCentavos / 100,
+    ...(typeof commissionRate === "number" ? { commissionRate } : {}),
     platformFeeCentavos,
     estimatedProcessorFeeCentavos,
     netToOwnerCentavos: amountCentavos - platformFeeCentavos - estimatedProcessorFeeCentavos,
@@ -139,7 +140,9 @@ async function addTicketHours(request, secretKey) {
     throw new HttpsError("failed-precondition", "This facility is not accepting payments right now.");
   }
   const rate = extraHourRate(ticket, establishment?.ratesByType);
-  const priced = priceExtraHours(hours, rate, ticket.paymentMethod);
+  // Extra hours use the commission in force when they are bought.
+  const commissionRate = await require("./commission").loadCommissionRate(db);
+  const priced = priceExtraHours(hours, rate, ticket.paymentMethod, commissionRate);
 
   // The wallet number saved with the ticket's temporary QR.
   let payer = null;

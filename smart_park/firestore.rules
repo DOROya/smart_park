@@ -8,8 +8,9 @@ rules_version = '2';
 // - Parking owners manage their own establishment and staff, and read their
 //   own establishment's tickets, splits and gate logs.
 // - Staff (staff_accounts/{uid}) work one facility's gate.
-// - Admins (users/{uid}.role == 'admin', set by hand in the console) review
-//   establishments and read everything.
+// - Admins (users/{uid}.role == 'admin') review establishments and read
+//   everything. adminLevel 'super' may also give and take admin access,
+//   through Cloud Functions only (src/admin_roles.js).
 service cloud.firestore {
   match /databases/{database}/documents {
 
@@ -50,6 +51,16 @@ service cloud.firestore {
       return signedIn() && myRole() == 'admin';
     }
 
+    // Admins made before access levels existed have no adminLevel.
+    function isSuperAdmin() {
+      return isAdmin() && get(userPath(uid())).data.get('adminLevel', 'admin') == 'super';
+    }
+
+    // No admin decides a case about their own account.
+    function notAboutMe(data) {
+      return data.get('driverId', '') != uid() && data.get('ownerId', '') != uid();
+    }
+
     function isParkingOwner() {
       return isVerifiedOrStaff() && myRole() == 'Parking Owner';
     }
@@ -65,6 +76,19 @@ service cloud.firestore {
         exists(staffPath(uid())) &&
         get(staffPath(uid())).data.facilityId == establishmentId &&
         get(staffPath(uid())).data.get('active', true) != false;
+    }
+
+    // A supervisor is a staff record with role 'supervisor': they run the
+    // facility day to day (docs/supervisor-role.md). Prices, documents,
+    // earnings, refunds and hiring stay with the owner.
+    function isSupervisorOf(establishmentId) {
+      return isStaffOf(establishmentId) &&
+        get(staffPath(uid())).data.get('role', 'staff') == 'supervisor';
+    }
+
+    // Operations the owner or the facility's supervisor may do.
+    function canOperate(establishmentId) {
+      return isOwnerOf(establishmentId) || isSupervisorOf(establishmentId);
     }
 
     function establishmentPath(id) {
@@ -94,22 +118,32 @@ service cloud.firestore {
     // made by their owner; 'admin' never.
     function selfAssignableRole(role) {
       return role in ['Driver', 'Parking Owner'] ||
-        (role == 'staff' && exists(staffPath(uid())));
+        (role == 'staff' && exists(staffPath(uid())) &&
+          get(staffPath(uid())).data.get('role', 'staff') == 'staff') ||
+        (role == 'supervisor' && exists(staffPath(uid())) &&
+          get(staffPath(uid())).data.get('role', 'staff') == 'supervisor');
     }
 
+    // Admin access fields are written only by Cloud Functions.
     function roleFieldsUnchanged() {
-      return unchanged('role') && unchanged('Role') && unchanged('userRole');
+      return unchanged('role') && unchanged('Role') && unchanged('userRole') &&
+        unchanged('adminLevel') && unchanged('formerRole') &&
+        unchanged('adminSince') && unchanged('promotedBy');
     }
 
     function noRoleKeys(data) {
       return !data.keys().hasAny(['role', 'Role', 'userRole']);
     }
 
+    function noAdminKeys(data) {
+      return !data.keys().hasAny(['adminLevel', 'formerRole', 'adminSince', 'promotedBy']);
+    }
+
     function validNewRole(data) {
-      return noRoleKeys(data) ||
+      return noAdminKeys(data) && (noRoleKeys(data) ||
         (data.keys().hasAny(['role']) &&
          !data.keys().hasAny(['Role', 'userRole']) &&
-         selfAssignableRole(data.role));
+         selfAssignableRole(data.role)));
     }
 
     match /users/{userId} {
@@ -126,32 +160,46 @@ service cloud.firestore {
       // Pick a role once (when there is none yet); never change it after.
       allow update: if signedIn() && uid() == userId &&
         (roleFieldsUnchanged() ||
-         (noRoleKeys(resource.data) && validNewRole(request.resource.data)));
+         (noRoleKeys(resource.data) && noAdminKeys(resource.data) &&
+          validNewRole(request.resource.data)));
       allow delete: if false;
     }
 
     // ---------- staff ----------
 
     match /staff_accounts/{staffId} {
+      // A supervisor reads their facility's staff (duty log, cash
+      // handovers, password resets); the app queries them by facilityId.
       allow read: if isAdmin() ||
         (signedIn() &&
           (resource.data.ownerId == uid() ||
            resource.data.userId == uid() ||
-           resource.data.get('email', null) == request.auth.token.email));
-      // Keyed by the staff member's uid so isStaffOf() can find it.
+           resource.data.get('email', null) == request.auth.token.email)) ||
+        isSupervisorOf(resource.data.get('facilityId', ''));
+      // Keyed by the staff member's uid so isStaffOf() can find it. The
+      // role is set once: a supervisor can't become gate staff or back.
       allow create: if isParkingOwner() &&
         request.resource.data.ownerId == uid() &&
         request.resource.data.userId == staffId &&
+        request.resource.data.get('role', 'staff') in ['staff', 'supervisor'] &&
         isOwnerOf(request.resource.data.facilityId);
       allow update: if signedIn() &&
         resource.data.ownerId == uid() &&
         request.resource.data.ownerId == uid() &&
         unchanged('userId') &&
+        unchanged('role') &&
         isOwnerOf(request.resource.data.facilityId);
       allow delete: if isAdmin() || (signedIn() && resource.data.ownerId == uid());
     }
 
     // ---------- establishments ----------
+
+    // An optional number drivers can call (stored normalized by the app).
+    function contactNumberOk() {
+      let d = request.resource.data;
+      return !d.keys().hasAny(['contactNumber']) ||
+        (d.contactNumber is string && d.contactNumber.size() <= 20);
+    }
 
     match /establishments/{establishmentId} {
       allow read: if isVerifiedOrStaff();
@@ -159,11 +207,13 @@ service cloud.firestore {
       // owner's: these fields stay off the owner's record.
       allow create: if isParkingOwner() &&
         request.resource.data.ownerId == uid() &&
+        contactNumberOk() &&
         !request.resource.data.keys().hasAny(['rating', 'ratingCount']);
       allow update: if isAdmin() ||
         (signedIn() &&
           resource.data.ownerId == uid() &&
           request.resource.data.ownerId == uid() &&
+          contactNumberOk() &&
           unchanged('rating') &&
           unchanged('ratingCount'));
       allow delete: if isAdmin();
@@ -202,6 +252,26 @@ service cloud.firestore {
           d.gracePeriodMinutes >= 0 && d.gracePeriodMinutes <= 60);
     }
 
+    // A temporary closure ("Closed until"): it ends in the future, within
+    // 30 days, starts when it is set, and names who set it. Clearing it
+    // (closedUntil null) is always allowed.
+    function closureKeys() {
+      return ['closedUntil', 'closedReason', 'closedAt', 'closedBy'];
+    }
+
+    function closureOk() {
+      let d = request.resource.data;
+      return !d.diff(resource.data).affectedKeys().hasAny(closureKeys()) ||
+        d.get('closedUntil', null) == null ||
+        (d.closedUntil is timestamp &&
+          d.closedUntil > request.time &&
+          d.closedUntil <= request.time + duration.value(30, 'd') &&
+          d.get('closedAt', null) == request.time &&
+          d.get('closedReason', '') is string &&
+          d.get('closedReason', '').size() <= 120 &&
+          d.get('closedBy', uid()) == uid());
+    }
+
     match /establishment_details/{establishmentId} {
       allow read: if isVerifiedOrStaff();
       allow create: if isParkingOwner() &&
@@ -210,8 +280,14 @@ service cloud.firestore {
         request.resource.data.get('status', 'pending') == 'pending' &&
         request.resource.data.get('reviewedBy', null) == null &&
         !request.resource.data.keys().hasAny(['rating', 'ratingCount']);
+      // The facility's supervisor may only close or reopen it.
       allow update: if isAdmin() ||
-        (isOwnerOf(establishmentId) && ownerReviewFieldsOk() && gracePeriodOk());
+        (isOwnerOf(establishmentId) && ownerReviewFieldsOk() && gracePeriodOk() &&
+          closureOk()) ||
+        (isSupervisorOf(establishmentId) &&
+          request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['closedUntil', 'closedReason', 'closedAt', 'closedBy', 'updatedAt']) &&
+          closureOk());
       allow delete: if isAdmin();
     }
 
@@ -317,7 +393,7 @@ service cloud.firestore {
         walkInFeeOk(request.resource.data);
       allow update: if (isStaffOf(resource.data.establishmentID) &&
           staffLogUpdateOk()) ||
-        (isOwnerOf(resource.data.establishmentID) &&
+        (canOperate(resource.data.establishmentID) &&
           (ownerOvertimeUpdateOk() || ownerHandoverUpdateOk()));
       allow delete: if false;
     }
@@ -326,9 +402,11 @@ service cloud.firestore {
     // how many gate logs, received when and by whom. A receipt, never
     // edited; the staff member sees their own.
     match /cash_handovers/{handoverId} {
-      allow read: if isAdmin() || isOwnerOf(resource.data.establishmentId) ||
+      allow read: if isAdmin() || canOperate(resource.data.establishmentId) ||
         (signedIn() && resource.data.staffId == uid());
-      allow create: if isOwnerOf(request.resource.data.establishmentId) &&
+      // A supervisor never receives their own cash.
+      allow create: if canOperate(request.resource.data.establishmentId) &&
+        request.resource.data.staffId != uid() &&
         cashHandoverCreateOk(request.resource.data);
       allow update, delete: if false;
     }
@@ -352,7 +430,7 @@ service cloud.firestore {
     // Staff clock in and out of their shift; the owner sees who was on duty
     // when, and may close a shift someone forgot to end.
     match /staff_shifts/{shiftId} {
-      allow read: if isAdmin() || isOwnerOf(resource.data.establishmentId) ||
+      allow read: if isAdmin() || canOperate(resource.data.establishmentId) ||
         (signedIn() && resource.data.staffId == uid());
       // endedAt is stored as null while on duty, so "on duty now" is a query.
       allow create: if isStaffOf(request.resource.data.establishmentId) &&
@@ -368,7 +446,7 @@ service cloud.firestore {
         ((signedIn() && resource.data.staffId == uid() &&
             request.resource.data.diff(resource.data).affectedKeys()
               .hasOnly(['endedAt'])) ||
-          (isOwnerOf(resource.data.establishmentId) &&
+          (canOperate(resource.data.establishmentId) &&
             request.resource.data.diff(resource.data).affectedKeys()
               .hasOnly(['endedAt', 'endedBy']) &&
             request.resource.data.endedBy == uid()));
@@ -378,7 +456,7 @@ service cloud.firestore {
     match /StaffActivityLogs/{logId} {
       allow read: if isAdmin() ||
         (signedIn() && resource.data.staffID == uid()) ||
-        isOwnerOf(resource.data.establishmentID);
+        canOperate(resource.data.establishmentID);
       allow create: if isStaffOf(request.resource.data.establishmentID) &&
         request.resource.data.staffID == uid();
       allow update, delete: if false;
@@ -390,10 +468,13 @@ service cloud.firestore {
     // overtime and overtime cash collected; nothing about payment.
     // A facility an admin suspended or deactivated admits no one, so its
     // tickets can't be checked in (exits still go through).
+    // Nor does one closed temporarily, until its closedUntil passes.
     function facilityOpenForEntry(establishmentId) {
       let details = /databases/$(database)/documents/establishment_details/$(establishmentId);
       return !exists(details) ||
-        !(get(details).data.get('status', 'pending') in ['suspended', 'deactivated']);
+        (!(get(details).data.get('status', 'pending') in ['suspended', 'deactivated']) &&
+          (get(details).data.get('closedUntil', null) == null ||
+            get(details).data.closedUntil <= request.time));
     }
 
     function checkingIn() {
@@ -484,7 +565,7 @@ service cloud.firestore {
       allow delete: if false;
       allow update: if (isStaffOf(resource.data.establishmentId) &&
           staffTicketUpdateOk()) ||
-        (isOwnerOf(resource.data.establishmentId) && ownerOvertimeUpdateOk()) ||
+        (canOperate(resource.data.establishmentId) && ownerOvertimeUpdateOk()) ||
         driverPlateUpdateOk();
     }
 
@@ -516,17 +597,18 @@ service cloud.firestore {
     match /driver_reports/{reportId} {
       allow read: if isAdmin() ||
         (signedIn() && resource.data.reporterId == uid());
-      allow create: if isParkingOwner() &&
+      allow create: if ((isParkingOwner() &&
+          isOwnerOf(request.resource.data.establishmentId)) ||
+          isSupervisorOf(request.resource.data.establishmentId)) &&
         request.resource.data.reporterId == uid() &&
         request.resource.data.status == 'open' &&
         reasonsOk(request.resource.data) &&
-        isOwnerOf(request.resource.data.establishmentId) &&
         exists(transactionPath(request.resource.data.transactionId)) &&
         get(transactionPath(request.resource.data.transactionId)).data.establishmentId ==
           request.resource.data.establishmentId &&
         get(transactionPath(request.resource.data.transactionId)).data.driverId ==
           request.resource.data.driverId;
-      allow update: if isAdmin();
+      allow update: if isAdmin() && notAboutMe(resource.data);
       allow delete: if false;
     }
 
@@ -535,7 +617,7 @@ service cloud.firestore {
     // facility's and really be that driver's. Drivers never read flags.
     match /staff_incidents/{incidentId} {
       allow read: if isAdmin() ||
-        isOwnerOf(resource.data.establishmentId) ||
+        canOperate(resource.data.establishmentId) ||
         (signedIn() && resource.data.staffId == uid());
       allow create: if isStaffOf(request.resource.data.establishmentId) &&
         request.resource.data.staffId == uid() &&
@@ -546,10 +628,11 @@ service cloud.firestore {
           request.resource.data.establishmentId &&
         get(transactionPath(request.resource.data.transactionId)).data.driverId ==
           request.resource.data.driverId;
-      allow update: if isOwnerOf(resource.data.establishmentId) &&
+      allow update: if canOperate(resource.data.establishmentId) &&
         request.resource.data.status in ['reported', 'dismissed'] &&
         request.resource.data.diff(resource.data).affectedKeys()
-          .hasOnly(['status', 'handledAt']);
+          .hasOnly(['status', 'handledAt', 'handledBy']) &&
+        request.resource.data.get('handledBy', uid()) == uid();
       allow delete: if false;
     }
 
@@ -569,7 +652,8 @@ service cloud.firestore {
         get(transactionPath(request.resource.data.transactionId)).data.driverId == uid() &&
         get(transactionPath(request.resource.data.transactionId)).data.establishmentId ==
           request.resource.data.establishmentId;
-      allow update: if isAdmin();
+      // The admin who decides isn't the reporter either.
+      allow update: if isAdmin() && notAboutMe(resource.data);
       allow delete: if false;
     }
 
@@ -588,8 +672,9 @@ service cloud.firestore {
     match /driver_warnings/{warningId} {
       allow read: if isAdmin() ||
         (signedIn() && resource.data.driverId == uid());
-      allow create, delete: if isAdmin();
-      allow update: if isAdmin() ||
+      allow create: if isAdmin() && notAboutMe(request.resource.data);
+      allow delete: if isAdmin() && notAboutMe(resource.data);
+      allow update: if (isAdmin() && notAboutMe(resource.data)) ||
         (signedIn() && resource.data.driverId == uid() &&
           request.resource.data.diff(resource.data).affectedKeys()
             .hasOnly(['acknowledgedAt', 'contestMessage', 'contestedAt']) &&
@@ -657,8 +742,8 @@ service cloud.firestore {
       // screen can tell whether to ask for one.
       allow get: if signedIn() && (resource == null ||
         resource.data.driverId == uid() ||
-        isOwnerOf(resource.data.establishmentId) || isAdmin());
-      allow list: if isAdmin() || isOwnerOf(resource.data.establishmentId) ||
+        canOperate(resource.data.establishmentId) || isAdmin());
+      allow list: if isAdmin() || canOperate(resource.data.establishmentId) ||
         (signedIn() && resource.data.driverId == uid());
       allow create: if ratingFieldsOk(ticketId) &&
         request.resource.data.createdAt == request.time;
@@ -688,6 +773,54 @@ service cloud.firestore {
     // the exportMyData function). Server only.
     match /data_exports/{userId} {
       allow read, write: if false;
+    }
+
+    // ---------- platform settings and announcements ----------
+
+    // The commission rate and any scheduled change (src/commission.js).
+    // Everyone signed in sees it; only the server writes it.
+    match /settings/{doc} {
+      allow read: if signedIn();
+      allow write: if false;
+    }
+
+    // Which announcements a role reads: its own audience, and 'all'.
+    function myAudience() {
+      let role = myRole();
+      return role == 'Parking Owner' ? 'owners'
+        : role == 'Driver' ? 'drivers'
+        : role in ['staff', 'supervisor'] ? 'staff'
+        : '';
+    }
+
+    // Platform notices, e.g. a commission change. Written by the server.
+    match /announcements/{announcementId} {
+      allow read: if isAdmin() ||
+        (signedIn() &&
+          (resource.data.audience == 'all' ||
+            resource.data.audience == myAudience()));
+      allow write: if false;
+    }
+
+    // When a user saw an announcement, and (for a commission change) when
+    // they acknowledged it. Only that user writes their own, and only these
+    // fields. Admins count acknowledgements.
+    match /users/{userId}/announcement_reads/{announcementId} {
+      allow read: if isAdmin() || (signedIn() && uid() == userId);
+      allow create, update: if signedIn() && uid() == userId &&
+        request.resource.data.keys().hasOnly([
+          'announcementId', 'seenAt', 'acknowledgedAt', 'acknowledged'
+        ]) &&
+        request.resource.data.announcementId == announcementId &&
+        request.resource.data.get('seenAt', request.time) is timestamp &&
+        request.resource.data.get('acknowledgedAt', request.time) is timestamp &&
+        request.resource.data.get('acknowledged', true) == true;
+      allow delete: if false;
+    }
+
+    // The admin's acknowledgement count, across every user.
+    match /{path=**}/announcement_reads/{announcementId} {
+      allow read: if isAdmin();
     }
 
     // Anything not listed above is closed.

@@ -1,6 +1,6 @@
 # Supervisor role: implementation plan
 
-**Status:** planned, not built. Written November 23, 2026 for a later implementation session.
+**Status:** built 2026-11-23 (the supervisor uses the owner screens in a supervisor mode, see `SupervisorScope`). Still to do: paper updates (section 7).
 **Goal:** an on-site supervisor gets their own login to run the facility day to day, instead of borrowing the
 owner account. The owner keeps pricing, legal documents, earnings, refunds and hiring. Every supervisor action is
 logged under the supervisor's own name.

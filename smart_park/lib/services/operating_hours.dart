@@ -9,6 +9,8 @@ class OperatingHours {
     this.openMinutes,
     this.closeMinutes,
     this.allDay = false,
+    this.closedFrom,
+    this.closedUntil,
   });
 
   const OperatingHours.allDay() : this(allDay: true);
@@ -17,6 +19,34 @@ class OperatingHours {
   final int? openMinutes;
   final int? closeMinutes;
   final bool allDay;
+
+  /// A temporary closure on top of the weekly hours (a holiday, repairs):
+  /// closed from [closedFrom] until [closedUntil]. Overtime doesn't run and
+  /// the gate admits no one during it. Null when there is none.
+  final DateTime? closedFrom;
+  final DateTime? closedUntil;
+
+  /// These hours with a temporary closure from [from] until [until].
+  OperatingHours withClosure(DateTime? from, DateTime? until) => OperatingHours(
+    openMinutes: openMinutes,
+    closeMinutes: closeMinutes,
+    allDay: allDay,
+    closedFrom: until == null ? null : from,
+    closedUntil: until,
+  );
+
+  bool get hasClosure => closedUntil != null;
+
+  /// Whether the temporary closure covers [time].
+  bool isTemporarilyClosedAt(DateTime time) {
+    final DateTime? until = closedUntil;
+    if (until == null || !time.isBefore(until)) return false;
+    final DateTime? from = closedFrom;
+    return from == null || !time.isBefore(from);
+  }
+
+  /// Whether the weekly hours ever close (not all day, and set).
+  bool get regularHoursClose => !allDay && isSet && openMinutes != closeMinutes;
 
   bool get isSet => allDay || (openMinutes != null && closeMinutes != null);
 
@@ -63,6 +93,12 @@ class OperatingHours {
   }
 
   bool isOpenAt(DateTime time) {
+    if (isTemporarilyClosedAt(time)) return false;
+    return isRegularlyOpenAt(time);
+  }
+
+  /// Open by the weekly hours alone, ignoring a temporary closure.
+  bool isRegularlyOpenAt(DateTime time) {
     if (allDay) return true;
     if (!isSet) return false;
     final int now = time.hour * 60 + time.minute;

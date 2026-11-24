@@ -10,11 +10,15 @@ const { setGlobalOptions } = require("firebase-functions/v2");
 const { defineSecret, defineBoolean } = require("firebase-functions/params");
 
 const audit = require("./src/audit");
+const adminRoles = require("./src/admin_roles");
 const dataExport = require("./src/data_export");
 const paymentHealth = require("./src/payment_health");
 const privacyCleanup = require("./src/privacy_cleanup");
 
 const alerts = require("./src/alerts");
+const closures = require("./src/closures");
+const commission = require("./src/commission");
+const ownerSummary = require("./src/owner_summary");
 const authEmails = require("./src/auth_emails");
 const extraHours = require("./src/extra_hours");
 const ratings = require("./src/ratings");
@@ -117,6 +121,8 @@ exports.reconcilePendingCheckouts = onSchedule(
     await checkout.reconcilePendingCheckouts(PAYMONGO_SECRET_KEY.value());
     // Same run: mark sent refunds refunded once PayMongo confirms them.
     await refunds.confirmSentRefunds(PAYMONGO_SECRET_KEY.value());
+    // And tell admins about stuck payments (at most every 6 hours).
+    await paymentHealth.alertAdminsIfNeeded();
   },
 );
 
@@ -130,6 +136,8 @@ exports.onFacilityStatusChange = onDocumentWritten(
     await permits.notifyComplianceNotice(event.params.establishmentId, before, after);
     // Applications and review requests to admins; decisions to the owner.
     await alerts.onFacilityChange(event.params.establishmentId, before, after);
+    // A temporary closure reaches drivers holding its tickets.
+    await closures.onClosureChange(event.params.establishmentId, before, after);
     await refunds.onFacilityStatusChange(
       event.params.establishmentId,
       before,
@@ -159,6 +167,8 @@ exports.refundLongSuspensions = onSchedule(
     // And delete business documents of facilities rejected or deactivated
     // 90 days ago (src/privacy_cleanup.js, as the Privacy Notice says).
     await privacyCleanup.deleteStaleBusinessDocuments();
+    // A scheduled commission change whose date has come becomes the rate.
+    await commission.applyPendingCommission();
   },
 );
 
@@ -183,7 +193,17 @@ exports.alertStaffFlag = onDocumentCreated("staff_incidents/{incidentId}", (even
 // Push reminders before parked drivers' paid time runs out (src/reminders.js).
 exports.sendParkingReminders = onSchedule(
   { schedule: "every 5 minutes", timeZone: "Asia/Manila" },
-  () => reminders.sendParkingReminders(),
+  async () => {
+    await reminders.sendParkingReminders();
+    // Also notices a 15-minute payment check that stopped running.
+    await paymentHealth.alertAdminsIfNeeded();
+  },
+);
+
+// Each owner's end-of-day summary, at the hour they pick (src/owner_summary.js).
+exports.sendOwnerDailySummaries = onSchedule(
+  { schedule: "0 * * * *", timeZone: "Asia/Manila" },
+  () => ownerSummary.sendOwnerDailySummaries(),
 );
 
 exports.requestRefund = callable({}, (request) => refunds.requestRefund(request));
@@ -292,6 +312,55 @@ exports.exportMyData = callable(
   ),
 );
 
+// Super admins give and take admin access (see src/admin_roles.js).
+for (const [name, handler, action] of [
+  ["promoteToAdmin", adminRoles.promoteToAdmin, "admin.promoted"],
+  ["setAdminLevel", adminRoles.setAdminLevel, "admin.level_changed"],
+  ["removeAdminAccess", adminRoles.removeAdminAccess, "admin.removed"],
+]) {
+  exports[name] = callable(
+    {},
+    audit.audited(handler, (request, result, db) =>
+      adminRoles.auditEntry(db, action, request, result),
+    ),
+  );
+}
+
+// Super admins schedule (or call off) a commission change with notice to
+// owners (see src/commission.js).
+exports.scheduleCommissionChange = callable(
+  {},
+  audit.audited(
+    (request) => commission.scheduleCommissionChange(request),
+    (request, result) => ({
+      action: "platform.commission_scheduled",
+      summary:
+        `Scheduled the commission to change from ${commission.percent(result.oldRate)} ` +
+        `to ${commission.percent(result.newRate)} on ${new Date(result.effectiveAt).toISOString().slice(0, 10)}`,
+      targetType: "platform",
+      targetId: commission.PLATFORM_DOC,
+      ownerId: "",
+      changes: { pendingRate: { from: result.oldRate, to: result.newRate } },
+    }),
+  ),
+);
+
+exports.cancelCommissionChange = callable(
+  {},
+  audit.audited(
+    (request) => commission.cancelCommissionChange(request),
+    (request, result) => ({
+      action: "platform.commission_cancelled",
+      summary: `Called off the commission change to ${commission.percent(result.cancelledRate)}`,
+      targetType: "platform",
+      targetId: commission.PLATFORM_DOC,
+      ownerId: "",
+    }),
+  ),
+);
+
+exports.getAdminCandidate = callable({}, (request) => adminRoles.getAdminCandidate(request));
+
 // Admin dashboard: payments confirmed in the app vs rescued by the 15-minute
 // check, unfinished gate payments, stuck payments and refunds
 // (see src/payment_health.js).
@@ -305,6 +374,10 @@ for (const [collection, name] of [
   ["driver_warnings", "auditDriverWarnings"],
   ["driver_reports", "auditDriverReports"],
   ["facility_reports", "auditFacilityReports"],
+  // Owner and supervisor operations: overtime status, cash, shifts.
+  ["activity_logs", "auditGateLogs"],
+  ["cash_handovers", "auditCashHandovers"],
+  ["staff_shifts", "auditStaffShifts"],
 ]) {
   exports[name] = onDocumentWrittenWithAuthContext(`${collection}/{docId}`, (event) =>
     audit.onWatchedWrite(collection, event),

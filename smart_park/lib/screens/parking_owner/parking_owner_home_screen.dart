@@ -13,9 +13,11 @@ import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 
 import '../../models/facility_registration_data.dart';
 import '../../services/activity_export.dart';
+import '../../services/app_shortcuts.dart';
 import '../../services/error_reporter.dart';
 import '../../services/local_save.dart'
     show saveFileToDevice, kDownloadsFolderLabel;
+import '../../services/facility_closure.dart' show hoursWithClosure;
 import '../../services/operating_hours.dart';
 import '../../services/parking_push.dart';
 import '../../services/facility_status.dart'
@@ -45,6 +47,7 @@ import '../../utils/staff_credentials.dart';
 import '../../widgets/smartpark_ui.dart';
 import '../../widgets/sp_vehicle_type.dart';
 import '../../widgets/sp_audit_log.dart';
+import '../../widgets/sp_announcements.dart';
 import '../../widgets/sp_refunds_section.dart';
 import '../../widgets/sp_activity_details.dart';
 import '../../widgets/sp_activity_search.dart';
@@ -56,21 +59,47 @@ import '../../widgets/sp_overtime.dart';
 import '../../widgets/sp_profile_view.dart';
 import '../auth/sign_in_screen.dart';
 import 'widgets/owner_cash_handover_card.dart';
+import 'widgets/owner_closure_card.dart';
+import 'widgets/owner_daily_summary_card.dart';
 import 'widgets/owner_duty_log_card.dart';
 import 'widgets/owner_ratings_card.dart';
 import 'widgets/owner_walk_in_cash_row.dart';
 import 'widgets/facility_registration_dialog.dart';
 import 'widgets/facility_review_status_banner.dart';
+import '../staff/staff_home_page.dart';
 import 'widgets/parking_trends_card.dart';
 
 part 'parking_owner_home_fragments.dart';
 part 'parking_owner_commissions.dart';
 part 'parking_owner_gate_activity.dart';
 
+/// The facility a supervisor runs for its owner (docs/supervisor-role.md).
+class SupervisorScope {
+  const SupervisorScope({
+    required this.facilityId,
+    required this.ownerId,
+    required this.name,
+  });
+
+  final String facilityId;
+
+  /// The facility's owner, who keeps prices, earnings and hiring.
+  final String ownerId;
+  final String name;
+}
+
 class ParkingOwnerHomePage extends StatefulWidget {
-  const ParkingOwnerHomePage({super.key, this.role = 'parking owner'});
+  const ParkingOwnerHomePage({
+    super.key,
+    this.role = 'parking owner',
+    this.supervisor,
+  });
 
   final String role;
+
+  /// Set for a supervisor: the same screens, without the owner-only parts
+  /// (Reports, facility editing, hiring). The security rules enforce it.
+  final SupervisorScope? supervisor;
 
   @override
   State<ParkingOwnerHomePage> createState() => _ParkingOwnerHomePageState();
@@ -84,6 +113,23 @@ class _ParkingOwnerHomePageState extends State<ParkingOwnerHomePage>
 
   int _selectedIndex = 0;
   bool _addingStaff = false;
+
+  /// The Add Staff form's choice: gate staff or a supervisor.
+  bool _newStaffIsSupervisor = false;
+
+  bool get _supervisor => widget.supervisor != null;
+
+  AnnouncementWatcher? _announcements;
+
+  /// "Open scanner" from the app icon, for a supervisor.
+  void _onShortcut() {
+    if (!mounted || pendingShortcut.value != kOpenScannerShortcut) return;
+    // The scanner is already open on top: it switches to its own tab.
+    if (!(ModalRoute.of(context)?.isCurrent ?? true)) return;
+    pendingShortcut.value = null;
+    _openGateScanner(scannerTab: true);
+  }
+
   bool _railExtended = false;
 
   /// Staff uid the Activity tab is filtered to; set from the Staff tab.
@@ -126,6 +172,16 @@ class _ParkingOwnerHomePageState extends State<ParkingOwnerHomePage>
           // A decision or a staff flag: both are on the Facility tab.
           onOpen: (Map<String, dynamic> data) {
             if (!mounted) return;
+            if (data['kind'] == 'announcement') {
+              unawaited(_announcements?.check());
+              return;
+            }
+            // The end-of-day summary: Staff when cash or a shift needs
+            // action, else Reports.
+            if (data['kind'] == 'owner_daily_summary') {
+              setState(() => _selectedIndex = data['tab'] == 'staff' ? 1 : 3);
+              return;
+            }
             if (data['kind'] == 'owner_facility_status' ||
                 data['kind'] == 'owner_staff_flag') {
               setState(() => _selectedIndex = 0);
@@ -134,12 +190,31 @@ class _ParkingOwnerHomePageState extends State<ParkingOwnerHomePage>
         ),
       );
     }
-    unawaited(_migrateLegacyStaffDocs());
-    unawaited(_migrateBusinessDocumentUrls());
+    // Platform notices (a commission change goes to owners), never over
+    // the gate scanner a supervisor opened.
+    _announcements = AnnouncementWatcher(
+      () => context,
+      _supervisor ? 'supervisor' : 'Parking Owner',
+      isCurrent: () => mounted && (ModalRoute.of(context)?.isCurrent ?? true),
+    );
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => _announcements?.start(),
+    );
+    if (_supervisor) {
+      pendingShortcut.addListener(_onShortcut);
+      WidgetsBinding.instance.addPostFrameCallback((_) => _onShortcut());
+    }
+    // Owner-only housekeeping on records a supervisor can't write.
+    if (!_supervisor) {
+      unawaited(_migrateLegacyStaffDocs());
+      unawaited(_migrateBusinessDocumentUrls());
+    }
   }
 
   @override
   void dispose() {
+    pendingShortcut.removeListener(_onShortcut);
+    _announcements?.dispose();
     _staffNameController.dispose();
     _profileFirstNameController.dispose();
     _profileLastNameController.dispose();
@@ -443,7 +518,7 @@ class _ParkingOwnerHomePageState extends State<ParkingOwnerHomePage>
             'name': staffName,
             'username': username,
             'email': staffUsernameToAuthEmail(username),
-            'role': 'staff',
+            'role': _newStaffIsSupervisor ? 'supervisor' : 'staff',
             'isOnline': false,
             'createdAt': FieldValue.serverTimestamp(),
             'updatedAt': FieldValue.serverTimestamp(),
@@ -799,10 +874,21 @@ class _ParkingOwnerHomePageState extends State<ParkingOwnerHomePage>
           );
         }
 
-        final Map<String, dynamic> ownerData = snapshot.data!.data()!;
+        final SupervisorScope? supervisor = widget.supervisor;
+        // A supervisor works on the owner's facility, under the owner's id.
+        final Map<String, dynamic> ownerData = supervisor == null
+            ? snapshot.data!.data()!
+            : <String, dynamic>{
+                // Staff profiles have no name fields; the staff record does.
+                'firstName': supervisor.name.split(' ').first,
+                'lastName': supervisor.name.split(' ').skip(1).join(' '),
+                ...snapshot.data!.data()!,
+                'establishmentId': supervisor.facilityId,
+              };
         final String role = ((ownerData['role'] as String?) ?? widget.role)
             .toLowerCase();
-        final String ownerId = FirebaseAuth.instance.currentUser!.uid;
+        final String ownerId =
+            supervisor?.ownerId ?? FirebaseAuth.instance.currentUser!.uid;
 
         _seedProfileControllers(ownerData);
 
@@ -901,7 +987,20 @@ class _ParkingOwnerHomePageState extends State<ParkingOwnerHomePage>
     );
   }
 
-  static const List<(IconData, IconData, String)> _navItems =
+  List<(IconData, IconData, String)> get _navItems =>
+      _supervisor ? _supervisorNavItems : _ownerNavItems;
+
+  /// Same order as the owner's, with the gate scanner in place of Reports.
+  static const List<(IconData, IconData, String)>
+  _supervisorNavItems = <(IconData, IconData, String)>[
+    (Icons.apartment_outlined, Icons.apartment_rounded, 'Facility'),
+    (Icons.badge_outlined, Icons.badge_rounded, 'Staff'),
+    (Icons.directions_car_outlined, Icons.directions_car_rounded, 'Activity'),
+    (Icons.qr_code_scanner_outlined, Icons.qr_code_scanner_rounded, 'Scanner'),
+    (Icons.person_outlined, Icons.person_rounded, 'Profile'),
+  ];
+
+  static const List<(IconData, IconData, String)> _ownerNavItems =
       <(IconData, IconData, String)>[
         (Icons.apartment_outlined, Icons.apartment_rounded, 'Facility'),
         (Icons.badge_outlined, Icons.badge_rounded, 'Staff'),

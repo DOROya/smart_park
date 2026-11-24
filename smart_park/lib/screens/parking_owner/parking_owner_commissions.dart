@@ -237,7 +237,10 @@ class _CommissionsListContentState extends State<_CommissionsListContent>
             ((data['grossAmountCentavos'] as num?) ?? (amount * 100)).round();
         final int feeCentavos =
             ((data['platformFeeCentavos'] as num?) ??
-                    platformFeeCentavosFor(grossCentavos))
+                    platformFeeCentavosFor(
+                      grossCentavos,
+                      rate: saleCommissionRate(data),
+                    ))
                 .round();
         final int processorCentavos =
             ((data['estimatedProcessorFeeCentavos'] as num?) ??
@@ -431,8 +434,15 @@ class _CommissionsListContentState extends State<_CommissionsListContent>
             icon: Icons.percent_rounded,
             color: spInsideColor,
             label: 'Commission',
-            caption:
-                '${(kPlatformFeeRate * 100).toStringAsFixed(0)}% SmartPark fee',
+            // The rate now, and a scheduled change with its date.
+            caption: () {
+              final PlatformCommissionSettings c = platformCommission.value;
+              final String pending = c.hasPending
+                  ? ' · ${commissionPercent(c.pendingRate!)} from '
+                        '${spFormatDate(c.pendingEffectiveAt!)}'
+                  : '';
+              return 'Rate: ${commissionPercent(c.currentRate)}$pending';
+            }(),
             value: formatSalesPeso(totals.commissionCentavos),
             trend: trend(totals.commissionCentavos, prior.commissionCentavos),
             trendRatio: salesChange(

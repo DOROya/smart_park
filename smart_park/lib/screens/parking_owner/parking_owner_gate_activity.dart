@@ -52,10 +52,14 @@ class _GateActivityContent extends StatefulWidget {
     required this.ownerId,
     required this.staffFilter,
     required this.onStaffFilterChanged,
+    this.staffByFacility = false,
   });
 
   final String facilityId;
   final String ownerId;
+
+  /// Look staff names up by facility (a supervisor) instead of by owner.
+  final bool staffByFacility;
 
   /// Staff uid to show scans for; null shows everyone's.
   final String? staffFilter;
@@ -197,12 +201,20 @@ class _GateActivityContentState extends State<_GateActivityContent>
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      // A supervisor may read their facility's staff, not the owner's.
       stream: cachedStream(
-        'staff_${widget.ownerId}',
-        () => FirebaseFirestore.instance
-            .collection('staff_accounts')
-            .where('ownerId', isEqualTo: widget.ownerId)
-            .snapshots(),
+        widget.staffByFacility
+            ? 'staff_facility_${widget.facilityId}'
+            : 'staff_${widget.ownerId}',
+        () => widget.staffByFacility
+            ? FirebaseFirestore.instance
+                  .collection('staff_accounts')
+                  .where('facilityId', isEqualTo: widget.facilityId)
+                  .snapshots()
+            : FirebaseFirestore.instance
+                  .collection('staff_accounts')
+                  .where('ownerId', isEqualTo: widget.ownerId)
+                  .snapshots(),
       ),
       builder: (context, staffSnapshot) {
         // Null until loaded, so nobody is flagged as removed too early.

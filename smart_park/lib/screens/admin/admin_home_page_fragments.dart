@@ -535,12 +535,24 @@ extension _AdminHomePageFragments on _AdminHomePageState {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  'Administrator',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w700,
-                    color: AppTheme.textDark,
+                StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+                  stream: cachedStream(
+                    'my_admin_profile',
+                    () => FirebaseFirestore.instance
+                        .collection('users')
+                        .doc(FirebaseAuth.instance.currentUser?.uid ?? '-')
+                        .snapshots(),
                   ),
+                  builder: (BuildContext context, snap) {
+                    final AccessLevel level = accessLevelOf(snap.data?.data());
+                    return Text(
+                      level == AccessLevel.superAdmin ? 'Super admin' : 'Admin',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        color: AppTheme.textDark,
+                      ),
+                    );
+                  },
                 ),
                 if (email.isNotEmpty)
                   Text(
@@ -641,6 +653,8 @@ extension _AdminHomePageFragments on _AdminHomePageState {
             children: [
               accountCard,
               const SizedBox(height: 16),
+              const AdminCommissionCard(),
+              const SizedBox(height: 16),
               const SpAuditLogCard(admin: true),
               const SizedBox(height: 16),
               statsCard,
@@ -658,6 +672,8 @@ extension _AdminHomePageFragments on _AdminHomePageState {
       header,
       const SizedBox(height: 16),
       accountCard,
+      const SizedBox(height: 12),
+      const AdminCommissionCard(),
       const SizedBox(height: 12),
       const SpAuditLogCard(admin: true),
       const SizedBox(height: 12),

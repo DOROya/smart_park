@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../widgets/sp_read_plate.dart';
 import '../../services/error_reporter.dart';
 import '../../services/gate_cash.dart' show kMaxWalkInFee;
 import '../../services/gate_scan_service.dart' show settleGateWrite;
@@ -27,7 +28,17 @@ class WalkInPanel extends StatefulWidget {
     this.staffName = '',
     this.entryClosed = false,
     this.unsent,
+    this.pauseScanner,
+    this.resumeScanner,
+    this.knownPlates,
   });
+
+  /// The QR scanner gives up the camera while a plate photo is taken.
+  final Future<void> Function()? pauseScanner;
+  final Future<void> Function()? resumeScanner;
+
+  /// Plates inside now, ranked first when a photo is read.
+  final Future<List<String>> Function()? knownPlates;
 
   /// Where an exit recorded without a connection is followed until it is
   /// on the server.
@@ -364,7 +375,7 @@ class _WalkInPanelState extends State<WalkInPanel> {
         children: [
           if (widget.entryClosed) ...[
             Text(
-              'New walk-ins are closed while this facility is pulled. '
+              'New walk-ins are closed while this facility is closed. '
               'Walk-ins already inside can still exit below.',
               style: TextStyle(
                 fontSize: 12,
@@ -384,6 +395,15 @@ class _WalkInPanelState extends State<WalkInPanel> {
               filled: true,
               fillColor: AppTheme.surfaceAlt,
               prefixIcon: const Icon(Icons.pin_outlined, size: 20),
+              suffixIcon: widget.entryClosed
+                  ? null
+                  : SpReadPlateButton(
+                      onPlate: (String plate) =>
+                          setState(() => _plateController.text = plate),
+                      knownPlates: widget.knownPlates,
+                      pauseScanner: widget.pauseScanner,
+                      resumeScanner: widget.resumeScanner,
+                    ),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(AppTheme.radius),
                 borderSide: BorderSide(color: AppTheme.border),

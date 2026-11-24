@@ -58,13 +58,23 @@ function generateStaffPassword(length = 10, pick = randomInt) {
 
 /**
  * Why [callerUid] may not reset the password on this staff record, as
- * [code, message], or null when they may: only the owner who created the
- * staff member, and only while the account is active.
+ * [code, message], or null when they may: the owner who created the staff
+ * member, or an active supervisor of the same facility for gate staff
+ * (never another supervisor), and only while the account is active.
+ * [caller] is the caller's own staff record, if they have one.
  */
-function staffResetDenial(callerUid, record) {
+function staffResetDenial(callerUid, record, caller = null) {
   if (!record) return ["not-found", "Staff member not found."];
-  if (!callerUid || record.ownerId !== callerUid) {
+  const supervisor =
+    caller?.role === "supervisor" &&
+    isActive(caller) &&
+    Boolean(caller.facilityId) &&
+    caller.facilityId === record.facilityId;
+  if (!callerUid || (record.ownerId !== callerUid && !supervisor)) {
     return ["permission-denied", "You can only reset your own staff."];
+  }
+  if (record.ownerId !== callerUid && (record.role === "supervisor" || callerUid === record.userId)) {
+    return ["permission-denied", "Only the owner can reset a supervisor's password."];
   }
   if (!isActive(record)) {
     return [
@@ -92,7 +102,8 @@ async function resetStaffPassword(request) {
 
   const ref = getFirestore().collection("staff_accounts").doc(staffId);
   const record = (await ref.get()).data();
-  const denial = staffResetDenial(request.auth.uid, record);
+  const caller = (await getFirestore().collection("staff_accounts").doc(request.auth.uid).get()).data();
+  const denial = staffResetDenial(request.auth.uid, record, caller);
   if (denial) throw new HttpsError(denial[0], denial[1]);
 
   const uid = String(record.userId || staffId).trim();

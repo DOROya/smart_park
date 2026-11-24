@@ -5,6 +5,8 @@ import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
+import '../../services/facility_closure.dart';
+import '../../widgets/sp_facility_contact.dart';
 import '../../services/error_reporter.dart';
 import '../../services/operating_hours.dart';
 import '../../services/parking_checkout_service.dart';
@@ -253,7 +255,12 @@ class _EstablishmentDetailPageState extends State<EstablishmentDetailPage>
                       ),
                       const SizedBox(width: 5),
                       Text(
-                        openNow ? 'Open now' : 'Closed',
+                        openNow
+                            ? 'Open now'
+                            : DriverEstablishmentService.closedUntilLabel(
+                                    data,
+                                  ) ??
+                                  'Closed',
                         style: TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.w700,
@@ -373,8 +380,13 @@ class _EstablishmentDetailPageState extends State<EstablishmentDetailPage>
 
   Widget _buildHoursRow(Map<String, dynamic> data) {
     final OperatingHours hours = OperatingHours.parse(data);
-    final bool open = hours.isOpenAt(DateTime.now());
-    final String detail = !hours.isSet || hours.allDay
+    final bool open = DriverEstablishmentService.isOpenNow(data);
+    // Closed for a while: say until when, and why.
+    final TemporaryClosure? closure = TemporaryClosure.of(data);
+    final String detail = closure != null && closure.isActiveAt(DateTime.now())
+        ? 'Closed until ${temporaryClosureUntilLabel(closure)}'
+              '${closure.reason.isEmpty ? '' : ' · ${closure.reason}'}'
+        : !hours.isSet || hours.allDay
         ? ''
         : open
         ? 'Closes at ${OperatingHours.format12h(hours.closeMinutes!)}'
@@ -453,6 +465,13 @@ class _EstablishmentDetailPageState extends State<EstablishmentDetailPage>
               ),
             ],
           ),
+          if (((data['contactNumber'] as String?) ?? '').trim().isNotEmpty) ...[
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 10),
+              child: Divider(height: 1, color: AppTheme.border),
+            ),
+            SpFacilityContactRow(stored: data['contactNumber'] as String),
+          ],
         ],
       ),
     );

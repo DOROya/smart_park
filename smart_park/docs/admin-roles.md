@@ -1,6 +1,6 @@
 # Admin roles: super admin and admin, managed in the app
 
-**Status:** planned, not built. Written November 23, 2026 for a later implementation session.
+**Status:** built 2026-11-23. Still to do: add `adminLevel: "super"` to the first super admin in the console (README > Operations); paper updates (section 7).
 **Goal:** stop editing the database by hand to add administrators. The **super admin** promotes regular users to
 admin (or super admin) in the app and can remove admin access. A normal **admin** sees who is an admin but can't
 change anyone's access. Everything is checked on the server and recorded in the audit log.

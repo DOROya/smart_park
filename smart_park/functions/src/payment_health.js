@@ -249,7 +249,75 @@ async function getPaymentHealth(request) {
   });
 }
 
+/** Admins are pushed about payment problems at most this often. */
+const ALERT_EVERY_MS = 6 * 60 * 60 * 1000;
+
+/**
+ * The problems worth waking an admin for, from a summary: payments stuck
+ * in progress and an overdue 15-minute check. (Refund retries are daily
+ * and shown on the dashboard, not pushed.)
+ */
+function alertProblems(summary) {
+  const out = [];
+  if (summary.stuck > 0) {
+    out.push(`${summary.stuck} payment${summary.stuck === 1 ? " is" : "s are"} stuck in progress.`);
+  }
+  if (summary.reconcile?.overdue) {
+    out.push(
+      summary.reconcile.lastRunMinutesAgo === null
+        ? "The 15-minute payment check has not run yet."
+        : `The 15-minute payment check last ran ${summary.reconcile.lastRunMinutesAgo} minutes ago.`,
+    );
+  }
+  return out;
+}
+
+/** Whether an alert may go out now, given the last one at [lastAlertMs]. */
+function alertDue(problems, lastAlertMs, nowMs) {
+  return problems.length > 0 && (lastAlertMs === null || nowMs - lastAlertMs >= ALERT_EVERY_MS);
+}
+
+/**
+ * Pushes admins when payments are stuck or the 15-minute check is overdue,
+ * once every 6 hours at most (stats/reconcile.lastAlertAt). Run from the
+ * reconcile job and from the 5-minute reminder job, so a stopped reconcile
+ * job is noticed too. Best effort.
+ */
+async function alertAdminsIfNeeded(db = getFirestore(), nowMs = Date.now()) {
+  try {
+    const [pending, lastRun] = await Promise.all([
+      db.collection("parking_checkouts").where("status", "==", "pending").limit(500).get(),
+      db.collection("stats").doc("reconcile").get(),
+    ]);
+    const summary = summarizePaymentHealth({
+      pending: pending.docs.map((d) => d.data()),
+      lastRun: lastRun.data() || null,
+      nowMs,
+      periodDays: 1,
+    });
+    const problems = alertProblems(summary);
+    if (!alertDue(problems, millis(lastRun.data()?.lastAlertAt), nowMs)) return 0;
+    await db.collection("stats").doc("reconcile").set(
+      { lastAlertAt: Timestamp.fromMillis(nowMs), lastAlertProblems: problems },
+      { merge: true },
+    );
+    const { notifyAdmins } = require("./alerts");
+    return notifyAdmins(db, {
+      title: "Payments need attention",
+      body: `${problems.join(" ")} Open Payment Health in the admin app.`,
+      data: { kind: "payment_health" },
+    });
+  } catch (error) {
+    logger.warn("Could not check payment health for an alert", error);
+    return 0;
+  }
+}
+
 module.exports = {
+  ALERT_EVERY_MS,
+  alertProblems,
+  alertDue,
+  alertAdminsIfNeeded,
   DAILY,
   COUNTERS,
   countInTx,

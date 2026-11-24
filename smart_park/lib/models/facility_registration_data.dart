@@ -23,12 +23,17 @@ class FacilityRegistrationData {
     this.newDocumentFiles = const <File>[],
     this.removedDocumentUrls = const <String>[],
     this.permitExpiresAt,
+    this.contactNumber = '',
   });
 
   final String name;
   final String address;
   final OperatingHours hours;
   final String policies;
+
+  /// Shown to drivers so they can call the facility; '' for none. Stored
+  /// normalized (see facility_contact.dart).
+  final String contactNumber;
   final Map<String, dynamic> rates;
   final Map<String, int> slots;
   final LatLng location;
@@ -112,6 +117,7 @@ class FacilityRegistrationData {
       'ownerEmail': (ownerData['email'] as String?) ?? '',
       'name': name,
       'address': address,
+      'contactNumber': contactNumber,
       'location': GeoPoint(location.latitude, location.longitude),
       'latitude': location.latitude,
       'longitude': location.longitude,

@@ -6,7 +6,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show HapticFeedback;
 import 'package:mobile_scanner/mobile_scanner.dart';
 
+import '../../services/app_shortcuts.dart';
 import '../../services/driver_reports.dart' show kWrongVehicleTypeReason;
+import '../../services/facility_closure.dart';
 import '../../services/facility_status.dart';
 import '../../services/gate_cash.dart';
 import '../../services/gate_scan_service.dart';
@@ -24,6 +26,7 @@ import '../../widgets/sp_activity_search.dart';
 import '../../widgets/sp_driver_report.dart' show showFlagIncidentDialog;
 import '../../widgets/sp_loading.dart';
 import '../../widgets/sp_overtime.dart';
+import '../../widgets/sp_read_plate.dart';
 import '../auth/sign_in_screen.dart';
 import 'gate_pass_panel.dart';
 import 'gate_result_card.dart';
@@ -34,7 +37,10 @@ import 'walk_in_panel.dart';
 part 'staff_home_page_fragments.dart';
 
 class StaffHomePage extends StatefulWidget {
-  const StaffHomePage({super.key});
+  const StaffHomePage({super.key, this.initialTab = 0});
+
+  /// 0 Dashboard, 1 Scanner, 2 History.
+  final int initialTab;
 
   @override
   State<StaffHomePage> createState() => _StaffHomePageState();
@@ -57,8 +63,36 @@ class _StaffHomePageState extends State<StaffHomePage>
         (Icons.history_rounded, Icons.history_rounded, 'History'),
       ];
 
-  int _selectedNavIndex = 0;
+  late int _selectedNavIndex = widget.initialTab;
   bool _railExtended = false;
+
+  /// The QR scanner holds the camera; a plate photo needs it for a moment.
+  Future<void> _pauseScannerForPhoto() => _scannerController.stop();
+
+  Future<void> _resumeScannerAfterPhoto() async {
+    if (mounted) await _scannerController.start();
+  }
+
+  /// Plates of the vehicles inside now (tickets and walk-ins), which a
+  /// photo's reading is most likely to be.
+  Future<List<String>> _platesInside(String? facilityId) async {
+    if (facilityId == null || facilityId.isEmpty) return const <String>[];
+    final QuerySnapshot<Map<String, dynamic>> inside = await spInsideLogsQuery(
+      facilityId,
+    ).get();
+    return <String>[
+      for (final QueryDocumentSnapshot<Map<String, dynamic>> d in inside.docs)
+        if (((d.data()['vehiclePlate'] as String?) ?? '').trim().isNotEmpty)
+          (d.data()['vehiclePlate'] as String).trim(),
+    ];
+  }
+
+  void _onShortcut() {
+    if (!mounted || pendingShortcut.value != kOpenScannerShortcut) return;
+    pendingShortcut.value = null;
+    setState(() => _selectedNavIndex = 1);
+  }
+
   String _historyFilter = 'all';
 
   /// Text in the History search box: a plate, a name or a ticket #.
@@ -101,6 +135,9 @@ class _StaffHomePageState extends State<StaffHomePage>
   @override
   void initState() {
     super.initState();
+    // "Open scanner" from the app icon.
+    pendingShortcut.addListener(_onShortcut);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _onShortcut());
 
     _scannerController = MobileScannerController(
       detectionSpeed: DetectionSpeed.noDuplicates,
@@ -143,6 +180,7 @@ class _StaffHomePageState extends State<StaffHomePage>
 
   @override
   void dispose() {
+    pendingShortcut.removeListener(_onShortcut);
     unawaited(_staffRecordSub?.cancel());
     _gateService.dispose();
     _unsentExits.dispose();

@@ -5,7 +5,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import 'dart:async';
+
 import 'screens/auth/role_based_home_page.dart';
+import 'screens/driver/saved_ticket_page.dart';
+import 'services/app_shortcuts.dart';
+import 'services/last_ticket_store.dart';
 import 'screens/auth/verify_email_screen.dart';
 import 'screens/auth/welcome_screen.dart';
 import 'services/app_version_guard.dart';
@@ -23,14 +28,25 @@ class SmartParkApp extends StatefulWidget {
 }
 
 class _SmartParkAppState extends State<SmartParkApp> {
+  StreamSubscription<User?>? _authSub;
+
   @override
   void initState() {
     super.initState();
     ThemeController.instance.addListener(_onThemeChanged);
+    AppShortcuts.init();
+    // Signed out: no shortcut, and no ticket left saved on the phone.
+    _authSub = FirebaseAuth.instance.authStateChanges().listen((User? user) {
+      if (user == null) {
+        unawaited(AppShortcuts.clear());
+        unawaited(LastTicketStore.clear());
+      }
+    });
   }
 
   @override
   void dispose() {
+    _authSub?.cancel();
     ThemeController.instance.removeListener(_onThemeChanged);
     super.dispose();
   }
@@ -135,6 +151,9 @@ class _InternetGateState extends State<InternetGate> {
                       onPressed: _retry,
                       child: const Text('Retry'),
                     ),
+                    // The ticket QR needs no signal: the copy saved on
+                    // this phone, for a basement with no data.
+                    const _SavedTicketButton(),
                   ],
                 ),
               ),
@@ -352,5 +371,59 @@ class _AuthGateState extends State<AuthGate> {
 class AppTypography {
   static TextTheme buildTextTheme() {
     return GoogleFonts.poppinsTextTheme();
+  }
+}
+
+/// On the no-internet screen: opens the driver's last active ticket, saved
+/// on this phone. Opens it by itself when the app was started from "Show
+/// my ticket".
+class _SavedTicketButton extends StatefulWidget {
+  const _SavedTicketButton();
+
+  @override
+  State<_SavedTicketButton> createState() => _SavedTicketButtonState();
+}
+
+class _SavedTicketButtonState extends State<_SavedTicketButton> {
+  SavedTicket? _saved;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_load());
+  }
+
+  Future<void> _load() async {
+    if (FirebaseAuth.instance.currentUser == null) return;
+    final SavedTicket? saved = await LastTicketStore.load();
+    if (!mounted || saved == null) return;
+    setState(() => _saved = saved);
+    if (pendingShortcut.value == kShowTicketShortcut) {
+      pendingShortcut.value = null;
+      _open();
+    }
+  }
+
+  void _open() {
+    final SavedTicket? saved = _saved;
+    if (saved == null) return;
+    Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => SavedTicketPage(ticket: saved, offline: true),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_saved == null) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: OutlinedButton.icon(
+        onPressed: _open,
+        icon: const Icon(Icons.qr_code_2_rounded),
+        label: const Text('Show my saved ticket'),
+      ),
+    );
   }
 }

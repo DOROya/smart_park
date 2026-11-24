@@ -6,6 +6,7 @@ const {
   includedStayHours,
   hoursLeft,
   refundCentavos,
+  refundableBase,
   paidByFor,
   suspensionRefundDue,
   recoveryFor,
@@ -29,12 +30,21 @@ test("hours left come from remainingHours, else the whole package", () => {
   assert.equal(hoursLeft({ remainingHours: -3 }), 0);
 });
 
-test("the refund is the unused share of the price", () => {
-  // 7 days for PHP 330, 3 days used -> 4/7 of 330.
-  const ticket = { plan: "weekly", duration: 1, amount: 330, remainingHours: 96 };
-  assert.equal(refundCentavos(ticket), Math.floor((33000 * 96) / 168));
-  assert.equal(refundCentavos({ ...ticket, remainingHours: 168 }), 33000);
+test("the refund is the unused share of the price less fees", () => {
+  // 7 days for PHP 330 by GCash: 5% commission (1650) and 2% PayMongo
+  // (660) are kept back, leaving 30690; 3 days used -> 4/7 of that.
+  const ticket = { plan: "weekly", duration: 1, amount: 330, paymentMethod: "gcash", remainingHours: 96 };
+  assert.deepEqual(refundableBase(ticket), {
+    paid: 33000,
+    platformFee: 1650,
+    processorFee: 660,
+    refundable: 30690,
+  });
+  assert.equal(refundCentavos(ticket), Math.floor((30690 * 96) / 168));
+  assert.equal(refundCentavos({ ...ticket, remainingHours: 168 }), 30690);
   assert.equal(refundCentavos({ ...ticket, remainingHours: 0 }), 0);
+  // A card's fee is 3.5%.
+  assert.equal(refundableBase({ ...ticket, paymentMethod: "card" }).refundable, 33000 - 1650 - 1155);
 });
 
 test("SmartPark covers refunds for documents the admin approved", () => {
@@ -67,7 +77,10 @@ test("a refund record carries the amount and who pays", () => {
     "deactivated",
     "approved",
   );
-  assert.equal(r.amountCentavos, 10000);
+  // PHP 200 less 5% commission and 2% PayMongo = 18600; half unused.
+  assert.equal(r.amountCentavos, 9300);
+  assert.equal(r.platformFeeCentavos, 1000);
+  assert.equal(r.processorFeeCentavos, 400);
   assert.equal(r.unusedHours, 24);
   assert.equal(r.totalHours, 48);
   assert.equal(r.paidBy, "platform");

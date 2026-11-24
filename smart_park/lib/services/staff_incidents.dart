@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 import 'driver_reports.dart' show reasonFields;
 
@@ -50,12 +51,18 @@ Future<void> resolveIncident(
   String incidentId,
   String status, {
   FirebaseFirestore? firestore,
+  String? handledBy,
 }) {
   final FirebaseFirestore db = firestore ?? FirebaseFirestore.instance;
+  final String? by =
+      handledBy ??
+      (firestore == null ? FirebaseAuth.instance.currentUser?.uid : null);
   return db.collection('staff_incidents').doc(incidentId).update(
     <String, dynamic>{
       'status': status,
       'handledAt': FieldValue.serverTimestamp(),
+      // The owner or the facility's supervisor.
+      'handledBy': ?by,
     },
   );
 }

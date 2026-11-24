@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../../../services/error_reporter.dart';
@@ -240,14 +241,21 @@ class _OwnerCashHandoverCardState extends State<OwnerCashHandoverCard> {
               ],
             ),
           ),
-          FilledButton(
-            onPressed: busy ? null : () => _receive(d),
-            style: FilledButton.styleFrom(
-              backgroundColor: AppTheme.accent,
-              foregroundColor: AppTheme.onAccent,
+          // A supervisor's own cash is received by the owner, not by them.
+          if (d.staffId == FirebaseAuth.instance.currentUser?.uid)
+            Text(
+              'The owner receives this',
+              style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
+            )
+          else
+            FilledButton(
+              onPressed: busy ? null : () => _receive(d),
+              style: FilledButton.styleFrom(
+                backgroundColor: AppTheme.accent,
+                foregroundColor: AppTheme.onAccent,
+              ),
+              child: Text(busy ? 'Saving...' : 'Received'),
             ),
-            child: Text(busy ? 'Saving...' : 'Received'),
-          ),
         ],
       ),
     );

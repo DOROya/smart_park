@@ -6,7 +6,8 @@ import '../services/parking_pricing.dart'
         kTurnaroundMinutes;
 import '../services/facility_status.dart' show kComplianceNoticeDays;
 import '../services/parking_refunds.dart' show kRefundRequestAutoApproveDays;
-import '../services/platform_fees.dart' show kPlatformFeeRate;
+import '../services/platform_fees.dart'
+    show commissionPercent, platformCommission;
 
 /// SmartPark's Terms and Conditions and Privacy Notice, one set per role.
 /// Shown at sign-up, where the user must agree, and again from the Profile.
@@ -17,9 +18,9 @@ import '../services/platform_fees.dart' show kPlatformFeeRate;
 /// they agreed (`termsVersion`, `termsAcceptedAt`). Anyone whose saved version
 /// differs is asked to accept the current terms when they open the app (see
 /// terms_update_gate.dart), so bump this with every change to the text.
-const String kTermsVersion = '2026-11-22';
+const String kTermsVersion = '2026-11-23';
 
-const String kTermsUpdatedLabel = 'November 22, 2026';
+const String kTermsUpdatedLabel = 'November 23, 2026';
 
 const String kSupportEmail = 'smartpark.noreply@gmail.com';
 
@@ -29,6 +30,7 @@ const String kOperatorName = 'the SmartPark project team';
 const String kDriverRole = 'Driver';
 const String kParkingOwnerRole = 'Parking Owner';
 const String kStaffRole = 'staff';
+const String kSupervisorRole = 'supervisor';
 
 /// Days an owner has to settle a refund balance once SmartPark asks for it.
 const int kRefundBalanceDueDays = 15;
@@ -78,6 +80,16 @@ List<TermsSection> termsFor(String role) {
       _liability(_Reader.staff),
       ..._closing,
     ],
+    // Supervisors work the gate too, so they accept the staff terms and
+    // what they take on beyond them.
+    _ when role.trim().toLowerCase() == kSupervisorRole => <TermsSection>[
+      _about,
+      ..._staffSections,
+      _supervisorSection,
+      _privacy(_Reader.staff),
+      _liability(_Reader.staff),
+      ..._closing,
+    ],
     _ => const <TermsSection>[],
   };
   return <TermsSection>[
@@ -88,7 +100,26 @@ List<TermsSection> termsFor(String role) {
 
 enum _Reader { driver, owner, staff }
 
-final String _commission = '${(kPlatformFeeRate * 100).round()}%';
+const TermsSection _supervisorSection = TermsSection('Supervisors', <String>[
+  'A supervisor runs one facility day to day for its owner: gate activity, '
+      'staff on duty, cash handovers, staff flags and driver reports. The '
+      'owner keeps prices, the listing, business documents, earnings, '
+      'refunds and hiring.',
+  'When you mark cash as received from a staff member, count it first. The '
+      'receipt is kept under your name and the owner sees it. You never '
+      'receive your own cash; the owner does.',
+  'Report a driver or resolve a staff flag only on what happened. Every '
+      'change you make, including overtime status, is recorded with your '
+      'name in the owner\'s Change History.',
+  'You may reset a gate staff member\'s password when they are locked out. '
+      'Give the new password only to that person. Only the owner resets a '
+      'supervisor\'s password.',
+]);
+
+/// The commission in force now (settings/platform), so the terms never need
+/// a new version when only the rate changes.
+String get _commission =>
+    commissionPercent(platformCommission.value.currentRate);
 final String _graceChoices = kGracePeriodOptions
     .where((int m) => m > 0)
     .join(', ');
@@ -258,21 +289,32 @@ TermsSection _payments({required bool owner}) => TermsSection(
       ? <String>[
           'Drivers pay through PayMongo (card, GCash, Maya or QR Ph). '
               'SmartPark never sees or stores card details.',
-          'SmartPark keeps a $_commission platform commission from each '
-              'ticket payment. PayMongo\'s processing fees are also deducted. '
-              'The rest is paid out to you by PayMongo.',
+          'SmartPark keeps a platform commission from each payment made in '
+              'the app. The current rate is shown in the app under Reports '
+              'and is $_commission. PayMongo\'s processing fees are also '
+              'deducted. The rest is paid out to you by PayMongo.',
+          'SmartPark may change the commission rate. You are told in the app '
+              'at least 30 days before a higher rate takes effect; a lower '
+              'rate may take effect sooner. A change applies only to '
+              'purchases made on or after its effective date: tickets, extra '
+              'hours and refunds of earlier purchases keep the rate in force '
+              'when they were bought.',
+          'If you do not accept a new rate, you may stop selling through '
+              'SmartPark before it takes effect by asking SmartPark to '
+              'deactivate your facility or by deleting your account. Tickets '
+              'already sold stay valid, and refunds follow these terms.',
           'Overtime cash is collected by your staff at the gate and is not '
               'part of these payouts.',
           'SmartPark records each payment and how it was split, so you can '
               'check your earnings in the app.',
           'If SmartPark suspends or deactivates your facility, drivers are '
-              'refunded the unused hours on their tickets. You cover these '
-              'refunds, including PayMongo\'s fee, unless the reason was '
-              'documents SmartPark approved (a business permit that was '
-              'already invalid when approved, or incomplete or false '
-              'documents), in which case SmartPark covers them. SmartPark '
-              'gives back its own commission on every refunded amount, so '
-              'you never repay that part.',
+              'refunded the unused share of what you received for their '
+              'tickets: the price less SmartPark\'s commission and '
+              'PayMongo\'s processing fee, which are not refunded. You '
+              'cover these refunds unless the reason was documents '
+              'SmartPark approved (a business permit that was already '
+              'invalid when approved, or incomplete or false documents), in '
+              'which case SmartPark covers them.',
           'What you owe is taken from up to half of your share of each later '
               'online sale, and every refund is listed in your Report tab. '
               'You are notified of each refund charged to you.',
@@ -318,10 +360,19 @@ TermsSection _payments({required bool owner}) => TermsSection(
               'receipt; ask the facility if you need one.',
           'Unused hours stay on a paid ticket for later visits. Paid tickets '
               'are not refunded because you change your mind.',
+          'The parking price is set by the facility. SmartPark\'s commission '
+              'comes out of the facility\'s share, so a change to it never '
+              'changes what you are charged for a package already shown.',
+          'A refund is the unused share of the ticket price less '
+              'SmartPark\'s commission (the rate when you bought it, '
+              'currently $_commission for new purchases) and PayMongo\'s '
+              'processing fee. Both were taken when you paid and the '
+              'facility cannot refund them, so a refund is never the full '
+              'price. The ticket shows how yours is worked out.',
           'If SmartPark deactivates a facility, the unused hours on your '
-              'tickets for it are refunded automatically, in full, to the '
-              'account you paid with. If you are parked there at the time, '
-              'the hours left after you exit are refunded.',
+              'tickets for it are refunded automatically to the account you '
+              'paid with. If you are parked there at the time, the hours '
+              'left after you exit are refunded.',
           'If SmartPark suspends a facility, its tickets cannot be used to '
               'enter until it is reinstated, and their hours are kept. If it '
               'is still suspended after 14 days, the unused hours are '

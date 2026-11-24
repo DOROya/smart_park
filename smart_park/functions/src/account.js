@@ -183,7 +183,7 @@ async function deleteMyAccount(request) {
 
   if (role === "Driver") await deleteDriver(db, uid);
   else if (role === "Parking Owner") await deleteOwner(db, uid);
-  else if (role === "staff") {
+  else if (role === "staff" || role === "supervisor") {
     throw new HttpsError("failed-precondition", "Ask your parking owner to remove your account.");
   } else {
     throw new HttpsError("failed-precondition", "This account can't be deleted from the app.");

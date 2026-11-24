@@ -80,16 +80,17 @@ extension _AdminUserDirectory on _AdminHomePageState {
             .length;
         final int drivers = countOf('driver');
         final int owners = countOf('parking owner');
+        final int admins = countOf('admin');
 
         final List<Widget> rows = <Widget>[
           for (final QueryDocumentSnapshot<Map<String, dynamic>> doc in shown)
-            _buildUserRow(doc, establishments),
+            _buildUserRow(doc, establishments, users),
         ];
 
         return SpSectionCard(
           icon: Icons.people_alt_outlined,
           title: 'User Directory',
-          subtitle: 'Drivers and parking owners. Tap one for details.',
+          subtitle: 'Drivers, parking owners and admins. Tap one for details.',
           trailing: SpChip(label: '${matches.length}', color: spExitColor),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -127,9 +128,10 @@ extension _AdminUserDirectory on _AdminHomePageState {
               const SizedBox(height: 10),
               SpSegmentedControl<_UserRoleFilter>(
                 options: <(_UserRoleFilter, String)>[
-                  (_UserRoleFilter.all, 'All · ${drivers + owners}'),
+                  (_UserRoleFilter.all, 'All · ${drivers + owners + admins}'),
                   (_UserRoleFilter.driver, 'Drivers · $drivers'),
                   (_UserRoleFilter.parkingOwner, 'Owners · $owners'),
+                  (_UserRoleFilter.admins, 'Admins · $admins'),
                 ],
                 selected: _userRoleFilter,
                 onChanged: (_UserRoleFilter filter) =>
@@ -249,6 +251,7 @@ extension _AdminUserDirectory on _AdminHomePageState {
   Widget _buildUserRow(
     QueryDocumentSnapshot<Map<String, dynamic>> doc,
     List<QueryDocumentSnapshot<Map<String, dynamic>>> establishments,
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> users,
   ) {
     final Map<String, dynamic> data = doc.data();
     final String fullName = _userFullName(data);
@@ -264,7 +267,7 @@ extension _AdminUserDirectory on _AdminHomePageState {
     final DateTime? joined = _userJoinedAt(data);
 
     final Widget row = InkWell(
-      onTap: () => _showUserDetailsSheet(doc, establishments),
+      onTap: () => _showUserDetailsSheet(doc, establishments, users),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
         child: Row(
@@ -320,8 +323,8 @@ extension _AdminUserDirectory on _AdminHomePageState {
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
                 SpChip(
-                  label: isOwner ? 'Owner' : 'Driver',
-                  color: _roleColor(isOwner),
+                  label: accessLevelLabel(accessLevelOf(data)),
+                  color: accessLevelColor(accessLevelOf(data)),
                 ),
                 if (joined != null) ...[
                   const SizedBox(height: 4),
@@ -362,8 +365,30 @@ extension _AdminUserDirectory on _AdminHomePageState {
   Future<void> _showUserDetailsSheet(
     QueryDocumentSnapshot<Map<String, dynamic>> doc,
     List<QueryDocumentSnapshot<Map<String, dynamic>>> establishments,
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> users,
   ) async {
     final Map<String, dynamic> data = doc.data();
+    final String myUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    Map<String, dynamic>? userById(String id) {
+      for (final QueryDocumentSnapshot<Map<String, dynamic>> u in users) {
+        if (u.id == id) return u.data();
+      }
+      return null;
+    }
+
+    final AccessLevel callerLevel = accessLevelOf(userById(myUid));
+    final int superAdmins = users
+        .where(
+          (QueryDocumentSnapshot<Map<String, dynamic>> u) =>
+              accessLevelOf(u.data()) == AccessLevel.superAdmin,
+        )
+        .length;
+    final Map<String, dynamic>? promoter = userById(
+      ((data['promotedBy'] as String?) ?? '').trim(),
+    );
+    final String promotedByName = promoter == null
+        ? ''
+        : _userFullName(promoter);
     final String fullName = _userFullName(data);
     final String email = ((data['email'] as String?) ?? '').trim();
     final bool isOwner = _isOwnerData(data);
@@ -431,8 +456,10 @@ extension _AdminUserDirectory on _AdminHomePageState {
                           crossAxisAlignment: WrapCrossAlignment.center,
                           children: [
                             SpChip(
-                              label: isOwner ? 'Parking Owner' : 'Driver',
-                              color: _roleColor(isOwner),
+                              label: isOwner
+                                  ? 'Parking Owner'
+                                  : accessLevelLabel(accessLevelOf(data)),
+                              color: accessLevelColor(accessLevelOf(data)),
                             ),
                             if (joined != null)
                               Text(
@@ -518,6 +545,23 @@ extension _AdminUserDirectory on _AdminHomePageState {
                         ],
                       );
                     },
+              ),
+              const SizedBox(height: 16),
+              _sheetLabel('Admin access'),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppTheme.surfaceAlt,
+                  borderRadius: BorderRadius.circular(AppTheme.radius),
+                  border: Border.all(color: AppTheme.border),
+                ),
+                child: SpAdminAccessPanel(
+                  uid: doc.id,
+                  user: data,
+                  callerLevel: callerLevel,
+                  superAdminCount: superAdmins,
+                  promotedByName: promotedByName,
+                ),
               ),
               const SizedBox(height: 16),
               _sheetLabel('Account'),

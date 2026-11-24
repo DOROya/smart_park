@@ -171,7 +171,9 @@ const List<DriverFaqGroup> kDriverFaqGroups = <DriverFaqGroup>[
             'deactivates a facility, its unused hours are refunded '
             'automatically. If it suspends one, you can tap Request refund on '
             'the ticket, and unused hours are refunded automatically if it is '
-            'still suspended after 14 days.',
+            'still suspended after 14 days. A refund is not the full price: '
+            'SmartPark\'s fee and PayMongo\'s processing fee are kept back, '
+            'and the ticket shows the calculation.',
       ),
       DriverFaq(
         'How do I report a facility?',

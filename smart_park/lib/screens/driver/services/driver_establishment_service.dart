@@ -4,6 +4,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../services/facility_closure.dart';
 import '../../../services/operating_hours.dart';
 
 /// How the driver's parking list is ordered. [none] is nearest first when
@@ -147,8 +148,19 @@ class DriverEstablishmentService {
     );
   }
 
-  static bool isOpenNow(Map<String, dynamic> establishment) =>
-      OperatingHours.parse(establishment).isOpenAt(DateTime.now());
+  /// Open by its hours and not closed temporarily (the merged data carries
+  /// the details' `closedUntil`).
+  static bool isOpenNow(Map<String, dynamic> establishment) => hoursWithClosure(
+    OperatingHours.parse(establishment),
+    establishment,
+  ).isOpenAt(DateTime.now());
+
+  /// "Closed until Nov 25, 3:00 PM" while closed temporarily, else null.
+  static String? closedUntilLabel(Map<String, dynamic> establishment) {
+    final TemporaryClosure? closure = TemporaryClosure.of(establishment);
+    if (closure == null || !closure.isActiveAt(DateTime.now())) return null;
+    return 'Closed until ${temporaryClosureUntilLabel(closure)}';
+  }
 
   /// The list the driver sees. [vehicleType] keeps only facilities with
   /// slots for it; [onlyIds] (the driver's saved facilities) keeps only

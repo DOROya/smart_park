@@ -1,6 +1,6 @@
 # Quality-of-life features: implementation plan
 
-**Status:** planned, not built. Written November 23, 2026 for a later implementation session.
+**Status:** B, C and D built 2026-11-23; A (printer) not built, no hardware to test. Still to do: phone tests (plate reading in daylight and indoors, airplane mode, the app shortcut) and paper updates.
 
 | # | Feature | Decision |
 |---|---|---|
