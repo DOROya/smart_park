@@ -805,51 +805,155 @@ class _ShiftCashCard extends StatelessWidget {
               color: AppTheme.textDark,
             ),
           ),
-          const SizedBox(height: 2),
-          Text(
-            total == 0
-                ? 'No cash taken at the gate yet today.'
-                : <String>[
-                    if (cash.collectedCount > 0)
-                      'Overtime ${spPeso(cash.collectedAmount)} from '
-                          '${cash.collectedCount} exit'
-                          '${cash.collectedCount == 1 ? '' : 's'}',
-                    if (walkInFees.isNotEmpty)
-                      'Walk-in fees ${spPeso(walkIn)} from '
-                          '${walkInFees.length} vehicle'
-                          '${walkInFees.length == 1 ? '' : 's'}',
-                  ].join(' · '),
-            style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
-          ),
-          if (total > 0) ...[
-            const SizedBox(height: 4),
+          const SizedBox(height: 4),
+          if (total == 0)
             Text(
-              notHandedOver <= 0
-                  ? 'All of it was received by the owner.'
-                  : '${spPeso(notHandedOver)} still with you'
-                        '${handed > 0 ? ' · ${spPeso(handed)} received by the owner' : ''}.',
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
-                color: notHandedOver <= 0
-                    ? AppTheme.success
-                    : AppTheme.textDark,
-              ),
+              'No cash taken at the gate yet today.',
+              style: TextStyle(fontSize: 14, color: AppTheme.textSecondary),
+            ),
+          if (cash.collectedCount > 0)
+            _cashLine(
+              Icons.timer_outlined,
+              'Overtime cash · ${cash.collectedCount} exit'
+              '${cash.collectedCount == 1 ? '' : 's'}',
+              cash.collectedAmount,
+            ),
+          if (walkInFees.isNotEmpty)
+            _cashLine(
+              Icons.directions_walk_rounded,
+              'Walk-in fees · ${walkInFees.length} vehicle'
+              '${walkInFees.length == 1 ? '' : 's'}',
+              walkIn,
+            ),
+          if (total > 0) ...[
+            const SizedBox(height: 12),
+            // Where today's cash is now: with this staff member, or
+            // already handed to the owner.
+            Row(
+              children: <Widget>[
+                Expanded(
+                  child: _statusBox(
+                    icon: Icons.account_balance_wallet_rounded,
+                    label: 'Still with you',
+                    amount: notHandedOver > 0 ? notHandedOver : 0,
+                    color: notHandedOver > 0
+                        ? spInsideColor
+                        : AppTheme.textMuted,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: _statusBox(
+                    icon: Icons.check_circle_rounded,
+                    label: 'Handed over',
+                    amount: handed > 0 ? handed : 0,
+                    color: AppTheme.success,
+                  ),
+                ),
+              ],
             ),
           ],
           if (owed) ...[
-            const SizedBox(height: 8),
-            Text(
-              '${spPeso(cash.dueAmount)} from ${cash.dueCount} exit'
-              '${cash.dueCount == 1 ? '' : 's'} is not confirmed yet. Open '
-              'the scan and tap "Cash collected" once you have it.',
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                color: spInsideColor,
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: spInsideColor.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
+                border: Border.all(color: spInsideColor),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Icon(
+                    Icons.info_outline_rounded,
+                    size: 18,
+                    color: AppTheme.textDark,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      '${spPeso(cash.dueAmount)} from ${cash.dueCount} exit'
+                      '${cash.dueCount == 1 ? '' : 's'} is not confirmed yet. '
+                      'Open the scan and tap "Cash collected" once you have it.',
+                      style: TextStyle(
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w600,
+                        color: AppTheme.textDark,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ],
+        ],
+      ),
+    );
+  }
+
+  /// A labelled amount in a tinted box.
+  Widget _statusBox({
+    required IconData icon,
+    required String label,
+    required double amount,
+    required Color color,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
+        border: Border.all(color: color.withValues(alpha: 0.6)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Icon(icon, size: 16, color: color),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w700,
+                    color: AppTheme.textDark,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            spPeso(amount),
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w800,
+              color: AppTheme.textDark,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// One kind of gate cash, labelled, with its amount.
+  Widget _cashLine(IconData icon, String label, double amount) {
+    final TextStyle style = TextStyle(
+      fontSize: 14,
+      fontWeight: FontWeight.w600,
+      color: AppTheme.textDark,
+    );
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        children: <Widget>[
+          Icon(icon, size: 18, color: AppTheme.textSecondary),
+          const SizedBox(width: 8),
+          Expanded(child: Text(label, style: style)),
+          Text(spPeso(amount), style: style),
         ],
       ),
     );
@@ -939,6 +1043,17 @@ class _ManualPlateLookup extends StatefulWidget {
   State<_ManualPlateLookup> createState() => _ManualPlateLookupState();
 }
 
+/// Plates are upper case whatever the keyboard sends.
+class _UpperCaseFormatter extends TextInputFormatter {
+  const _UpperCaseFormatter();
+
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) => newValue.copyWith(text: newValue.text.toUpperCase());
+}
+
 class _ManualPlateLookupState extends State<_ManualPlateLookup> {
   final TextEditingController _controller = TextEditingController();
   bool _busy = false;
@@ -977,6 +1092,10 @@ class _ManualPlateLookupState extends State<_ManualPlateLookup> {
                 child: TextField(
                   controller: _controller,
                   textCapitalization: TextCapitalization.characters,
+                  // Some keyboards ignore the capitalization hint.
+                  inputFormatters: const <TextInputFormatter>[
+                    _UpperCaseFormatter(),
+                  ],
                   decoration: InputDecoration(
                     hintText: 'ABC 1234',
                     // A photo of the plate fills this in, for staff to
@@ -1008,6 +1127,9 @@ class _ManualPlateLookupState extends State<_ManualPlateLookup> {
                         });
                         try {
                           await widget.onLookup(_controller.text);
+                          // The result card shows the plate; the box is
+                          // ready for the next vehicle.
+                          if (mounted) _controller.clear();
                         } finally {
                           if (mounted) {
                             setState(() {

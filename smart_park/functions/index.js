@@ -89,6 +89,7 @@ exports.payGatePass = callable(
 );
 
 exports.findGatePass = callable({}, (request) => gatePass.findGatePass(request));
+exports.turnAwayGatePass = callable({}, (request) => gatePass.turnAwayGatePass(request));
 
 exports.startGatePayment = callable(
   { secrets: [PAYMONGO_SECRET_KEY] },

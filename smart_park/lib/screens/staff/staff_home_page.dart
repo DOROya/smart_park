@@ -3,7 +3,8 @@ import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart' show HapticFeedback;
+import 'package:flutter/services.dart'
+    show HapticFeedback, TextEditingValue, TextInputFormatter;
 import 'package:mobile_scanner/mobile_scanner.dart';
 
 import '../../services/app_shortcuts.dart';

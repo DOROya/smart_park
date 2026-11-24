@@ -112,12 +112,13 @@ List<Query<Map<String, dynamic>>> gateCashQueries(
   ];
 }
 
-/// The owner received [due] from a staff member: records the handover and
-/// stamps the gate logs it covers (up to [kMaxHandoverLogs]). Returns the
-/// handover's id.
+/// The owner (or a supervisor, [receivedBy]) received [due] from a staff
+/// member: records the handover and stamps the gate logs it covers (up to
+/// [kMaxHandoverLogs]). Returns the handover's id.
 Future<String> recordCashHandover({
   required String facilityId,
   required String ownerId,
+  String? receivedBy,
   required StaffCashDue due,
   required String staffName,
   required Map<String, Map<String, dynamic>> logsById,
@@ -147,7 +148,8 @@ Future<String> recordCashHandover({
     'walkInAmount': walkIn,
     'logCount': ids.length,
     'receivedAt': FieldValue.serverTimestamp(),
-    'receivedBy': ownerId,
+    // Who took the cash; the rules require the signed-in user.
+    'receivedBy': receivedBy ?? ownerId,
     if (note.trim().isNotEmpty) 'note': note.trim(),
   });
   for (final String id in ids) {
