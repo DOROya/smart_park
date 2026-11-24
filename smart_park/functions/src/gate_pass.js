@@ -272,11 +272,20 @@ async function createParkingPass(request, secretKey) {
     .where("driverId", "==", driverId)
     .where("kind", "==", KIND)
     .get();
-  const active = mine.docs.filter((d) => isActivePass(d.data(), nowMs)).length;
+  // Unused QRs plus vehicles parked on this driver's tickets: one phone may
+  // cover a few cars (a family), but other drivers should get the app.
+  const parked = await db
+    .collection("transactions")
+    .where("driverId", "==", driverId)
+    .where("entryStatus", "==", "checked_in")
+    .get();
+  const active =
+    mine.docs.filter((d) => isActivePass(d.data(), nowMs)).length + parked.size;
   if (active >= MAX_ACTIVE_PASSES) {
     throw new HttpsError(
       "resource-exhausted",
-      `You already have ${MAX_ACTIVE_PASSES} temporary QRs. Use or cancel one first.`,
+      `You can have up to ${MAX_ACTIVE_PASSES} open tickets at a time ` +
+        "(unused QRs and parked vehicles). Use, cancel or finish one first.",
     );
   }
 
