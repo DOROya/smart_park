@@ -9,7 +9,7 @@ import '../../services/parking_checkout_service.dart';
 import '../../services/parking_receipt.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/friendly_error.dart';
-import '../../widgets/smartpark_ui.dart' show spPeso;
+import '../../widgets/smartpark_ui.dart' show spParseDateTime, spPeso;
 import '../../widgets/sp_max_brightness.dart';
 import '../../widgets/sp_save_qr_button.dart';
 import '../../widgets/sp_ticket_cost.dart';
@@ -308,6 +308,8 @@ class _DriverParkingPassPageState extends State<DriverParkingPassPage> {
     final ParkingReceipt receipt = _receipt(data);
     final String qrData = (data['qrCode'] as String?) ?? '';
     final bool paying = status == 'pending';
+    // Staff turned this QR away (no space); it stays valid.
+    final DateTime? turnedAwayAt = spParseDateTime(data['turnedAwayAt']);
     final String method = _methodLabel(receipt.paymentMethod);
     final String saved = savedPaymentLabel(method, data['payer']);
     // Staff confirmed space and the details are saved: one tap to pay.
@@ -428,6 +430,15 @@ class _DriverParkingPassPageState extends State<DriverParkingPassPage> {
               ),
             ),
         ] else ...<Widget>[
+          if (turnedAwayAt != null) ...<Widget>[
+            _note(
+              Icons.do_not_disturb_on_outlined,
+              'The gate had no free slot at ${_dateTime(turnedAwayAt)}. You '
+              'were not charged, and this QR still works'
+              '${expiresAt == null ? '' : ' until ${_dateTime(expiresAt)}'}.',
+            ),
+            const SizedBox(height: 8),
+          ],
           _note(
             Icons.info_outline_rounded,
             data['directPay'] == true

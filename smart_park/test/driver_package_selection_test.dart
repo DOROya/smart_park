@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:smart_park/screens/driver/driver_package_selection_page.dart';
 
 void main() {
@@ -33,6 +34,7 @@ void main() {
     double devicePixelRatio = 2.5,
   }) async {
     DriverPackageSelection? result;
+    SharedPreferences.setMockInitialValues(<String, Object>{});
     tester.view.physicalSize = physicalSize;
     tester.view.devicePixelRatio = devicePixelRatio;
     addTearDown(tester.view.reset);
@@ -58,6 +60,12 @@ void main() {
     );
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
+    // The not-a-reservation notice pops up when the step opens.
+    expect(find.text('This is not a reservation'), findsOneWidget);
+    expect(find.text('Do not show again'), findsOneWidget);
+    await tester.tap(find.text('I understand'));
+    await tester.pumpAndSettle();
+    expect(find.text('This is not a reservation'), findsNothing);
     return () => result;
   }
 
@@ -73,8 +81,6 @@ void main() {
 
     await tester.tap(find.text('Weekly Package'));
     await tester.pumpAndSettle();
-    // Packages of a day or more warn that no slot is held.
-    expect(find.text('This is not a reservation'), findsOneWidget);
     expect(find.text('Number of weeks'), findsOneWidget);
     expect(find.text('Up to 4 weeks.'), findsOneWidget);
 

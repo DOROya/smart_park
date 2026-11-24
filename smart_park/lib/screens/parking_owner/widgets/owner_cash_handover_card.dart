@@ -150,6 +150,7 @@ class _OwnerCashHandoverCardState extends State<OwnerCashHandoverCard> {
       await recordCashHandover(
         facilityId: widget.facilityId,
         ownerId: widget.ownerId,
+        receivedBy: FirebaseAuth.instance.currentUser?.uid,
         due: due,
         staffName: name,
         logsById: _logs,
@@ -214,48 +215,89 @@ class _OwnerCashHandoverCardState extends State<OwnerCashHandoverCard> {
 
   Widget _dueRow(StaffCashDue d) {
     final bool busy = _busy.contains(d.staffId);
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Row(
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
+        border: Border.all(color: AppTheme.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: Text(
                   _name(d),
                   style: TextStyle(
+                    fontSize: 15,
                     fontWeight: FontWeight.w800,
                     color: AppTheme.textDark,
                   ),
                 ),
+              ),
+              // A supervisor's own cash is received by the owner, not by them.
+              if (d.staffId == FirebaseAuth.instance.currentUser?.uid)
                 Text(
-                  <String>[
-                    spPeso(d.total),
-                    if (d.overtime > 0 && d.walkIn > 0)
-                      'overtime ${spPeso(d.overtime)} + walk-in ${spPeso(d.walkIn)}',
-                    if (d.since != null) 'since ${spFormatDate(d.since!)}',
-                  ].join(' · '),
-                  style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+                  'The owner receives this',
+                  style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
+                )
+              else
+                FilledButton(
+                  onPressed: busy ? null : () => _receive(d),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppTheme.accent,
+                    foregroundColor: AppTheme.onAccent,
+                  ),
+                  child: Text(busy ? 'Saving...' : 'Received'),
                 ),
-              ],
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            spPeso(d.total),
+            style: TextStyle(
+              fontSize: 24,
+              fontWeight: FontWeight.w800,
+              color: AppTheme.textDark,
             ),
           ),
-          // A supervisor's own cash is received by the owner, not by them.
-          if (d.staffId == FirebaseAuth.instance.currentUser?.uid)
-            Text(
-              'The owner receives this',
-              style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
-            )
-          else
-            FilledButton(
-              onPressed: busy ? null : () => _receive(d),
-              style: FilledButton.styleFrom(
-                backgroundColor: AppTheme.accent,
-                foregroundColor: AppTheme.onAccent,
+          const SizedBox(height: 6),
+          if (d.overtime > 0)
+            _cashLine(Icons.timer_outlined, 'Overtime cash', d.overtime),
+          if (d.walkIn > 0)
+            _cashLine(Icons.directions_walk_rounded, 'Walk-in fees', d.walkIn),
+          if (d.since != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(
+                'With them since ${spFormatDate(d.since!)} '
+                '${spFormatClockTime(d.since!)}',
+                style: TextStyle(fontSize: 12.5, color: AppTheme.textSecondary),
               ),
-              child: Text(busy ? 'Saving...' : 'Received'),
             ),
+        ],
+      ),
+    );
+  }
+
+  /// One kind of cash in a staff member's total, labelled.
+  Widget _cashLine(IconData icon, String label, double amount) {
+    final TextStyle style = TextStyle(
+      fontSize: 14,
+      fontWeight: FontWeight.w600,
+      color: AppTheme.textDark,
+    );
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        children: <Widget>[
+          Icon(icon, size: 18, color: AppTheme.textSecondary),
+          const SizedBox(width: 8),
+          Expanded(child: Text(label, style: style)),
+          Text(spPeso(amount), style: style),
         ],
       ),
     );
@@ -282,25 +324,82 @@ class _OwnerCashHandoverCardState extends State<OwnerCashHandoverCard> {
               'Recent handovers',
               style: TextStyle(
                 fontWeight: FontWeight.w800,
-                color: AppTheme.textSecondary,
-                fontSize: 12,
+                color: AppTheme.textDark,
+                fontSize: 14,
               ),
             ),
             const SizedBox(height: 4),
             for (final Map<String, dynamic> h in recent.take(5))
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 3),
-                child: Text(
-                  '${spPeso(((h['amount'] as num?) ?? 0).toDouble())} from '
-                  '${(h['staffName'] as String?)?.trim().isNotEmpty == true ? h['staffName'] : 'staff'}'
-                  '${spParseDateTime(h['receivedAt']) == null ? '' : ' · ${spFormatDate(spParseDateTime(h['receivedAt'])!)} ${spFormatClockTime(spParseDateTime(h['receivedAt'])!)}'}'
-                  '${((h['note'] as String?) ?? '').trim().isEmpty ? '' : ' · "${(h['note'] as String).trim()}"'}',
-                  style: TextStyle(fontSize: 12.5, color: AppTheme.textDark),
-                ),
-              ),
+              _handoverRow(h),
           ],
         );
       },
     );
+  }
+
+  /// One received handover: the amount and when, then who and what for.
+  Widget _handoverRow(Map<String, dynamic> h) {
+    final DateTime? at = spParseDateTime(h['receivedAt']);
+    final String name = ((h['staffName'] as String?) ?? '').trim();
+    final String note = ((h['note'] as String?) ?? '').trim();
+    final String parts = _handoverParts(h);
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      decoration: BoxDecoration(
+        border: Border(top: BorderSide(color: AppTheme.border)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Icon(
+                Icons.check_circle_rounded,
+                size: 18,
+                color: AppTheme.success,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  spPeso(((h['amount'] as num?) ?? 0).toDouble()),
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w800,
+                    color: AppTheme.textDark,
+                  ),
+                ),
+              ),
+              if (at != null)
+                Text(
+                  '${spFormatDate(at)} · ${spFormatClockTime(at)}',
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    color: AppTheme.textSecondary,
+                  ),
+                ),
+            ],
+          ),
+          Padding(
+            padding: const EdgeInsets.only(left: 26, top: 2),
+            child: Text(
+              'From ${name.isEmpty ? 'staff' : name}$parts'
+              '${note.isEmpty ? '' : '\n"$note"'}',
+              style: TextStyle(fontSize: 13, color: AppTheme.textSecondary),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// " · overtime PHP 30.00 + walk-in PHP 30.00" from a handover record.
+  String _handoverParts(Map<String, dynamic> h) {
+    final double overtime = ((h['overtimeAmount'] as num?) ?? 0).toDouble();
+    final double walkIn = ((h['walkInAmount'] as num?) ?? 0).toDouble();
+    final List<String> parts = <String>[
+      if (overtime > 0) 'overtime ${spPeso(overtime)}',
+      if (walkIn > 0) 'walk-in ${spPeso(walkIn)}',
+    ];
+    return parts.isEmpty ? '' : ' · ${parts.join(' + ')}';
   }
 }

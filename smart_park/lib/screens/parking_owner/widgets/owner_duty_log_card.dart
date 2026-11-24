@@ -168,7 +168,13 @@ class _OwnerDutyLogCardState extends State<OwnerDutyLogCard> {
     final DateTime? start = spParseDateTime(s['startedAt']);
     final DateTime? end = spParseDateTime(s['endedAt']);
     final bool open = s['endedAt'] == null;
-    final bool endedByOwner = ((s['endedBy'] as String?) ?? '').isNotEmpty;
+    // Ended for them: by the owner, or else by a supervisor.
+    final String endedBy = (s['endedBy'] as String?) ?? '';
+    final String endedNote = endedBy.isEmpty
+        ? ''
+        : endedBy == s['ownerId']
+        ? ' · ended by owner'
+        : ' · ended by supervisor';
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
@@ -200,7 +206,7 @@ class _OwnerDutyLogCardState extends State<OwnerDutyLogCard> {
                                 ? '…'
                                 : spFormatClockTime(end)}'
                             ' · ${shiftLength(start, end)}'
-                            '${endedByOwner ? ' · ended by owner' : ''}',
+                            '$endedNote',
                   style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
                 ),
               ],

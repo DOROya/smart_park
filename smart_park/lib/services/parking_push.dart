@@ -52,6 +52,9 @@ class ParkingPush {
   /// Sent when staff confirm space for a temporary QR; carries `checkoutId`.
   static const String kGateConfirm = 'gate_confirm';
 
+  /// Sent when staff turn a temporary QR away (no free slot).
+  static const String kGateTurnedAway = 'gate_turned_away';
+
   static DocumentReference<Map<String, dynamic>> _user(String uid) =>
       FirebaseFirestore.instance.collection('users').doc(uid);
 

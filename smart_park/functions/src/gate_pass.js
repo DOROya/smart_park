@@ -586,6 +586,7 @@ async function startGatePayment(request, secretKey) {
       gatePaymentMode: c.directPay === true ? "direct" : "checkout",
       gatePaymentStartedAt: FieldValue.serverTimestamp(),
       gatePaymentStaffId: staff.uid,
+      turnedAwayAt: FieldValue.delete(),
       deleteAt: Timestamp.fromMillis(nowMs + PAYING_KEEP_MS),
       updatedAt: FieldValue.serverTimestamp(),
     });
@@ -646,6 +647,35 @@ async function notifyGateConfirm(db, checkoutId, c) {
         : `Tap to pay ${amount} for ${c.establishmentName}.`,
     data: { kind: "gate_confirm", checkoutId },
   });
+}
+
+/**
+ * Staff turned the driver away (no free slot). Nothing is charged and the
+ * QR stays valid; the driver is told so, since their screen would
+ * otherwise not change at all.
+ */
+async function turnAwayGatePass(request) {
+  const db = getFirestore();
+  const { facilityId } = await requireStaff(db, request.auth);
+  const ref = db.collection(CHECKOUTS).doc(asString(request.data?.checkoutId) || "-");
+  const snap = await ref.get();
+  const c = snap.data();
+  if (!snap.exists || !isPass(c) || c.establishmentId !== facilityId) {
+    throw new HttpsError("not-found", "Temporary QR not found for this facility.");
+  }
+  if (c.status !== "awaiting_gate") return { status: c.status };
+  await ref.update({
+    turnedAwayAt: FieldValue.serverTimestamp(),
+    updatedAt: FieldValue.serverTimestamp(),
+  });
+  await notifyUser(db, c.driverId, {
+    title: "No free slot right now",
+    body:
+      `${c.establishmentName} had no free slot for you. You were not ` +
+      "charged, and your temporary QR still works until it expires.",
+    data: { kind: "gate_turned_away", checkoutId: ref.id },
+  });
+  return { status: c.status };
 }
 
 /**
@@ -729,6 +759,7 @@ module.exports = {
   openPayment,
   findGatePass,
   startGatePayment,
+  turnAwayGatePass,
   checkGatePayment,
   cancelGatePayment,
   reconcileGatePass,

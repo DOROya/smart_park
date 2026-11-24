@@ -217,7 +217,9 @@ class _DriverHomePageState extends State<DriverHomePage>
             return;
           }
           final Object? id = data['checkoutId'];
-          if (data['kind'] == ParkingPush.kGateConfirm && id is String) {
+          if ((data['kind'] == ParkingPush.kGateConfirm ||
+                  data['kind'] == ParkingPush.kGateTurnedAway) &&
+              id is String) {
             _openPass(id);
           }
           // "Time almost up" / "overtime started": buy more hours.

@@ -264,6 +264,10 @@ class GatePassService {
     );
   }
 
+  /// No free slot: tells the driver they were turned away and not charged.
+  Future<void> turnAway(String checkoutId) =>
+      _call('turnAwayGatePass', checkoutId);
+
   /// Stops an unfinished payment. Returns `paid` if it went through first.
   Future<String> cancelPayment(String checkoutId) =>
       _call('cancelGatePayment', checkoutId);

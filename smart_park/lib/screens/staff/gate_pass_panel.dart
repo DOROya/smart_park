@@ -154,6 +154,12 @@ class _GatePassPanelState extends State<GatePassPanel> {
   Future<void> _turnAway() async {
     setState(() => _busy = true);
     try {
+      // Tell the driver first; the gate log below is what must not fail.
+      try {
+        await widget.passService.turnAway(_pass.checkoutId);
+      } catch (error, stack) {
+        reportError(error, stack, reason: 'Tell driver of turn away');
+      }
       await widget.onTurnAway();
     } finally {
       if (mounted) setState(() => _busy = false);
