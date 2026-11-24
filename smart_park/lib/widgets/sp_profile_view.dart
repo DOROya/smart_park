@@ -26,6 +26,7 @@ class SpProfileView extends StatefulWidget {
     this.padding = EdgeInsets.zero,
     this.wide = false,
     this.extraCards = const <Widget>[],
+    this.allowDeleteAccount = true,
   });
 
   final String roleLabel;
@@ -41,6 +42,9 @@ class SpProfileView extends StatefulWidget {
 
   /// Role-specific cards shown after Appearance (e.g. a driver's notices).
   final List<Widget> extraCards;
+
+  /// False for accounts only their owner removes (supervisors).
+  final bool allowDeleteAccount;
 
   @override
   State<SpProfileView> createState() => _SpProfileViewState();
@@ -153,8 +157,10 @@ class _SpProfileViewState extends State<SpProfileView> {
                     SpTermsCard(role: widget.roleLabel),
                     const SizedBox(height: 12),
                     const SpDownloadDataCard(),
-                    const SizedBox(height: 12),
-                    SpDeleteAccountCard(roleLabel: widget.roleLabel),
+                    if (widget.allowDeleteAccount) ...[
+                      const SizedBox(height: 12),
+                      SpDeleteAccountCard(roleLabel: widget.roleLabel),
+                    ],
                   ],
                 ),
               ),
@@ -185,8 +191,10 @@ class _SpProfileViewState extends State<SpProfileView> {
         const SizedBox(height: 12),
         const SpDownloadDataCard(),
         const SizedBox(height: 12),
-        SpDeleteAccountCard(roleLabel: widget.roleLabel),
-        const SizedBox(height: 12),
+        if (widget.allowDeleteAccount) ...[
+          SpDeleteAccountCard(roleLabel: widget.roleLabel),
+          const SizedBox(height: 12),
+        ],
         _signOutButton(),
       ],
     );

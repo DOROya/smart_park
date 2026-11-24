@@ -127,9 +127,14 @@ function overtimeRateFor(ratesByType, vehicleType) {
   return parseMoney(vehicle);
 }
 
-/** Same rounding as the app's `platformFeeCentavosFor`. */
-function platformFeeCentavosFor(grossCentavos) {
-  return Math.round(grossCentavos * PLATFORM_FEE_RATE);
+/**
+ * Same rounding as the app's `platformFeeCentavosFor`. [rate] is the
+ * commission saved on the sale (src/commission.js); the default is the
+ * original 5%, for sales from before rates were saved.
+ */
+function platformFeeCentavosFor(grossCentavos, rate = PLATFORM_FEE_RATE) {
+  const r = typeof rate === "number" && Number.isFinite(rate) ? rate : PLATFORM_FEE_RATE;
+  return Math.round(grossCentavos * r);
 }
 
 /** Same estimate as the app's `estimateProcessorFeeCentavos`. */

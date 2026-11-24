@@ -1,6 +1,6 @@
 # Quick fixes: implementation plan
 
-**Status:** planned, not built. Written November 23, 2026 for a later implementation session.
+**Status:** items 1, 2 and 4 built 2026-11-23; item 3 (comment moderation) not built, by decision. Still to do: paper updates.
 These are gaps a defense panel could ask about that are small to close. They're independent of each other and of
 `docs/supervisor-role.md`, so build them in any order. Suggested order: 1 and 3 (smallest), then 2, then 4.
 

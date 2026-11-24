@@ -18,7 +18,10 @@ import '../../utils/friendly_error.dart';
 import '../../widgets/smartpark_ui.dart';
 import '../../widgets/sp_vehicle_type.dart';
 import '../../widgets/sp_audit_log.dart';
+import '../../widgets/sp_admin_access.dart';
+import '../../services/admin_access.dart';
 import 'admin_payment_health.dart';
+import 'admin_commission_card.dart';
 import '../../widgets/sp_refunds_section.dart';
 import '../../services/parking_refunds.dart'
     show kAdminFaultReasons, kSuspensionRefundDays;
@@ -40,7 +43,7 @@ enum _AdminTab { dashboard, facility, users, finance, settings }
 
 enum _FacilitySortOption { pendingFirst, newest, oldest }
 
-enum _UserRoleFilter { all, driver, parkingOwner }
+enum _UserRoleFilter { all, driver, parkingOwner, admins }
 
 enum _UserSortOption { newest, name }
 
@@ -149,7 +152,9 @@ class _AdminHomePageState extends State<AdminHomePage>
 
   bool _isPriorityUserRole(String role) {
     final String normalizedRole = _normalize(role);
-    return normalizedRole == 'driver' || normalizedRole == 'parking owner';
+    return normalizedRole == 'driver' ||
+        normalizedRole == 'parking owner' ||
+        normalizedRole == 'admin';
   }
 
   bool _matchesUserRole(String role) {
@@ -158,6 +163,7 @@ class _AdminHomePageState extends State<AdminHomePage>
       _UserRoleFilter.all => _isPriorityUserRole(normalizedRole),
       _UserRoleFilter.driver => normalizedRole == 'driver',
       _UserRoleFilter.parkingOwner => normalizedRole == 'parking owner',
+      _UserRoleFilter.admins => normalizedRole == 'admin',
     };
   }
 

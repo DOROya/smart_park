@@ -69,3 +69,18 @@ test("generated passwords are 10 characters from the safe alphabet", () => {
   // Uses the picker it is given, so the alphabet mapping is checked exactly.
   assert.equal(generateStaffPassword(3, () => 0), "AAA");
 });
+
+test("a supervisor resets gate staff of their own facility only", () => {
+  const gate = { userId: "s1", ownerId: "owner1", facilityId: "f1", role: "staff" };
+  const sup = { userId: "sup1", ownerId: "owner1", facilityId: "f1", role: "supervisor" };
+  assert.equal(staffResetDenial("sup1", gate, sup), null);
+  // Not another supervisor, not themselves, not another facility's staff.
+  assert.match(staffResetDenial("sup1", { ...sup, userId: "sup2" }, sup)[1], /Only the owner/);
+  assert.match(staffResetDenial("sup1", sup, sup)[1], /Only the owner/);
+  assert.equal(staffResetDenial("sup1", { ...gate, facilityId: "f2" }, sup)[0], "permission-denied");
+  // A deactivated supervisor, or gate staff, can't reset anyone.
+  assert.equal(staffResetDenial("sup1", gate, { ...sup, active: false })[0], "permission-denied");
+  assert.equal(staffResetDenial("s2", gate, { ...gate, userId: "s2" })[0], "permission-denied");
+  // The owner still resets supervisors.
+  assert.equal(staffResetDenial("owner1", sup), null);
+});

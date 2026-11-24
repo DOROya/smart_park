@@ -207,7 +207,39 @@ const FACILITY_STATUS_ACTIONS = {
 };
 
 /** establishment_details: review decisions, notices and edits. */
+/** "Nov 24, 10:00 PM" in Manila. */
+function manilaDateTime(value) {
+  const ms = value instanceof Timestamp ? value.toMillis() : null;
+  if (ms === null) return "";
+  const d = new Date(ms);
+  return (
+    d.toLocaleDateString("en-US", { timeZone: "Asia/Manila", month: "short", day: "numeric" }) +
+    ", " +
+    d.toLocaleTimeString("en-US", { timeZone: "Asia/Manila", hour: "numeric", minute: "2-digit" })
+  );
+}
+
+const CLOSURE_FIELDS = ["closedUntil", "closedReason", "closedAt", "closedBy"];
+
+/** A temporary closure set or ended, when that is all that changed. */
+function describeClosure(before, after, changes) {
+  const fields = Object.keys(changes);
+  if (!fields.length || !fields.every((f) => CLOSURE_FIELDS.includes(f))) return null;
+  if (after?.closedUntil) {
+    const why = String(after.closedReason || "").trim();
+    return {
+      action: "facility.closed_temporarily",
+      summary: `Closed the facility until ${manilaDateTime(after.closedUntil)}${why ? ` (${why})` : ""}`,
+    };
+  }
+  return before?.closedUntil
+    ? { action: "facility.reopened", summary: "Reopened the facility" }
+    : null;
+}
+
 function describeFacilityDetails(before, after, changes) {
+  const closure = before && after ? describeClosure(before, after, changes) : null;
+  if (closure) return closure;
   if (!before && after) {
     return { action: "facility.submitted", summary: "Submitted a new facility for review" };
   }
@@ -294,6 +326,40 @@ function describeWarning(before, after, changes) {
     return { action: "driver.warning_contested", summary: `${driver} contested a warning` };
   }
   return { action: "driver.warning_updated", summary: `Updated a warning to ${driver} (${fields.join(", ")})` };
+}
+
+/**
+ * activity_logs: only an exit's overtime switched between owed and
+ * collected after the scan, by the owner, a supervisor or staff. Scans
+ * themselves are the gate log and aren't repeated here.
+ */
+function describeGateLog(before, after, changes) {
+  if (!before || !after || !changes.overtimeStatus) return null;
+  const plate = after.plate || after.vehiclePlate || "a vehicle";
+  const to = after.overtimeStatus === "collected" ? "collected" : "owed";
+  return {
+    action: "gate.overtime_status_changed",
+    summary: `Marked overtime for ${plate} as ${to}`,
+  };
+}
+
+/** cash_handovers: cash received from a staff member (never edited). */
+function describeCashHandover(before, after) {
+  if (before || !after) return null;
+  const amount = Number(after.amount || 0);
+  return {
+    action: "cash.received",
+    summary: `Received PHP ${amount.toFixed(2)} from ${after.staffName || "a staff member"}`,
+  };
+}
+
+/** staff_shifts: a shift someone forgot to end, closed for them. */
+function describeShift(before, after) {
+  if (!before || !after || !after.endedBy || before.endedAt) return null;
+  return {
+    action: "staff.shift_ended",
+    summary: `Ended ${after.staffName || "a staff member"}'s shift`,
+  };
 }
 
 /** driver_reports / facility_reports: an admin handles a report. */
@@ -405,6 +471,24 @@ const WATCHED = {
     describe: describeReport("driver"),
     facilityId: (_, data) => data?.establishmentId || "",
     // The owner filed it, so they may see what became of it.
+    ownerVisible: true,
+  },
+  activity_logs: {
+    targetType: "gate_log",
+    describe: describeGateLog,
+    facilityId: (_, data) => data?.establishmentID || data?.establishmentId || "",
+    ownerVisible: true,
+  },
+  cash_handovers: {
+    targetType: "cash_handover",
+    describe: describeCashHandover,
+    facilityId: (_, data) => data?.establishmentId || "",
+    ownerVisible: true,
+  },
+  staff_shifts: {
+    targetType: "staff_shift",
+    describe: describeShift,
+    facilityId: (_, data) => data?.establishmentId || "",
     ownerVisible: true,
   },
   facility_reports: {
@@ -519,6 +603,9 @@ module.exports = {
   describeStaff,
   describeWarning,
   describeReport,
+  describeGateLog,
+  describeCashHandover,
+  describeShift,
   entryForWrite,
   onWatchedWrite,
   audited,

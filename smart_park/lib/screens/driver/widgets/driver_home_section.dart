@@ -1045,7 +1045,12 @@ class _DriverParkingCard extends StatelessWidget {
                       left: 10,
                       child: _overlayChip(
                         Icons.circle,
-                        openNow ? 'Open now' : 'Closed',
+                        openNow
+                            ? 'Open now'
+                            : DriverEstablishmentService.closedUntilLabel(
+                                    data,
+                                  ) ??
+                                  'Closed',
                         openNow ? spEntryColor : spDeniedColor,
                       ),
                     ),

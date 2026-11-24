@@ -122,3 +122,26 @@ test("every counter is summed", () => {
   assert.equal(s.paid, 2);
   assert.equal(Object.values(s.unfinished).reduce((a, b) => a + b, 0), COUNTERS.length - 2);
 });
+
+test("admins are alerted about stuck payments, at most every 6 hours", () => {
+  const { alertProblems, alertDue, summarizePaymentHealth, ALERT_EVERY_MS } = require("../src/payment_health");
+  const now = Date.UTC(2026, 10, 23, 4);
+  const healthy = summarizePaymentHealth({ lastRun: { lastRunAt: now - 60000 }, nowMs: now, periodDays: 1 });
+  assert.deepEqual(alertProblems(healthy), []);
+  assert.equal(alertDue(alertProblems(healthy), null, now), false);
+
+  const stuck = summarizePaymentHealth({
+    pending: [{ status: "pending", kind: "gate_pass", gatePaymentStartedAt: now - 60 * 60 * 1000 }],
+    lastRun: { lastRunAt: now - 60000 },
+    nowMs: now,
+    periodDays: 1,
+  });
+  const problems = alertProblems(stuck);
+  assert.match(problems[0], /stuck/);
+  assert.equal(alertDue(problems, null, now), true);
+  assert.equal(alertDue(problems, now - ALERT_EVERY_MS + 1, now), false);
+  assert.equal(alertDue(problems, now - ALERT_EVERY_MS, now), true);
+
+  const overdue = summarizePaymentHealth({ lastRun: { lastRunAt: now - 60 * 60 * 1000 }, nowMs: now, periodDays: 1 });
+  assert.match(alertProblems(overdue)[0], /last ran 60 minutes ago/);
+});

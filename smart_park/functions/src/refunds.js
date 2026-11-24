@@ -1,7 +1,8 @@
 // Refunds when SmartPark pulls a facility. Drivers pay at the gate, so only
-// paid tickets with hours left can be stranded. The driver always gets the
-// unused share of the price back; who covers it (and PayMongo's fee) depends
-// on why the facility was pulled:
+// paid tickets with hours left can be stranded. The driver gets the unused
+// share of what the owner received: the price less SmartPark's commission
+// and PayMongo's processing fee, which are not refundable. Who covers it
+// depends on why the facility was pulled:
 //   - documents the admin approved turned out invalid -> SmartPark
 //   - anything else -> the owner, recovered from their next online sales
 //
@@ -21,7 +22,7 @@ const { HttpsError } = require("firebase-functions/v2/https");
 const { logger } = require("firebase-functions");
 
 const paymongo = require("./paymongo");
-const { platformFeeCentavosFor } = require("./pricing");
+const { platformFeeCentavosFor, estimateProcessorFeeCentavos } = require("./pricing");
 const { notifyUser, peso } = require("./notify");
 const { notifyAdmins, refundRequestAlert } = require("./alerts");
 
@@ -77,12 +78,27 @@ function isRefundable(ticket) {
   return ticket.status === "paid" && ticket.source !== "walk_in" && Boolean(ticket.paymongo);
 }
 
-/** The unused share of what was paid, in centavos (rounded down). */
+/**
+ * What part of a ticket's price can be refunded at all, in centavos: the
+ * price less SmartPark's commission and PayMongo's processing fee, worked
+ * out as at checkout. Mirrors refundableBase in
+ * lib/services/parking_refunds.dart.
+ */
+function refundableBase(ticket) {
+  const paid = Math.round(Number(ticket.amount || 0) * 100);
+  if (paid <= 0) return { paid: 0, platformFee: 0, processorFee: 0, refundable: 0 };
+  // The commission the ticket was sold at (5% before rates were saved).
+  const platformFee = platformFeeCentavosFor(paid, ticket.commissionRate);
+  const processorFee = estimateProcessorFeeCentavos(paid, ticket.paymentMethod);
+  return { paid, platformFee, processorFee, refundable: Math.max(0, paid - platformFee - processorFee) };
+}
+
+/** The unused share of the refundable part, in centavos (rounded down). */
 function refundCentavos(ticket, unused = hoursLeft(ticket)) {
   const total = includedStayHours(ticket.plan, ticket.duration);
-  const paid = Math.round(Number(ticket.amount || 0) * 100);
-  if (total <= 0 || unused <= 0 || paid <= 0) return 0;
-  return Math.min(paid, Math.floor((paid * Math.min(unused, total)) / total));
+  const { refundable } = refundableBase(ticket);
+  if (total <= 0 || unused <= 0 || refundable <= 0) return 0;
+  return Math.min(refundable, Math.floor((refundable * Math.min(unused, total)) / total));
 }
 
 /** Who covers a refund, from the reasons the facility was pulled. */
@@ -102,12 +118,12 @@ function millis(value) {
 }
 
 /**
- * What an owner repays for a refund they cover: the refund less SmartPark's
- * own commission on it, which SmartPark gives back.
+ * What an owner repays for a refund they cover: all of it. The refund comes
+ * only out of the owner's own share (SmartPark's commission and PayMongo's
+ * fee were kept back from it), so nothing is given back.
  */
 function ownerOwesCentavos(refundedCentavos) {
-  const amount = Math.max(0, Math.floor(refundedCentavos || 0));
-  return amount - platformFeeCentavosFor(amount);
+  return Math.max(0, Math.floor(refundedCentavos || 0));
 }
 
 /** Whether a suspension started at [suspendedAt] is due for refunds. */
@@ -149,6 +165,9 @@ function buildRefund(ticketId, ticket, details, cause, status) {
     plan: ticket.plan || "",
     duration: ticket.duration || 0,
     ticketAmountCentavos: Math.round(Number(ticket.amount || 0) * 100),
+    // Kept back from the refund; shown to the driver as the calculation.
+    platformFeeCentavos: refundableBase(ticket).platformFee,
+    processorFeeCentavos: refundableBase(ticket).processorFee,
     totalHours: includedStayHours(ticket.plan, ticket.duration),
     unusedHours: unused,
     amountCentavos: refundCentavos(ticket, unused),
@@ -586,6 +605,7 @@ async function decideRefund(request, secretKey) {
     const snap = await tx.get(ref);
     const r = snap.data();
     if (!snap.exists) throw new HttpsError("not-found", "Refund not found.");
+    selfCaseCheck(r, uid);
     // Failed ones can be retried from the same screen.
     if (!["requested", "failed"].includes(r.status)) return r.status;
     tx.update(ref, {
@@ -619,6 +639,13 @@ async function requireAdmin(db, auth) {
   const caller = await db.collection("users").doc(auth.uid).get();
   if (caller.data()?.role !== "admin") throw new HttpsError("permission-denied", "Admins only.");
   return auth.uid;
+}
+
+/** No admin decides a case about their own account (docs/admin-roles.md). */
+function selfCaseCheck(record, adminId) {
+  if (adminId && (record?.driverId === adminId || record?.ownerId === adminId)) {
+    throw new HttpsError("permission-denied", "Another admin has to decide a case about your own account.");
+  }
 }
 
 /** Why an owner can't dispute this refund's charge, or null when they can. */
@@ -672,6 +699,7 @@ async function resolveRefundDispute(request) {
     const snap = await tx.get(ref);
     const r = snap.data();
     if (!snap.exists) throw new HttpsError("not-found", "Refund not found.");
+    selfCaseCheck(r, adminId);
     if (r.dispute?.status !== "open") {
       throw new HttpsError("failed-precondition", "This refund has no open dispute.");
     }
@@ -744,6 +772,7 @@ async function recordOwnerRepayment(request) {
   if (!ownerId || !(centavos > 0)) {
     throw new HttpsError("invalid-argument", "Enter the amount received.");
   }
+  selfCaseCheck({ ownerId }, adminId);
   const ref = db.collection(BALANCES).doc(ownerId);
   const left = await db.runTransaction(async (tx) => {
     const snap = await tx.get(ref);
@@ -813,6 +842,8 @@ async function releaseRecovery(db, ownerId, amount) {
 }
 
 module.exports = {
+  selfCaseCheck,
+  refundableBase,
   REFUNDS,
   BALANCES,
   ADMIN_FAULT_REASONS,

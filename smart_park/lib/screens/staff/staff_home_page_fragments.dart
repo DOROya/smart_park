@@ -34,11 +34,14 @@ extension _StaffHomePageFragments on _StaffHomePageState {
       );
     }
 
-    final String roleLabel =
+    final String rawRole =
         ((userData['staffRole'] as String?) ??
                 (userData['role'] as String?) ??
                 'Staff')
             .trim();
+    final String roleLabel = rawRole.isEmpty
+        ? 'Staff'
+        : '${rawRole[0].toUpperCase()}${rawRole.substring(1)}';
     // Staff usually have no users/ profile, so use their staff record name.
     final String profileFirstName = ((userData['firstName'] as String?) ?? '')
         .trim();
@@ -345,9 +348,15 @@ extension _StaffHomePageFragments on _StaffHomePageState {
       ),
       builder: (BuildContext context, detailsSnapshot) {
         final Map<String, dynamic>? details = detailsSnapshot.data?.data();
+        final TemporaryClosure? closure = TemporaryClosure.of(details);
         return _buildQrTabContent(
           facilityId,
-          isFacilityRestricted(details) ? facilityStatus(details) : null,
+          isFacilityRestricted(details)
+              ? facilityStatus(details)
+              : closure != null && closure.isActiveAt(DateTime.now())
+              ? 'temporarily closed'
+              : null,
+          closure: closure,
         );
       },
     );
@@ -355,7 +364,13 @@ extension _StaffHomePageFragments on _StaffHomePageState {
 
   /// [restriction] is "suspended" or "deactivated" when an admin pulled the
   /// facility: entry is closed, exits still work.
-  Widget _buildQrTabContent(String? facilityId, String? restriction) {
+  ///
+  /// Or "temporarily closed" during the owner's [closure].
+  Widget _buildQrTabContent(
+    String? facilityId,
+    String? restriction, {
+    TemporaryClosure? closure,
+  }) {
     final double scannerHeight = _isTablet ? 360 : 280;
     final List<Widget> header = <Widget>[
       Text(
@@ -373,7 +388,7 @@ extension _StaffHomePageFragments on _StaffHomePageState {
       ),
       if (restriction != null) ...[
         const SizedBox(height: 12),
-        _EntryClosedBanner(restriction: restriction),
+        _EntryClosedBanner(restriction: restriction, closure: closure),
       ],
     ];
     final List<Widget> scanner = <Widget>[
@@ -508,7 +523,12 @@ extension _StaffHomePageFragments on _StaffHomePageState {
             onWrongVehicle: _refuseLastEntry,
           );
     final List<Widget> lookup = <Widget>[
-      _ManualPlateLookup(onLookup: _lookupByPlate),
+      _ManualPlateLookup(
+        onLookup: _lookupByPlate,
+        pauseScanner: _pauseScannerForPhoto,
+        resumeScanner: _resumeScannerAfterPhoto,
+        knownPlates: () => _platesInside(facilityId),
+      ),
       if (facilityId != null) ...[
         const SizedBox(height: 12),
         WalkInPanel(
@@ -517,6 +537,9 @@ extension _StaffHomePageFragments on _StaffHomePageState {
           staffName: _staffName,
           entryClosed: restriction != null,
           unsent: _unsentExits,
+          pauseScanner: _pauseScannerForPhoto,
+          resumeScanner: _resumeScannerAfterPhoto,
+          knownPlates: () => _platesInside(facilityId),
         ),
       ],
     ];
@@ -834,10 +857,13 @@ class _ShiftCashCard extends StatelessWidget {
 }
 
 class _EntryClosedBanner extends StatelessWidget {
-  const _EntryClosedBanner({required this.restriction});
+  const _EntryClosedBanner({required this.restriction, this.closure});
 
-  /// "suspended" or "deactivated".
+  /// "suspended", "deactivated" or "temporarily closed".
   final String restriction;
+
+  /// The owner's closure, when [restriction] is "temporarily closed".
+  final TemporaryClosure? closure;
 
   @override
   Widget build(BuildContext context) {
@@ -870,10 +896,17 @@ class _EntryClosedBanner extends StatelessWidget {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  'SmartPark has $restriction this facility. Do not admit '
-                  'any vehicle; entry scans and walk-ins are refused until '
-                  'it is ${suspended ? 'reinstated' : 'reactivated'}. '
-                  'Vehicles already inside can still exit.',
+                  closure != null && restriction == 'temporarily closed'
+                      ? 'Closed until ${temporaryClosureUntilLabel(closure!)}'
+                            '${closure!.reason.isEmpty ? '' : ' (${closure!.reason})'}. '
+                            'Do not admit any vehicle; entry scans and '
+                            'walk-ins are refused until then. Vehicles '
+                            'already inside can still exit.'
+                      : 'SmartPark has $restriction this facility. Do not '
+                            'admit any vehicle; entry scans and walk-ins are '
+                            'refused until it is '
+                            '${suspended ? 'reinstated' : 'reactivated'}. '
+                            'Vehicles already inside can still exit.',
                   style: TextStyle(
                     fontSize: 12,
                     height: 1.35,
@@ -890,9 +923,17 @@ class _EntryClosedBanner extends StatelessWidget {
 }
 
 class _ManualPlateLookup extends StatefulWidget {
-  const _ManualPlateLookup({required this.onLookup});
+  const _ManualPlateLookup({
+    required this.onLookup,
+    this.pauseScanner,
+    this.resumeScanner,
+    this.knownPlates,
+  });
 
   final Future<void> Function(String plate) onLookup;
+  final Future<void> Function()? pauseScanner;
+  final Future<void> Function()? resumeScanner;
+  final Future<List<String>> Function()? knownPlates;
 
   @override
   State<_ManualPlateLookup> createState() => _ManualPlateLookupState();
@@ -938,6 +979,15 @@ class _ManualPlateLookupState extends State<_ManualPlateLookup> {
                   textCapitalization: TextCapitalization.characters,
                   decoration: InputDecoration(
                     hintText: 'ABC 1234',
+                    // A photo of the plate fills this in, for staff to
+                    // check before tapping Verify.
+                    suffixIcon: SpReadPlateButton(
+                      onPlate: (String plate) =>
+                          setState(() => _controller.text = plate),
+                      knownPlates: widget.knownPlates,
+                      pauseScanner: widget.pauseScanner,
+                      resumeScanner: widget.resumeScanner,
+                    ),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
                     ),

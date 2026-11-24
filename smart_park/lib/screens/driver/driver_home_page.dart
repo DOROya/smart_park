@@ -11,6 +11,10 @@ import '../../services/error_reporter.dart';
 import '../../services/parking_push.dart';
 import '../../services/permission_service.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/sp_announcements.dart';
+import '../../services/app_shortcuts.dart';
+import '../../services/last_ticket_store.dart';
+import 'saved_ticket_page.dart';
 import '../../widgets/smartpark_logo.dart';
 import '../../widgets/smartpark_ui.dart';
 import '../../widgets/sp_profile_view.dart';
@@ -66,6 +70,7 @@ class _DriverHomePageState extends State<DriverHomePage>
   Position? _labelPosition;
 
   /// Pops up new warnings from the SmartPark admin once, when the app opens.
+  AnnouncementWatcher? _announcements;
   DriverWarningWatcher? _warnings;
 
   /// The driver's usable temporary QRs, for the Home shortcut.
@@ -85,6 +90,92 @@ class _DriverHomePageState extends State<DriverHomePage>
     _searchController.addListener(_onSearchChanged);
     _userFuture = _fetchUserDocument();
     unawaited(_startUp(uid));
+    // "Show my ticket" from the app icon.
+    pendingShortcut.addListener(_onShortcut);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _onShortcut());
+  }
+
+  void _onShortcut() {
+    if (!mounted || pendingShortcut.value != kShowTicketShortcut) return;
+    pendingShortcut.value = null;
+    unawaited(_openShortcutTicket());
+  }
+
+  /// Opens the ticket the shortcut is for (see [pickShortcutTicket]). With
+  /// no signal, the copy saved on this phone.
+  Future<void> _openShortcutTicket() async {
+    final String? uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    final NavigatorState navigator = Navigator.of(context);
+    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+    ({String kind, String id, Map<String, dynamic> data})? pick;
+    bool offline = false;
+    try {
+      final FirebaseFirestore db = FirebaseFirestore.instance;
+      final List<QuerySnapshot<Map<String, dynamic>>> snaps = await Future.wait(
+        <Future<QuerySnapshot<Map<String, dynamic>>>>[
+          db.collection('transactions').where('driverId', isEqualTo: uid).get(),
+          db
+              .collection('parking_checkouts')
+              .where('driverId', isEqualTo: uid)
+              .where('kind', isEqualTo: 'gate_pass')
+              .where('status', whereIn: <String>['awaiting_gate', 'pending'])
+              .get(),
+        ],
+      ).timeout(const Duration(seconds: 6));
+      offline = snaps.first.metadata.isFromCache;
+      pick = pickShortcutTicket(
+        tickets: <(String, Map<String, dynamic>)>[
+          for (final QueryDocumentSnapshot<Map<String, dynamic>> d
+              in snaps[0].docs)
+            (d.id, d.data()),
+        ],
+        passes: <(String, Map<String, dynamic>)>[
+          for (final QueryDocumentSnapshot<Map<String, dynamic>> d
+              in snaps[1].docs)
+            (d.id, d.data()),
+        ],
+        createdAt: (Map<String, dynamic> d) =>
+            spParseDateTime(d['createdAt']) ??
+            spParseDateTime(d['createdAtClient']),
+      );
+    } catch (_) {
+      // No signal and nothing cached: the saved copy below.
+      final SavedTicket? saved = await LastTicketStore.load();
+      if (!mounted) return;
+      if (saved != null) {
+        unawaited(
+          navigator.push<void>(
+            MaterialPageRoute<void>(
+              builder: (_) => SavedTicketPage(ticket: saved, offline: true),
+            ),
+          ),
+        );
+        return;
+      }
+    }
+    if (!mounted) return;
+    if (pick == null) {
+      setState(() => _selectedIndex = 1);
+      messenger.showSnackBar(
+        const SnackBar(content: Text('No active ticket.')),
+      );
+      return;
+    }
+    // A temporary QR is paid at the gate, which needs its live page.
+    if (pick.kind == 'pass' && !offline) {
+      _openPass(pick.id);
+      return;
+    }
+    final SavedTicket ticket = savedTicketFrom(pick.kind, pick.id, pick.data);
+    unawaited(LastTicketStore.save(ticket));
+    unawaited(
+      navigator.push<void>(
+        MaterialPageRoute<void>(
+          builder: (_) => SavedTicketPage(ticket: ticket, offline: offline),
+        ),
+      ),
+    );
   }
 
   /// First sign-in on this phone: the guide first, then the notification
@@ -96,6 +187,11 @@ class _DriverHomePageState extends State<DriverHomePage>
     if (!mounted) return;
     if (uid != null) {
       _warnings = DriverWarningWatcher(() => context, uid)..start();
+      _announcements = AnnouncementWatcher(
+        () => context,
+        'Driver',
+        isCurrent: () => mounted && (ModalRoute.of(context)?.isCurrent ?? true),
+      )..start();
       _registerPush(uid);
     }
     await _initializeDriverPermissions();
@@ -116,6 +212,10 @@ class _DriverHomePageState extends State<DriverHomePage>
           );
         },
         onOpen: (Map<String, dynamic> data) {
+          if (data['kind'] == 'announcement') {
+            unawaited(_announcements?.check());
+            return;
+          }
           final Object? id = data['checkoutId'];
           if (data['kind'] == ParkingPush.kGateConfirm && id is String) {
             _openPass(id);
@@ -151,6 +251,8 @@ class _DriverHomePageState extends State<DriverHomePage>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _warnings?.dispose();
+    _announcements?.dispose();
+    pendingShortcut.removeListener(_onShortcut);
     _passesSub?.cancel();
     _positionSubscription?.cancel();
     _searchController.removeListener(_onSearchChanged);
@@ -291,13 +393,27 @@ class _DriverHomePageState extends State<DriverHomePage>
             accuracy: LocationAccuracy.best,
             distanceFilter: 8,
           ),
-        ).listen((Position position) {
-          if (!mounted) {
-            return;
-          }
+        ).listen(
+          (Position position) {
+            if (!mounted) {
+              return;
+            }
 
-          _setPosition(position);
-        });
+            _setPosition(position);
+          },
+          // Location turned off (or permission taken back) while the map is
+          // open: show it instead of crashing. Updates resume once it is on.
+          onError: (Object error) {
+            if (!mounted) {
+              return;
+            }
+            setState(() {
+              _locationLabel = error is LocationServiceDisabledException
+                  ? 'Location services are disabled'
+                  : 'Unable to fetch current location';
+            });
+          },
+        );
   }
 
   void _setPosition(Position position) {
@@ -398,9 +514,15 @@ class _DriverHomePageState extends State<DriverHomePage>
     _labelPosition = null;
     _setPosition(position);
 
-    await _mapController?.animateCamera(
-      CameraUpdate.newLatLng(LatLng(position.latitude, position.longitude)),
-    );
+    try {
+      await _mapController?.animateCamera(
+        CameraUpdate.newLatLng(LatLng(position.latitude, position.longitude)),
+      );
+    } catch (_) {
+      // The map is gone (another tab is open); it starts on the driver's
+      // position when shown again.
+      _mapController = null;
+    }
   }
 
   Future<void> _promptEnableLocationServices() async {
@@ -533,6 +655,7 @@ class _DriverHomePageState extends State<DriverHomePage>
           extraCards: <Widget>[
             if (FirebaseAuth.instance.currentUser?.uid case final String uid)
               DriverNoticesCard(driverId: uid),
+            const SpAnnouncementsCard(role: 'Driver'),
             if (FirebaseAuth.instance.currentUser?.uid case final String uid)
               DriverNotificationSettingsCard(driverId: uid),
             SpSectionCard(

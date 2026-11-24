@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import 'error_reporter.dart';
+import 'facility_closure.dart';
 import 'facility_status.dart';
 import 'gate_unsent_exits.dart';
 import 'operating_hours.dart';
@@ -820,7 +821,9 @@ class GateScanService {
     }
     // A facility an admin pulled admits no one. Exits stay open so vehicles
     // already inside can still leave.
-    final String? restriction = await _facilityRestriction(facilityId);
+    final ({String? restriction, TemporaryClosure? closure}) status =
+        await _facilityRestriction(facilityId);
+    final String? restriction = status.restriction;
     if (restriction != null) {
       return _deny(
         staff: staff,
@@ -830,6 +833,20 @@ class GateScanService {
         timestamp: scannedAt,
         logReason: 'Facility $restriction by admin; entry closed.',
         reason: 'Facility $restriction by SmartPark. Do not admit.',
+      );
+    }
+    // Closed for a while by its owner: no entries until it reopens.
+    final TemporaryClosure? closure = status.closure;
+    if (closure != null && closure.isActiveAt(scannedAt)) {
+      final String until = temporaryClosureUntilLabel(closure);
+      return _deny(
+        staff: staff,
+        scanType: 'entry',
+        plate: plate,
+        transactionId: transactionId,
+        timestamp: scannedAt,
+        logReason: 'Facility temporarily closed until $until; entry closed.',
+        reason: 'Facility temporarily closed until $until. Do not admit.',
       );
     }
     // Tickets are reusable: a checked-out ticket may come back in while it
@@ -1023,7 +1040,8 @@ class GateScanService {
     final Duration closed = closedTimeBetween(
       entryTime.add(Duration(hours: paidHours)),
       scannedAt,
-      await _loadHours(facilityId),
+      // A temporary closure is closed time too.
+      hoursWithClosure(await _loadHours(facilityId), details),
     );
     final Duration clock = closed >= elapsed ? Duration.zero : elapsed - closed;
     final int extraHours = overtimeHours(clock, paidHours, graceMinutes: grace);
@@ -1203,22 +1221,28 @@ class GateScanService {
   /// "suspended" or "deactivated" when an admin pulled [facilityId], else
   /// null. A failed read doesn't block the gate; the ticket itself was just
   /// read, so the facility's state is the only thing unknown.
-  Future<String?> _facilityRestriction(String facilityId) async {
+  ///
+  /// Also the owner's temporary closure, if one hasn't ended.
+  Future<({String? restriction, TemporaryClosure? closure})>
+  _facilityRestriction(String facilityId) async {
     try {
       final DocumentSnapshot<Map<String, dynamic>> details = await _db
           .collection('establishment_details')
           .doc(facilityId)
           .get();
-      return isFacilityRestricted(details.data())
-          ? facilityStatus(details.data())
-          : null;
+      return (
+        restriction: isFacilityRestricted(details.data())
+            ? facilityStatus(details.data())
+            : null,
+        closure: TemporaryClosure.of(details.data()),
+      );
     } catch (error, stack) {
       reportError(
         error,
         stack,
         reason: 'Loading facility status for entry scan failed',
       );
-      return null;
+      return (restriction: null, closure: null);
     }
   }
 

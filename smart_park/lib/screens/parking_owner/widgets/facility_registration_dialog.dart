@@ -1,3 +1,4 @@
+import '../../../services/facility_contact.dart';
 import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -49,6 +50,7 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
 
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _addressController = TextEditingController();
+  final TextEditingController _contactController = TextEditingController();
   bool _open24Hours = false;
   int? _openMinutes;
   int? _closeMinutes;
@@ -143,6 +145,7 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
     _nameController.dispose();
     _addressController.dispose();
     _policiesController.dispose();
+    _contactController.dispose();
 
     _rateCarInitialController.dispose();
     _rateCarSucceedingHourController.dispose();
@@ -174,6 +177,9 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
 
     _nameController.text = (data['name'] as String?)?.trim() ?? '';
     _addressController.text = (data['address'] as String?)?.trim() ?? '';
+    _contactController.text = displayFacilityContact(
+      (data['contactNumber'] as String?) ?? '',
+    );
     final OperatingHours hours = OperatingHours.parse(data);
     _open24Hours = hours.allDay;
     _openMinutes = hours.openMinutes;
@@ -704,6 +710,7 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
               closeMinutes: _closeMinutes,
             ),
       policies: _policiesController.text.trim(),
+      contactNumber: normalizeFacilityContact(_contactController.text) ?? '',
       rates: <String, dynamic>{
         'car': buildVehicleRateMap(
           _rateCarInitialController,
@@ -1867,6 +1874,28 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
                             label: 'Address',
                             hint: 'Enter complete address',
                             controller: _addressController,
+                          ),
+                          const SizedBox(height: 10),
+                          _buildInputField(
+                            label: 'Contact Number (optional)',
+                            hint: '0917 123 4567 or (02) 8123 4567',
+                            controller: _contactController,
+                            keyboardType: TextInputType.phone,
+                            validator: (String? value) =>
+                                normalizeFacilityContact(value ?? '') == null
+                                ? 'Enter a mobile or landline number'
+                                : null,
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.only(top: 4),
+                            child: Text(
+                              'Shown to drivers so they can call the '
+                              'facility.',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: AppTheme.textMuted,
+                              ),
+                            ),
                           ),
                           const SizedBox(height: 10),
                           _buildOperatingHoursField(),

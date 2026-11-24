@@ -1,16 +1,21 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
+import '../../../widgets/sp_facility_contact.dart';
+import '../../../services/app_shortcuts.dart'
+    show savedTicketFrom, ticketQrPayload;
 import '../../../services/facility_status.dart';
+import '../../../services/last_ticket_store.dart';
 import '../../../content/terms_content.dart' show kSupportEmail;
 import '../../../widgets/sp_facility_report.dart';
 import '../../../services/parking_pricing.dart';
 import '../../../services/parking_refunds.dart';
+import '../../../services/platform_fees.dart'
+    show commissionPercent, saleCommissionRate;
 import '../../../services/parking_receipt.dart';
 import '../../../services/ticket_plate.dart';
 import '../../../theme/app_theme.dart';
@@ -25,37 +30,14 @@ import '../../../widgets/sp_save_qr_button.dart';
 import '../../../widgets/sp_ticket_cost.dart' show spPackageParts;
 import '../../../widgets/sp_vehicle_type.dart';
 import '../driver_parking_pass_page.dart';
+import '../driver_transaction_history_page.dart';
 import 'add_hours_sheet.dart';
 import 'rate_facility.dart';
 
-/// Rebuilds a scanner-compatible QR payload for tickets saved before the QR
-/// string was persisted. The gate scanner requires JSON containing at least
-/// the transaction id, so a bare document id must never be rendered.
+/// The QR a ticket shows (see [ticketQrPayload]).
 String _resolveTicketQrPayload(
   QueryDocumentSnapshot<Map<String, dynamic>> doc,
-) {
-  final Map<String, dynamic> data = doc.data();
-  final String stored = ((data['qrCode'] as String?) ?? '').trim();
-  if (stored.isNotEmpty) {
-    return stored;
-  }
-  final DateTime? issuedAt =
-      spParseDateTime(data['createdAt']) ??
-      spParseDateTime(data['createdAtClient']);
-  return jsonEncode(<String, dynamic>{
-    'transactionId': doc.id,
-    'driverId': (data['driverId'] as String?) ?? '',
-    'establishmentId':
-        (data['establishmentId'] as String?) ??
-        (data['establishmentID'] as String?) ??
-        '',
-    'vehicleType': (data['vehicleType'] as String?) ?? '',
-    'vehiclePlate': (data['vehiclePlate'] as String?) ?? '',
-    'plan': (data['plan'] as String?) ?? '',
-    'duration': (data['duration'] as num?)?.toInt() ?? 0,
-    'generatedAt': (issuedAt ?? DateTime.now()).toIso8601String(),
-  });
-}
+) => ticketQrPayload(doc.id, doc.data());
 
 /// Where a ticket is in its life: payment, then gate entry, then gate exit.
 enum _TicketState { awaitingPayment, failed, ready, parked, completed }
@@ -140,7 +122,8 @@ class _DriverTicketHistorySectionState extends State<DriverTicketHistorySection>
         () => FirebaseFirestore.instance
             .collection('transactions')
             .where('driverId', isEqualTo: uid)
-            .snapshots(),
+            // So the offline note clears once the server answers again.
+            .snapshots(includeMetadataChanges: true),
       ),
       builder:
           (
@@ -230,12 +213,63 @@ class _DriverTicketHistorySectionState extends State<DriverTicketHistorySection>
       }
     }
 
+    // Kept on this phone so "Show my ticket" opens it with no signal: the
+    // one parked first, else the newest with hours left.
+    if (active.isNotEmpty) {
+      final QueryDocumentSnapshot<Map<String, dynamic>> best = active
+          .firstWhere(
+            (QueryDocumentSnapshot<Map<String, dynamic>> d) =>
+                _ticketState(d.data()) == _TicketState.parked,
+            orElse: () => active.first,
+          );
+      unawaited(
+        LastTicketStore.save(savedTicketFrom('ticket', best.id, best.data())),
+      );
+    }
+    final bool offline = snapshot.data?.metadata.isFromCache ?? false;
+
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
       children: [
-        const SpPageHeader(
+        if (offline && tickets.isNotEmpty) ...[
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: AppTheme.surfaceAlt,
+              borderRadius: BorderRadius.circular(AppTheme.radius),
+              border: Border.all(color: spCardBorder),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.cloud_off_rounded, size: 18, color: spInsideColor),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Offline: showing your saved tickets. Hours left may '
+                    'have changed; staff check them at the gate.',
+                    style: TextStyle(fontSize: 12, color: AppTheme.textDark),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+        ],
+        SpPageHeader(
           title: 'Tickets',
           subtitle: 'Show the QR code to gate staff on entry and exit.',
+          trailing: OutlinedButton.icon(
+            onPressed: () => Navigator.of(context).push<void>(
+              MaterialPageRoute<void>(
+                builder: (_) => const DriverTransactionHistoryPage(),
+              ),
+            ),
+            icon: const Icon(Icons.receipt_long_outlined, size: 18),
+            label: const Text('Transactions'),
+            style: OutlinedButton.styleFrom(
+              visualDensity: VisualDensity.compact,
+            ),
+          ),
         ),
         const SizedBox(height: 16),
         _TemporaryQrList(
@@ -695,6 +729,7 @@ class _ActiveTicketCard extends StatelessWidget {
                   hoursLeft: ticketHoursLeft(data),
                   parkedSince: state == _TicketState.parked ? enteredAt : null,
                   graceMinutes: facilityGraceMinutes(facility),
+                  extraHours: ((data['extraHoursBought'] as num?) ?? 0).toInt(),
                 ),
                 const SizedBox(height: 16),
                 Container(
@@ -809,6 +844,8 @@ class _ActiveTicketCard extends StatelessWidget {
                       ),
                     ),
                   ),
+                // So a driver at the gate can call the facility.
+                SpFacilityContactRow.forFacility(_ticketFacilityId(data)),
                 const SizedBox(height: 8),
                 Row(
                   children: [
@@ -995,9 +1032,13 @@ class _TimeLeftPanel extends StatelessWidget {
     required this.hoursLeft,
     this.parkedSince,
     this.graceMinutes = kDefaultGraceMinutes,
+    this.extraHours = 0,
   });
 
   final int hoursLeft;
+
+  /// Hours the driver bought on top of the package, already in [hoursLeft].
+  final int extraHours;
 
   /// The facility's grace period after the paid time.
   final int graceMinutes;
@@ -1009,16 +1050,24 @@ class _TimeLeftPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     final DateTime? since = parkedSince;
     final DateTime? paidUntil = since?.add(Duration(hours: hoursLeft));
+    // Hours added during a visit count from its entry too.
     final String label = since == null
         ? 'Parking time left'
-        : 'Parking time left when you entered';
+        : 'Paid time from your entry';
+    final String validUntil = paidUntil == null
+        ? 'Until the hours run out · no expiry date'
+        : '${spFormatClockTime(paidUntil)}'
+              '${spSameDate(paidUntil, DateTime.now()) ? ' today' : ', ${spFormatDate(paidUntil)}'}';
     final String note = paidUntil == null
         ? 'Counts down only while you\'re parked, at least '
-              '$spBaseStayHours hours per visit. This is not an expiry date: '
-              'reuse this ticket on later visits until the time runs out.'
-        : 'Covers you until ${spFormatClockTime(paidUntil)}'
-              '${spSameDate(paidUntil, DateTime.now()) ? '' : ', ${spFormatDate(paidUntil)}'}. '
-              '${graceMinutes <= 0 ? 'Staying longer adds overtime, paid in cash at the exit.' : 'With the ${formatGracePeriod(graceMinutes)}, leave by ${spFormatClockTime(paidUntil.add(Duration(minutes: graceMinutes)))} to pay no overtime. Later than that, overtime is paid in cash at the exit.'}';
+              '$spBaseStayHours hours per visit. Reuse this ticket on later '
+              'visits until the time runs out.'
+        : graceMinutes <= 0
+        ? 'Staying longer adds overtime, paid in cash at the exit.'
+        : 'With the ${formatGracePeriod(graceMinutes)}, leave by '
+              '${spFormatClockTime(paidUntil.add(Duration(minutes: graceMinutes)))} '
+              'to pay no overtime. Later than that, overtime is paid in cash '
+              'at the exit.';
 
     return Container(
       width: double.infinity,
@@ -1069,12 +1118,40 @@ class _TimeLeftPanel extends StatelessWidget {
                         color: AppTheme.textDark,
                       ),
                     ),
+                    if (extraHours > 0)
+                      Text(
+                        'Includes ${formatParkingHours(extraHours)} you added',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: spEntryColor,
+                        ),
+                      ),
                   ],
                 ),
               ),
             ],
           ),
           const SizedBox(height: 10),
+          Text.rich(
+            TextSpan(
+              children: <InlineSpan>[
+                TextSpan(
+                  text: paidUntil == null ? 'Valid  ' : 'Covers you until  ',
+                  style: TextStyle(color: AppTheme.textMuted),
+                ),
+                TextSpan(
+                  text: validUntil,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w800,
+                    color: AppTheme.textDark,
+                  ),
+                ),
+              ],
+            ),
+            style: const TextStyle(fontSize: 13),
+          ),
+          const SizedBox(height: 8),
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -1445,10 +1522,21 @@ class _RefundPanelState extends State<_RefundPanel> {
       context: context,
       builder: (BuildContext context) => AlertDialog(
         title: const Text('Request a refund?'),
-        content: Text(
-          'You get ${spPeso(amountCentavos / 100)} back for the unused hours, '
-          'to the account you paid with. A SmartPark admin reviews requests '
-          'first. The ticket can no longer be used once refunded.',
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Text(
+                'You get about ${spPeso(amountCentavos / 100)} back for the '
+                'unused hours, to the account you paid with. A SmartPark '
+                'admin reviews requests first. The ticket can no longer be '
+                'used once refunded.',
+              ),
+              const SizedBox(height: 12),
+              _RefundCalculation(ticket: widget.ticket),
+            ],
+          ),
         ),
         actions: <Widget>[
           TextButton(
@@ -1485,8 +1573,16 @@ class _RefundPanelState extends State<_RefundPanel> {
   Widget build(BuildContext context) {
     final ParkingRefund? refund = widget.refund;
     final bool suspended = facilityStatus(widget.facility) == 'suspended';
-    final int amount =
-        refund?.amountCentavos ?? estimatedRefundCentavos(widget.ticket);
+    // Once sent, the amount is fixed; before that the server works it out
+    // again from the hours left, as the estimate does.
+    final bool sent = const <String>{
+      'processing',
+      'sent',
+      'refunded',
+    }.contains(refund?.status);
+    final int amount = sent
+        ? refund!.amountCentavos
+        : estimatedRefundCentavos(widget.ticket);
     final String peso = spPeso(amount / 100);
     final DateTime? autoDate = suspensionRefundDate(
       widget.facility?['suspendedAt'],
@@ -1505,7 +1601,7 @@ class _RefundPanelState extends State<_RefundPanel> {
       'requested' => (
         Icons.hourglass_top_rounded,
         spInsideColor,
-        'Refund of $peso requested',
+        'Refund of about $peso requested',
         'A SmartPark admin will review it. If nobody decides within '
             '$kRefundRequestAutoApproveDays days, it is approved '
             'automatically.',
@@ -1536,12 +1632,12 @@ class _RefundPanelState extends State<_RefundPanel> {
         'Refund request not approved',
         '${refund!.decisionNote.isEmpty ? '' : '${refund.decisionNote} '}'
             'Your $hours stay on the ticket. $autoWhen, you still get '
-            '$peso back automatically.',
+            'about $peso back automatically.',
       ),
       _ when !suspended => (
         Icons.sync_rounded,
         spInsideColor,
-        'Refund of $peso being prepared',
+        'Refund of about $peso being prepared',
         'The facility was closed, so the unused hours are refunded '
             'automatically.',
       ),
@@ -1550,8 +1646,8 @@ class _RefundPanelState extends State<_RefundPanel> {
         spInsideColor,
         'Your $hours stay on the ticket',
         'It works again if the facility is ${widget.undo}. $autoWhen, '
-            'you get $peso back automatically. You can also ask for it '
-            'now.',
+            'you get about $peso back automatically. You can also ask for '
+            'it now.',
       ),
     };
     final bool canRequest =
@@ -1596,6 +1692,10 @@ class _RefundPanelState extends State<_RefundPanel> {
               color: AppTheme.textSecondary,
             ),
           ),
+          if (!sent && amount > 0) ...<Widget>[
+            const SizedBox(height: 10),
+            _RefundCalculation(ticket: widget.ticket),
+          ],
           if (canRequest) ...<Widget>[
             const SizedBox(height: 10),
             SizedBox(
@@ -1613,6 +1713,108 @@ class _RefundPanelState extends State<_RefundPanel> {
               ),
             ),
           ],
+        ],
+      ),
+    );
+  }
+}
+
+/// Why a refund is less than the price, and how it is worked out: the
+/// fees that can't be refunded, then the unused share of the rest.
+class _RefundCalculation extends StatelessWidget {
+  const _RefundCalculation({required this.ticket});
+
+  final Map<String, dynamic> ticket;
+
+  @override
+  Widget build(BuildContext context) {
+    final RefundBreakdown b = RefundBreakdown.of(ticket);
+    final String method = switch (((ticket['paymentMethod'] as String?) ?? '')
+        .trim()) {
+      'gcash' => 'GCash',
+      'paymaya' => 'Maya',
+      'card' => 'card',
+      'qrph' => 'QR Ph',
+      _ => '',
+    };
+    final int extraHours = ((ticket['extraHoursBought'] as num?) ?? 0).toInt();
+    final String feeRate = commissionPercent(saleCommissionRate(ticket));
+    final TextStyle muted = TextStyle(
+      fontSize: 12,
+      color: AppTheme.textSecondary,
+    );
+    final TextStyle strong = TextStyle(
+      fontSize: 12,
+      fontWeight: FontWeight.w800,
+      color: AppTheme.textDark,
+    );
+    Widget line(String label, String value, {bool bold = false}) => Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Expanded(child: Text(label, style: bold ? strong : muted)),
+          const SizedBox(width: 8),
+          Text(value, style: bold ? strong : muted),
+        ],
+      ),
+    );
+    String peso(int centavos) => spPeso(centavos / 100);
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
+        border: Border.all(color: spCardBorder),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Padding(
+                padding: const EdgeInsets.only(top: 1),
+                child: Icon(
+                  Icons.info_outline_rounded,
+                  size: 14,
+                  color: AppTheme.textMuted,
+                ),
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  'Refunds are not the full price. SmartPark\'s $feeRate fee '
+                  'and PayMongo\'s processing fee were taken when you paid, '
+                  'and the facility can\'t refund them, so they are kept '
+                  'back.'
+                  '${extraHours > 0 ? ' Extra hours you added are not refunded.' : ''}',
+                  style: TextStyle(
+                    fontSize: 12,
+                    height: 1.35,
+                    color: AppTheme.textDark,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          line('Ticket price', peso(b.paidCentavos)),
+          line('SmartPark fee ($feeRate)', '- ${peso(b.platformFeeCentavos)}'),
+          line(
+            'PayMongo fee${method.isEmpty ? '' : ' ($method)'}, estimated',
+            '- ${peso(b.processorFeeCentavos)}',
+          ),
+          line('Refundable', peso(b.refundableCentavos)),
+          line(
+            'Unused: ${formatParkingHours(b.refundedHours)} of '
+                '${formatParkingHours(b.totalHours)}',
+            '× ${b.refundedHours}/${b.totalHours}',
+          ),
+          const Divider(height: 14),
+          line('Likely refund', peso(b.refundCentavos), bold: true),
         ],
       ),
     );

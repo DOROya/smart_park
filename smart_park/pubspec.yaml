@@ -61,6 +61,8 @@ dependencies:
   share_plus: ^12.0.2
   gal: ^2.3.3
   firebase_messaging: ^16.7.1
+  quick_actions: 1.1.1
+  google_mlkit_text_recognition: 1.0.3
 dev_dependencies:
   flutter_test:
     sdk: flutter

@@ -5,6 +5,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 
+import '../../services/app_shortcuts.dart';
+import '../../services/platform_fees.dart' show watchPlatformCommission;
 import '../../theme/app_theme.dart';
 import '../../utils/friendly_error.dart';
 import '../../utils/staff_credentials.dart';
@@ -13,6 +15,7 @@ import '../admin/admin_home_page.dart';
 import '../driver/driver_home_page.dart';
 import '../parking_owner/parking_owner_home_screen.dart';
 import '../staff/staff_home_page.dart';
+import '../supervisor/supervisor_home_page.dart';
 import 'sign_in_screen.dart';
 import 'terms_update_gate.dart';
 
@@ -38,10 +41,40 @@ class _RoleBasedHomePageState extends State<RoleBasedHomePage> {
     return variants.toList();
   }
 
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _profileSub;
+  String? _shownRole;
+
   @override
   void initState() {
     super.initState();
     _roleFuture = _resolveRole();
+    _watchRole();
+    // The commission rate the app shows (Reports, Terms, refunds).
+    watchPlatformCommission();
+  }
+
+  /// Switches screens when the role changes while the app is open: a
+  /// super admin promoting this account, or removing its admin access.
+  void _watchRole() {
+    final String? uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    _profileSub = FirebaseFirestore.instance
+        .collection('users')
+        .doc(uid)
+        .snapshots()
+        .listen((DocumentSnapshot<Map<String, dynamic>> snap) {
+          final String? role = _extractRole(snap.data());
+          if (!mounted || role == null || _shownRole == null) return;
+          if (role != _shownRole) {
+            setState(() => _roleFuture = Future<String>.value(role));
+          }
+        }, onError: (Object _) {});
+  }
+
+  @override
+  void dispose() {
+    _profileSub?.cancel();
+    super.dispose();
   }
 
   String? _extractRole(Map<String, dynamic>? data) {
@@ -339,12 +372,17 @@ class _RoleBasedHomePageState extends State<RoleBasedHomePage> {
             hasRetriedAfterTokenRefresh: hasRetriedAfterTokenRefresh,
           );
       if (staffByEmail.isNotEmpty) {
+        // A supervisor is a staff record with role "supervisor".
+        final String staffRole =
+            staffByEmail.first.data()['role'] == 'supervisor'
+            ? 'supervisor'
+            : 'staff';
         await _backfillUserDocumentBestEffort(
           uid: uid,
           email: rawEmail,
-          data: <String, dynamic>{'role': 'staff'},
+          data: <String, dynamic>{'role': staffRole},
         );
-        return 'staff';
+        return staffRole;
       }
     }
 
@@ -413,6 +451,8 @@ class _RoleBasedHomePageState extends State<RoleBasedHomePage> {
         }
 
         final String role = snapshot.data!;
+        if (_shownRole != role) unawaited(AppShortcuts.setForRole(role));
+        _shownRole = role;
 
         // Everyone but admins accepts the current terms before going on.
         if (role == 'Driver') {
@@ -435,6 +475,10 @@ class _RoleBasedHomePageState extends State<RoleBasedHomePage> {
 
         if (role == 'staff') {
           return TermsUpdateGate(role: role, child: const StaffHomePage());
+        }
+
+        if (role == 'supervisor') {
+          return TermsUpdateGate(role: role, child: const SupervisorHomePage());
         }
 
         return const Scaffold(

@@ -182,7 +182,22 @@ async function onReportCreated(collection, report) {
 /** Trigger on a new staff_incidents document. */
 async function onStaffFlagCreated(incident) {
   if (!incident?.ownerId) return;
-  await notifyUser(getFirestore(), incident.ownerId, staffFlagAlert(incident));
+  const db = getFirestore();
+  await notifyUser(db, incident.ownerId, staffFlagAlert(incident));
+  // Supervisors handle flags too.
+  try {
+    const supervisors = await db
+      .collection("staff_accounts")
+      .where("facilityId", "==", incident.establishmentId || "-")
+      .where("role", "==", "supervisor")
+      .get();
+    for (const doc of supervisors.docs) {
+      if (doc.data().active === false) continue;
+      await notifyUser(db, doc.id, staffFlagAlert(incident));
+    }
+  } catch (error) {
+    logger.warn("Could not notify supervisors of a staff flag", error);
+  }
 }
 
 module.exports = {

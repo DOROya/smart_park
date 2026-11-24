@@ -129,6 +129,7 @@ class _AddHoursSheetState extends State<_AddHoursSheet> {
       final ({String checkoutId, String status, String redirectUrl}) opened =
           await _service.addHours(ticketId: widget.ticketId, hours: hours);
       bool paid = opened.status == 'paid';
+      bool approved = false;
       if (!paid && opened.redirectUrl.isNotEmpty && mounted) {
         final Object? result = await navigator.push<Object?>(
           MaterialPageRoute<Object?>(
@@ -141,13 +142,21 @@ class _AddHoursSheetState extends State<_AddHoursSheet> {
             ),
           ),
         );
-        paid = result == true;
-        if (!paid) {
-          // A success redirect can come before the server records it.
+        approved = result == true;
+      }
+      if (!paid) {
+        // The hours are added only when the server confirms the payment
+        // with PayMongo. PayMongo's success page can close the payment
+        // screen first, so always ask; otherwise the hours wait for the
+        // 15-minute background check.
+        try {
           paid = (await _service.pollUntilPaid(
             opened.checkoutId,
-            maxAttempts: 3,
+            maxAttempts: approved ? 8 : 3,
           )).isPaid;
+        } catch (error, stack) {
+          // Paid or not, the background check still adds the hours.
+          reportError(error, stack, reason: 'Confirm extra hours');
         }
       }
       if (mounted) navigator.pop();

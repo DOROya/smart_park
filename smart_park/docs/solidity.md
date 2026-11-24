@@ -1,6 +1,6 @@
 # Making the backend solid: implementation plan
 
-**Status:** planned, not built. Written November 23, 2026 for a later implementation session.
+**Status:** items 1 and 4 started 2026-11-23: payment alerts to admins (4.4) built; backups and console alerts are steps for the user (README > Operations). Items 2, 3, 5 and 6 on hold.
 **Project:** Firebase `smartpark-87e3d`, Cloud Functions in `asia-southeast1` (photo compression in `us-east1`).
 For Google Cloud console links, always add `?project=smartpark-87e3d`; the user's console otherwise opens an
 unrelated "My First Project".

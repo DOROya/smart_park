@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 
 import 'parking_pricing.dart';
+import 'platform_fees.dart';
 
 /// Days a facility can stay suspended before its tickets are refunded
 /// automatically (matches SUSPENSION_REFUND_DAYS in functions/src/refunds.js).
@@ -152,18 +153,70 @@ class ParkingRefund {
   String get paidByLabel => paidByOwner ? 'Owner' : 'SmartPark';
 }
 
-/// The unused share of what a ticket cost, in centavos; mirrors
-/// refundCentavos in functions/src/refunds.js.
-int estimatedRefundCentavos(Map<String, dynamic> ticket) {
-  final int total = includedStayHours(
-    plan: ((ticket['plan'] as String?) ?? 'base').trim().toLowerCase(),
-    duration: ticketDuration(ticket),
-  );
-  final int paid = (((ticket['amount'] as num?) ?? 0) * 100).round();
-  final int unused = ticketHoursLeft(ticket);
-  if (total <= 0 || unused <= 0 || paid <= 0) return 0;
-  return (paid * (unused < total ? unused : total)) ~/ total;
+/// How a ticket's refund is worked out, in centavos: the price less
+/// SmartPark's commission and PayMongo's processing fee (neither can be
+/// refunded), then the unused share of what is left. Mirrors refundableBase
+/// and refundCentavos in functions/src/refunds.js.
+class RefundBreakdown {
+  const RefundBreakdown({
+    required this.paidCentavos,
+    required this.platformFeeCentavos,
+    required this.processorFeeCentavos,
+    required this.unusedHours,
+    required this.totalHours,
+  });
+
+  factory RefundBreakdown.of(Map<String, dynamic> ticket) {
+    final int paid = (((ticket['amount'] as num?) ?? 0) * 100).round();
+    final String method = ((ticket['paymentMethod'] as String?) ?? '').trim();
+    return RefundBreakdown(
+      paidCentavos: paid < 0 ? 0 : paid,
+      // The commission the ticket was sold at (5% before rates were saved).
+      platformFeeCentavos: paid <= 0
+          ? 0
+          : platformFeeCentavosFor(paid, rate: saleCommissionRate(ticket)),
+      processorFeeCentavos: paid <= 0
+          ? 0
+          : estimateProcessorFeeCentavos(
+              grossAmountCentavos: paid,
+              paymentMethodApiType: method,
+            ),
+      unusedHours: ticketHoursLeft(ticket),
+      totalHours: includedStayHours(
+        plan: ((ticket['plan'] as String?) ?? 'base').trim().toLowerCase(),
+        duration: ticketDuration(ticket),
+      ),
+    );
+  }
+
+  final int paidCentavos;
+  final int platformFeeCentavos;
+  final int processorFeeCentavos;
+  final int unusedHours;
+  final int totalHours;
+
+  /// The part of the price that can be refunded at all.
+  int get refundableCentavos {
+    final int left = paidCentavos - platformFeeCentavos - processorFeeCentavos;
+    return left < 0 ? 0 : left;
+  }
+
+  /// Unused hours, never more than the package (extra hours are not
+  /// refunded).
+  int get refundedHours => unusedHours < totalHours ? unusedHours : totalHours;
+
+  /// What the driver gets back.
+  int get refundCentavos {
+    if (totalHours <= 0 || unusedHours <= 0 || refundableCentavos <= 0) {
+      return 0;
+    }
+    return (refundableCentavos * refundedHours) ~/ totalHours;
+  }
 }
+
+/// What a ticket's refund would be now, in centavos; see [RefundBreakdown].
+int estimatedRefundCentavos(Map<String, dynamic> ticket) =>
+    RefundBreakdown.of(ticket).refundCentavos;
 
 /// When a suspension started at [suspendedAt] refunds automatically.
 DateTime? suspensionRefundDate(Object? suspendedAt) => suspendedAt is Timestamp

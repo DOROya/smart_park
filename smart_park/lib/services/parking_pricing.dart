@@ -225,11 +225,12 @@ int hoursDeducted(Duration elapsed, int paidHours) {
 
 /// How long the facility was closed between [from] and [to], by whole
 /// minutes. Zero for a facility open all day or with no hours set.
+///
+/// A temporary closure counts as closed too, even at a facility open all
+/// day.
 Duration closedTimeBetween(DateTime from, DateTime to, OperatingHours hours) {
-  if (!to.isAfter(from) ||
-      hours.allDay ||
-      !hours.isSet ||
-      hours.openMinutes == hours.closeMinutes) {
+  final bool weekly = hours.regularHoursClose;
+  if (!to.isAfter(from) || (!weekly && !hours.hasClosure)) {
     return Duration.zero;
   }
   int closed = 0;
@@ -238,7 +239,10 @@ Duration closedTimeBetween(DateTime from, DateTime to, OperatingHours hours) {
     t.isBefore(to);
     t = t.add(const Duration(minutes: 1))
   ) {
-    if (!hours.isOpenAt(t)) closed++;
+    if (hours.isTemporarilyClosedAt(t) ||
+        (weekly && !hours.isRegularlyOpenAt(t))) {
+      closed++;
+    }
   }
   return Duration(minutes: closed);
 }

@@ -3,24 +3,28 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:smart_park/services/parking_refunds.dart';
 
 void main() {
-  test('the estimate is the unused share of the price (as the server)', () {
-    // 7 days for PHP 330 with 96 hours left: floor(33000 * 96 / 168).
-    expect(
-      estimatedRefundCentavos(<String, dynamic>{
-        'plan': 'weekly',
-        'duration': 1,
-        'amount': 330,
-        'remainingHours': 96,
-      }),
-      18857,
-    );
+  test('the estimate keeps back the fees, as the server does', () {
+    // 7 days for PHP 330 by GCash: 1650 commission and 660 PayMongo fee
+    // leave 30690; 96 of 168 hours unused -> floor(30690 * 96 / 168).
+    final Map<String, dynamic> weekly = <String, dynamic>{
+      'plan': 'weekly',
+      'duration': 1,
+      'amount': 330,
+      'paymentMethod': 'gcash',
+      'remainingHours': 96,
+    };
+    final RefundBreakdown b = RefundBreakdown.of(weekly);
+    expect(b.platformFeeCentavos, 1650);
+    expect(b.processorFeeCentavos, 660);
+    expect(b.refundableCentavos, 30690);
+    expect(estimatedRefundCentavos(weekly), 17537);
     expect(
       estimatedRefundCentavos(<String, dynamic>{
         'plan': 'daily',
         'duration': 2,
         'amount': 200,
       }),
-      20000,
+      18600,
     );
     expect(
       estimatedRefundCentavos(<String, dynamic>{

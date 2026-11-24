@@ -97,7 +97,9 @@ async function priceCheckout(db, driverId, data) {
     );
   }
 
-  const platformFeeCentavos = platformFeeCentavosFor(amountCentavos);
+  // The commission in force now stays with this sale (src/commission.js).
+  const commissionRate = await require("./commission").loadCommissionRate(db);
+  const platformFeeCentavos = platformFeeCentavosFor(amountCentavos, commissionRate);
   const estimatedProcessorFeeCentavos = estimateProcessorFeeCentavos(
     amountCentavos,
     paymentMethod,
@@ -114,6 +116,7 @@ async function priceCheckout(db, driverId, data) {
     paymentMethod,
     amount: priced.amount,
     amountCentavos,
+    commissionRate,
     platformFeeCentavos,
     estimatedProcessorFeeCentavos,
     netToOwnerCentavos:
@@ -282,6 +285,8 @@ async function finalizePaidCheckout(db, checkoutRef, session, confirmedBy = "app
       duration: c.duration,
       slotSnapshot: c.slotSnapshot || {},
       ...(typeof c.overtimeRate === "number" ? { purchaseOvertimeRate: c.overtimeRate } : {}),
+      // The commission this sale was priced at; refunds use it too.
+      ...(typeof c.commissionRate === "number" ? { commissionRate: c.commissionRate } : {}),
       checkoutId: checkoutRef.id,
       paidAtGate: c.kind === "gate_pass",
       createdAtClient: now,
@@ -309,6 +314,7 @@ async function finalizePaidCheckout(db, checkoutRef, session, confirmedBy = "app
       establishmentId: c.establishmentId,
       driverId: c.driverId,
       grossAmountCentavos: c.amountCentavos,
+      ...(typeof c.commissionRate === "number" ? { commissionRate: c.commissionRate } : {}),
       platformFeeCentavos: c.platformFeeCentavos,
       estimatedProcessorFeeCentavos: c.estimatedProcessorFeeCentavos,
       netToOwnerCentavos: c.netToOwnerCentavos - recovery,

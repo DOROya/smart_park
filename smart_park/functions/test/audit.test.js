@@ -183,3 +183,60 @@ test("unwatched collections and no-op writes log nothing", async () => {
     null,
   );
 });
+
+test("supervisor operations are described: overtime, cash, shifts", () => {
+  const {
+    describeGateLog,
+    describeCashHandover,
+    describeShift,
+    fieldChanges,
+  } = require("../src/audit");
+  const before = { plate: "ABC 123", overtimeStatus: "cash_due" };
+  const after = { ...before, overtimeStatus: "collected" };
+  assert.equal(
+    describeGateLog(before, after, fieldChanges(before, after)).summary,
+    "Marked overtime for ABC 123 as collected",
+  );
+  // A new scan, or a change that isn't overtime, isn't logged here.
+  assert.equal(describeGateLog(null, after, {}), null);
+  assert.equal(describeGateLog(before, { ...before, isActive: false }, { isActive: {} }), null);
+  assert.equal(
+    describeCashHandover(null, { amount: 150, staffName: "Juan" }).summary,
+    "Received PHP 150.00 from Juan",
+  );
+  assert.equal(
+    describeShift({ staffName: "Ana", endedAt: null }, { staffName: "Ana", endedAt: 1, endedBy: "sup" }).summary,
+    "Ended Ana's shift",
+  );
+  // Staff ending their own shift isn't an action on someone else.
+  assert.equal(describeShift({ endedAt: null }, { endedAt: 1 }), null);
+});
+
+test("a temporary closure reads as one, not as field names", () => {
+  const { describeFacilityDetails, fieldChanges } = require("../src/audit");
+  const { Timestamp } = require("firebase-admin/firestore");
+  const before = { status: "approved" };
+  // 2026-11-24 14:00 UTC is 10:00 PM in Manila.
+  const after = {
+    status: "approved",
+    closedUntil: Timestamp.fromMillis(Date.UTC(2026, 10, 24, 14)),
+    closedReason: "Testing",
+    closedBy: "o1",
+  };
+  assert.equal(
+    describeFacilityDetails(before, after, fieldChanges(before, after)).summary,
+    "Closed the facility until Nov 24, 10:00 PM (Testing)",
+  );
+  const reopened = { status: "approved", closedUntil: null };
+  assert.equal(
+    describeFacilityDetails(after, reopened, fieldChanges(after, reopened)).summary,
+    "Reopened the facility",
+  );
+});
+
+test("admin entries use the right article", () => {
+  const { withArticle } = require("../src/admin_roles");
+  assert.equal(withArticle("admin"), "an admin");
+  assert.equal(withArticle("super admin"), "a super admin");
+  assert.equal(withArticle("Driver"), "a Driver");
+});

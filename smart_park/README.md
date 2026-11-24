@@ -115,6 +115,65 @@ events as they happen in `payment_health_daily/{Manila day}`. The check
 records each run in `stats/reconcile`. Counting started on 2026-11-22, so
 earlier payments aren't included.
 
+Admins are also pushed about payments stuck in progress, or a 15-minute
+check that stopped running, at most once every 6 hours
+(`alertAdminsIfNeeded`, run by the reconcile and reminder jobs;
+`stats/reconcile.lastAlertAt`).
+
+## Operations
+
+Console steps on the live project, `smartpark-87e3d`. For Google Cloud
+console links, add `?project=smartpark-87e3d`, or it opens another project.
+
+### First super admin (once)
+
+Firestore > `users` > `GWBK5QsdMNMHdPDjiPgrd7g3u3C2` > add field
+`adminLevel` (string) = `super`. Or, with Application Default Credentials
+(`gcloud auth application-default login`), run
+`node functions/scripts/set-super-admin.js`, which also marks every other
+admin `adminLevel: "admin"`. Check: sign in as that account; Settings >
+Admin Account says "Super admin".
+
+### Daily Firestore backups
+
+Set up (see below). Firebase console > Firestore Database > Disaster recovery >
+Create a backup schedule: daily, kept 7 days. Or with the gcloud CLI:
+
+```
+gcloud firestore databases describe --database="(default)" --project=smartpark-87e3d
+gcloud firestore backups schedules create --database="(default)" --recurrence=daily --retention=7d --project=smartpark-87e3d
+```
+
+Restore drill, once, into a separate database (never touches `(default)`):
+
+```
+gcloud firestore backups list --project=smartpark-87e3d
+gcloud firestore databases restore --source-backup=<backup name> --destination-database=restore-test --project=smartpark-87e3d
+```
+
+Spot-check a few documents in `restore-test`, then delete it. Cloud Storage
+(photos, business documents): Google Cloud > Storage > the bucket >
+Protection: soft delete on, 7 days or more.
+
+- Backup schedule created: 2026-11-24 (daily, kept 7 days)
+- Storage soft delete: on, 7 days (since 2026-08-16)
+- Restore drill done: _not yet_
+
+### Alerts
+
+- **Budget:** set up. Google Cloud > Billing > Budgets & alerts: "Firebase
+  Project smartpark-87e3d", USD 5 a month, emails at 50%, 90% and 100%.
+- **Cloud Function errors:** set up 2026-11-24. Google Cloud > Monitoring >
+  Alerting > "SmartPark function errors": a log alert on
+  `severity>=ERROR AND (resource.type="cloud_run_revision" OR resource.type="cloud_function")`,
+  at most one email per 15 minutes. (Functions v2 run on Cloud Run, hence
+  both resource types.)
+- **Crashlytics:** set up 2026-11-24. Firebase console > Settings > Alerts >
+  Crashlytics (smart_park android): email for new fatal, ANR, trending,
+  regressed and velocity (crash spike) issues. Alerts are per person; each
+  teammate turns on their own.
+- **Payments:** in the app, automatic (see Payment health).
+
 ## Download my data
 
 Profile > **Download My Data** saves a JSON copy of the user's own records

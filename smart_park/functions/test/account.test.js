@@ -55,8 +55,8 @@ test("permit reminders go out once, 30 days ahead and on expiry", () => {
   assert.equal(permitNotice(now + 10 * DAY, `${now - DAY}:expired`, now), "soon");
 });
 
-test("an owner repays a refund less SmartPark's commission on it", () => {
-  assert.equal(ownerOwesCentavos(10000), 9500);
+test("an owner repays the whole refund they cover", () => {
+  assert.equal(ownerOwesCentavos(10000), 10000);
   assert.equal(ownerOwesCentavos(0), 0);
   assert.equal(ownerOwesCentavos(undefined), 0);
 });

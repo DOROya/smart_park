@@ -41,7 +41,10 @@ void main() {
       expect(driver, contains('it is not stored'));
 
       final String owner = allText(kParkingOwnerRole);
-      expect(owner, contains('5% platform commission'));
+      expect(owner, contains('platform commission'));
+      // The rate in force, and the notice before a higher one.
+      expect(owner, contains('and is 5%'));
+      expect(owner, contains('at least 30 days before a higher rate'));
       expect(owner, contains('none, or 10, 15, 20, 25, 30 minutes'));
       expect(owner, contains('Deactivate a staff account'));
       expect(owner, contains('ask for a review'));
@@ -88,7 +91,8 @@ void main() {
       expect(owner, contains('You are the seller of the parking'));
       expect(owner, contains('dispute it from the refund'));
       expect(owner, contains('due within 15 days'));
-      expect(owner, contains('gives back its own commission'));
+      expect(owner, contains('which are not refunded'));
+      expect(driver, contains('never the full price'));
       expect(owner, contains('Post a notice at your gate'));
     });
 
@@ -109,8 +113,8 @@ void main() {
     });
 
     test('the version is the date the terms were last changed', () {
-      expect(kTermsVersion, startsWith('2026-11-22'));
-      expect(kTermsUpdatedLabel, 'November 22, 2026');
+      expect(kTermsVersion, startsWith('2026-11-23'));
+      expect(kTermsUpdatedLabel, 'November 23, 2026');
     });
   });
 

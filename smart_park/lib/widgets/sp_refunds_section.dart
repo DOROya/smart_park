@@ -139,7 +139,8 @@ class _SpRefundsSectionState extends State<SpRefundsSection> {
             .toList();
         int sum(Iterable<ParkingRefund> rs) =>
             rs.fold<int>(0, (int t, ParkingRefund r) => t + r.amountCentavos);
-        // An owner's part is the refund less SmartPark's commission on it.
+        // An owner's part (older refunds charged less SmartPark's
+        // commission; newer ones are charged in full).
         final int byOwner = done.fold<int>(
           0,
           (int t, ParkingRefund r) => t + r.ownerShareCentavos,
@@ -539,9 +540,9 @@ class _SpRefundsSectionState extends State<SpRefundsSection> {
                 ? 'Facility pulled for its own reasons (rates, complaints, '
                       'safety, not operating...).'
                 : 'Your facility was pulled for reasons such as rates, '
-                      'complaints, safety or not operating. SmartPark\'s '
-                      'commission on each refund is given back, so it is '
-                      'not counted here.',
+                      'complaints, safety or not operating. Refunds come out '
+                      'of your share only: SmartPark\'s commission and '
+                      'PayMongo\'s fee are kept back from them.',
           ),
           line(
             'Paid by SmartPark',

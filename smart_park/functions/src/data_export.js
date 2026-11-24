@@ -73,6 +73,7 @@ function exportPlan(role, uid) {
         docs: { refundBalance: ["owner_refund_balances", uid] },
       };
     case "staff":
+    case "supervisor":
       return {
         queries: {
           shifts: ["staff_shifts", "staffId"],
