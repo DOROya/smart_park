@@ -536,7 +536,13 @@ class _StaffHomePageState extends State<StaffHomePage>
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => SpBackToHomeTab(
+    onHomeTab: _deactivated || _selectedNavIndex == 0,
+    goHome: () => setState(() => _selectedNavIndex = 0),
+    child: _buildScreen(context),
+  );
+
+  Widget _buildScreen(BuildContext context) {
     if (_deactivated) return _buildDeactivated();
     return FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
       future: _userFuture,

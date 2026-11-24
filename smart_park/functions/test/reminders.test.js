@@ -60,3 +60,41 @@ test("the reminder says when the time ends", () => {
   assert.equal(title, "Parking time almost up");
   assert.match(body, /Lot ends at .* \(in 30 min\)/);
 });
+
+const { passExpiryDue, passExpiryText, PASS_EXPIRY_LEAD_MS } = require("../src/reminders");
+
+// An unused temporary QR that expires at EXPIRES.
+const EXPIRES = Date.UTC(2026, 10, 17, 7, 0); // 3:00 PM Manila
+const pass = (extra = {}) => ({
+  status: "awaiting_gate",
+  expiresAt: EXPIRES,
+  establishmentName: "Lot",
+  ...extra,
+});
+
+test("temporary QR warning is due only in the last 12 hours", () => {
+  assert.equal(PASS_EXPIRY_LEAD_MS, 12 * HOUR);
+  assert.equal(passExpiryDue(pass(), on, EXPIRES - 13 * HOUR), false);
+  assert.equal(passExpiryDue(pass(), on, EXPIRES - 12 * HOUR), true);
+  assert.equal(passExpiryDue(pass(), on, EXPIRES - 1 * MIN), true);
+  // Already expired: nothing to save.
+  assert.equal(passExpiryDue(pass(), on, EXPIRES), false);
+});
+
+test("temporary QR warning goes out once, for unused QRs, if reminders are on", () => {
+  const now = EXPIRES - 2 * HOUR;
+  assert.equal(passExpiryDue(pass({ expiryReminderSent: true }), on, now), false);
+  assert.equal(passExpiryDue(pass({ status: "paid" }), on, now), false);
+  assert.equal(passExpiryDue(pass({ status: "cancelled" }), on, now), false);
+  assert.equal(passExpiryDue(pass({ expiresAt: null }), on, now), false);
+  const off = prefsOf({ notificationPrefs: { parkingReminders: false } });
+  assert.equal(passExpiryDue(pass(), off, now), false);
+});
+
+test("temporary QR warning names the facility and the time", () => {
+  const { title, body } = passExpiryText(pass(), EXPIRES - 3 * HOUR);
+  assert.equal(title, "Temporary QR expires soon");
+  assert.match(body, /Lot/);
+  assert.match(body, /3:00/);
+  assert.match(body, /about 3 h/);
+});

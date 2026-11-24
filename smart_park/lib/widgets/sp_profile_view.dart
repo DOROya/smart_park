@@ -6,6 +6,7 @@ import '../theme/app_theme.dart';
 import '../theme/theme_controller.dart';
 import '../utils/friendly_error.dart';
 import 'smartpark_ui.dart';
+import 'sp_app_version.dart';
 import 'sp_delete_account.dart';
 import 'sp_download_data.dart';
 import 'sp_terms_view.dart';
@@ -166,6 +167,7 @@ class _SpProfileViewState extends State<SpProfileView> {
               ),
             ],
           ),
+          const SpAppVersion(),
         ],
       );
     }
@@ -196,6 +198,7 @@ class _SpProfileViewState extends State<SpProfileView> {
           const SizedBox(height: 12),
         ],
         _signOutButton(),
+        const SpAppVersion(),
       ],
     );
   }

@@ -7,6 +7,7 @@ import '../../../services/parking_checkout_service.dart';
 import '../../../services/parking_pricing.dart';
 import '../../../theme/app_theme.dart';
 import '../../../utils/friendly_error.dart';
+import '../../../utils/sp_haptics.dart';
 import '../../../widgets/smartpark_ui.dart';
 import '../driver_in_app_checkout_page.dart';
 
@@ -159,6 +160,7 @@ class _AddHoursSheetState extends State<_AddHoursSheet> {
           reportError(error, stack, reason: 'Confirm extra hours');
         }
       }
+      if (paid) spHapticSuccess();
       if (mounted) navigator.pop();
       messenger.showSnackBar(
         SnackBar(

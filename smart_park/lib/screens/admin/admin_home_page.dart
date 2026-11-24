@@ -16,6 +16,7 @@ import '../../theme/app_theme.dart';
 import '../../widgets/smartpark_logo.dart';
 import '../../utils/friendly_error.dart';
 import '../../widgets/smartpark_ui.dart';
+import '../../widgets/sp_app_version.dart';
 import '../../widgets/sp_vehicle_type.dart';
 import '../../widgets/sp_audit_log.dart';
 import '../../widgets/sp_admin_access.dart';
@@ -1836,7 +1837,13 @@ class _AdminHomePageState extends State<AdminHomePage>
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => SpBackToHomeTab(
+    onHomeTab: _selectedTab == _AdminTab.dashboard,
+    goHome: () => setState(() => _selectedTab = _AdminTab.dashboard),
+    child: _buildScreen(context),
+  );
+
+  Widget _buildScreen(BuildContext context) {
     final bool isTablet = spIsTablet(context);
     final Widget content = _buildContent(isTablet: isTablet);
 

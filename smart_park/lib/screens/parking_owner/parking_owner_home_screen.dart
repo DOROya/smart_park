@@ -54,6 +54,7 @@ import '../../widgets/sp_activity_search.dart';
 import '../../widgets/sp_driver_report.dart';
 import '../../widgets/sp_export_sheet.dart' show showSpSaveResult;
 import '../../widgets/sp_loading.dart';
+import '../../widgets/sp_connection.dart';
 import '../../widgets/sp_sales_report_card.dart';
 import '../../widgets/sp_overtime.dart';
 import '../../widgets/sp_profile_view.dart';
@@ -861,7 +862,13 @@ class _ParkingOwnerHomePageState extends State<ParkingOwnerHomePage>
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => SpBackToHomeTab(
+    onHomeTab: _selectedIndex == 0,
+    goHome: () => setState(() => _selectedIndex = 0),
+    child: _buildScreen(context),
+  );
+
+  Widget _buildScreen(BuildContext context) {
     return FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
       future: _userFuture,
       builder: (context, snapshot) {
@@ -893,10 +900,20 @@ class _ParkingOwnerHomePageState extends State<ParkingOwnerHomePage>
         _seedProfileControllers(ownerData);
 
         final bool isTablet = spIsTablet(context);
-        final Widget body = _buildBody(
-          ownerId: ownerId,
-          ownerData: ownerData,
-          role: role,
+        final Widget body = Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            const SpConnectionBanner(),
+            Expanded(
+              child: SpPullToRefresh(
+                child: _buildBody(
+                  ownerId: ownerId,
+                  ownerData: ownerData,
+                  role: role,
+                ),
+              ),
+            ),
+          ],
         );
 
         return Scaffold(

@@ -9,6 +9,7 @@ import '../../services/parking_checkout_service.dart';
 import '../../services/parking_receipt.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/friendly_error.dart';
+import '../../utils/sp_haptics.dart';
 import '../../widgets/smartpark_ui.dart' show spParseDateTime, spPeso;
 import '../../widgets/sp_max_brightness.dart';
 import '../../widgets/sp_save_qr_button.dart';
@@ -50,6 +51,11 @@ class _DriverParkingPassPageState extends State<DriverParkingPassPage> {
   Route<dynamic>? _checkoutRoute;
   String? _openedSessionId;
   bool _showingTicket = false;
+
+  /// The last status and turn-away seen, so the phone buzzes only when
+  /// something changes while the page is open, not on the first load.
+  String? _lastStatus;
+  Object? _lastTurnedAway;
 
   @override
   void initState() {
@@ -93,6 +99,24 @@ class _DriverParkingPassPageState extends State<DriverParkingPassPage> {
     final String url = paymongo is Map
         ? ((paymongo['checkoutUrl'] as String?) ?? '')
         : '';
+
+    final Object? turnedAway = data?['turnedAwayAt'];
+    final String? previous = _lastStatus;
+    if (previous != null && previous != status) {
+      if (status == 'paid') {
+        spHapticSuccess();
+      } else if (status == 'pending') {
+        spHapticAttention(); // Staff confirmed space: pay now.
+      } else if (previous == 'pending') {
+        spHapticWarning(); // Staff stopped the payment, or it timed out.
+      }
+    } else if (previous != null &&
+        turnedAway != null &&
+        turnedAway != _lastTurnedAway) {
+      spHapticWarning(); // Turned away: no space right now.
+    }
+    _lastStatus = status;
+    _lastTurnedAway = turnedAway;
 
     if (status == 'paid') {
       _closeCheckout();

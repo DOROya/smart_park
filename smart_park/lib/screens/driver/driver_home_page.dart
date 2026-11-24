@@ -17,6 +17,7 @@ import '../../services/last_ticket_store.dart';
 import 'saved_ticket_page.dart';
 import '../../widgets/smartpark_logo.dart';
 import '../../widgets/smartpark_ui.dart';
+import '../../widgets/sp_connection.dart';
 import '../../widgets/sp_profile_view.dart';
 import '../auth/sign_in_screen.dart';
 import 'driver_guide_page.dart';
@@ -218,7 +219,8 @@ class _DriverHomePageState extends State<DriverHomePage>
           }
           final Object? id = data['checkoutId'];
           if ((data['kind'] == ParkingPush.kGateConfirm ||
-                  data['kind'] == ParkingPush.kGateTurnedAway) &&
+                  data['kind'] == ParkingPush.kGateTurnedAway ||
+                  data['kind'] == ParkingPush.kPassExpiry) &&
               id is String) {
             _openPass(id);
           }
@@ -650,7 +652,7 @@ class _DriverHomePageState extends State<DriverHomePage>
   Widget _buildBodyByIndex() {
     switch (_selectedIndex) {
       case 1:
-        return const DriverTicketHistorySection();
+        return const SpPullToRefresh(child: DriverTicketHistorySection());
       case 2:
         return SpProfileView(
           roleLabel: 'Driver',
@@ -721,7 +723,13 @@ class _DriverHomePageState extends State<DriverHomePage>
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => SpBackToHomeTab(
+    onHomeTab: _selectedIndex == 0,
+    goHome: () => setState(() => _selectedIndex = 0),
+    child: _buildScreen(context),
+  );
+
+  Widget _buildScreen(BuildContext context) {
     return FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
       future: _userFuture,
       builder:

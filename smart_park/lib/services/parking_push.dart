@@ -55,6 +55,10 @@ class ParkingPush {
   /// Sent when staff turn a temporary QR away (no free slot).
   static const String kGateTurnedAway = 'gate_turned_away';
 
+  /// Sent once when an unused temporary QR has about 12 hours left; carries
+  /// `checkoutId` (functions/src/reminders.js).
+  static const String kPassExpiry = 'pass_expiry';
+
   static DocumentReference<Map<String, dynamic>> _user(String uid) =>
       FirebaseFirestore.instance.collection('users').doc(uid);
 

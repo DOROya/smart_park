@@ -341,10 +341,22 @@ class _DriverTicketHistorySectionState extends State<DriverTicketHistorySection>
           ],
           if (past.isNotEmpty) ...[
             const SizedBox(height: 16),
-            const SpSectionLabel('Past Tickets'),
+            SpSectionLabel(
+              'Past Tickets',
+              trailing: SpChip(
+                label: '${past.length}',
+                color: AppTheme.textMuted,
+              ),
+            ),
             const SizedBox(height: 8),
-            for (final QueryDocumentSnapshot<Map<String, dynamic>> doc in past)
-              _PastTicketRow(doc: doc),
+            SpShowMore(
+              pageSize: 5,
+              children: <Widget>[
+                for (final QueryDocumentSnapshot<Map<String, dynamic>> doc
+                    in past)
+                  _PastTicketRow(doc: doc),
+              ],
+            ),
           ],
         ],
       ],

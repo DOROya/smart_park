@@ -228,6 +228,13 @@ class _GateActivityContentState extends State<_GateActivityContent>
 
   Widget _buildActivity(Map<String, String>? staffNames) {
     // Only the picked day is loaded, not the facility's whole history.
+    return SpScrollToTop(
+      builder: (BuildContext context, ScrollController scroll) =>
+          _buildDay(staffNames, scroll),
+    );
+  }
+
+  Widget _buildDay(Map<String, String>? staffNames, ScrollController scroll) {
     return withDayLogs(
       widget.facilityId,
       _date,
@@ -273,7 +280,8 @@ class _GateActivityContentState extends State<_GateActivityContent>
         );
 
         return ListView(
-          padding: const EdgeInsets.only(top: 8),
+          controller: scroll,
+          padding: const EdgeInsets.only(top: 8, bottom: 72),
           children: [
             SpPageHeader(
               title: 'Activity',
@@ -296,7 +304,12 @@ class _GateActivityContentState extends State<_GateActivityContent>
                 ],
               ),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 8),
+            SpQuickDays(
+              date: _date,
+              onChanged: (DateTime day) => setState(() => _date = day),
+            ),
+            const SizedBox(height: 12),
             if (!overtimeCash.isEmpty) ...[
               SpOvertimeCashBanner(
                 cash: overtimeCash,
@@ -377,14 +390,19 @@ class _GateActivityContentState extends State<_GateActivityContent>
                     : 'No scans by this staff member for this filter '
                           'and date.',
               )
-            else if (isTablet)
-              SpGrid(
-                children: [
+            else
+              SpShowMore(
+                key: ValueKey<String>(
+                  '$_filter|${spDayKey(_date)}|$_query|${widget.staffFilter}',
+                ),
+                pageSize: 20,
+                layout: isTablet
+                    ? (List<Widget> shown) => SpGrid(children: shown)
+                    : null,
+                children: <Widget>[
                   for (final Map<String, dynamic> data in visible) card(data),
                 ],
-              )
-            else
-              for (final Map<String, dynamic> data in visible) card(data),
+              ),
           ],
         );
       },

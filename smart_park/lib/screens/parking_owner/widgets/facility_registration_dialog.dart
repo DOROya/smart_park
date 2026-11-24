@@ -1,4 +1,5 @@
 import '../../../services/facility_contact.dart';
+import 'dart:async';
 import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -136,7 +137,88 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
   void initState() {
     super.initState();
     _seedFromExistingData();
+    _loadedSignature = _formSignature();
     _initializeMapCenter();
+  }
+
+  /// [_formSignature] as loaded or last saved; back asks before discarding
+  /// anything that differs from it.
+  String _loadedSignature = '';
+
+  /// Everything the owner can change, as one string.
+  String _formSignature() => <Object?>[
+    for (final TextEditingController c in <TextEditingController>[
+      _nameController,
+      _addressController,
+      _contactController,
+      _policiesController,
+      _rateCarInitialController,
+      _rateCarSucceedingHourController,
+      _rateCarSucceedingDailyController,
+      _rateCarWeeklyController,
+      _rateCarMonthlyController,
+      _rateMotorInitialController,
+      _rateMotorSucceedingHourController,
+      _rateMotorSucceedingDailyController,
+      _rateMotorWeeklyController,
+      _rateMotorMonthlyController,
+      _slotCarController,
+      _slotMotorController,
+      _customNameController,
+      _rateCustomInitialController,
+      _rateCustomSucceedingHourController,
+      _rateCustomSucceedingDailyController,
+      _rateCustomWeeklyController,
+      _rateCustomMonthlyController,
+      _slotCustomController,
+    ])
+      c.text.trim(),
+    _open24Hours,
+    _openMinutes,
+    _closeMinutes,
+    _allowLongTermRates,
+    _graceMinutes,
+    _customVehicleEnabled,
+    _selectedLocation?.latitude,
+    _selectedLocation?.longitude,
+    _permitExpiresAt,
+    _existingPhotoUrls.length,
+    _newPhotoFiles.length,
+    _removedPhotoUrls.length,
+    _newDocumentFiles.length,
+    _removedDocumentUrls.length,
+  ].join('|');
+
+  /// Back or Cancel with unsaved changes: asks first, so a long form isn't
+  /// lost to one tap.
+  Future<void> _leave() async {
+    if (_saving) return;
+    if (_formSignature() == _loadedSignature) {
+      Navigator.of(context).pop();
+      return;
+    }
+    final bool? discard = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) => AlertDialog(
+        title: const Text('Discard changes?'),
+        content: const Text(
+          'You have changes that are not saved yet. Leaving now throws '
+          'them away.',
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Keep editing'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: TextButton.styleFrom(foregroundColor: AppTheme.danger),
+            child: const Text('Discard'),
+          ),
+        ],
+      ),
+    );
+    if (discard == true && mounted) Navigator.of(context).pop();
   }
 
   @override
@@ -780,6 +862,7 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
         _newDocumentFiles.clear();
         _removedDocumentUrls.clear();
         _seedFromExistingData();
+        _loadedSignature = _formSignature();
       });
     } finally {
       if (mounted) {
@@ -1758,6 +1841,18 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
         ? 'Register Facility'
         : 'Update Facility';
 
+    return PopScope(
+      // The system back button and the app bar's back arrow go through
+      // _leave, which asks before discarding unsaved changes.
+      canPop: false,
+      onPopInvokedWithResult: (bool didPop, Object? _) {
+        if (!didPop) unawaited(_leave());
+      },
+      child: _buildPage(context, pageTitle),
+    );
+  }
+
+  Widget _buildPage(BuildContext context, String pageTitle) {
     return Scaffold(
       backgroundColor: AppTheme.background,
       appBar: AppBar(
@@ -1936,7 +2031,7 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
           children: [
             Expanded(
               child: OutlinedButton(
-                onPressed: _saving ? null : () => Navigator.of(context).pop(),
+                onPressed: _saving ? null : _leave,
                 child: Text(_facilityData == null ? 'Cancel' : 'Close'),
               ),
             ),

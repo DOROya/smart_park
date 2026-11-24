@@ -635,6 +635,13 @@ extension _StaffHomePageFragments on _StaffHomePageState {
     }
 
     // Only the picked day is loaded, not the facility's whole history.
+    return SpScrollToTop(
+      builder: (BuildContext context, ScrollController scroll) =>
+          _buildHistoryDay(facilityId, scroll),
+    );
+  }
+
+  Widget _buildHistoryDay(String facilityId, ScrollController scroll) {
     return withDayLogs(
       facilityId,
       _selectedHistoryDate,
@@ -658,7 +665,8 @@ extension _StaffHomePageFragments on _StaffHomePageState {
         ];
 
         return ListView(
-          padding: const EdgeInsets.all(16),
+          controller: scroll,
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 72),
           children: [
             SpPageHeader(
               title: 'History',
@@ -668,7 +676,13 @@ extension _StaffHomePageFragments on _StaffHomePageState {
                 onTap: _pickHistoryDate,
               ),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 8),
+            SpQuickDays(
+              date: _selectedHistoryDate,
+              onChanged: (DateTime day) =>
+                  setState(() => _selectedHistoryDate = day),
+            ),
+            const SizedBox(height: 12),
             SpDailyActivityTiles(
               summary: summary,
               today: spSameDate(_selectedHistoryDate, DateTime.now()),
@@ -716,10 +730,18 @@ extension _StaffHomePageFragments on _StaffHomePageState {
                     : 'No scans match "${_historyQuery.trim()}" for this '
                           'filter and date.',
               )
-            else if (_isTablet)
-              SpGrid(children: cards)
             else
-              ...cards,
+              SpShowMore(
+                key: ValueKey<String>(
+                  '$_historyFilter|${spDayKey(_selectedHistoryDate)}|'
+                  '$_historyQuery',
+                ),
+                pageSize: 20,
+                layout: _isTablet
+                    ? (List<Widget> shown) => SpGrid(children: shown)
+                    : null,
+                children: cards,
+              ),
           ],
         );
       },
