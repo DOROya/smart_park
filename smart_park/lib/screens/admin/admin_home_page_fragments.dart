@@ -665,6 +665,7 @@ extension _AdminHomePageFragments on _AdminHomePageState {
           // Sign Out is at the foot of the navigation rail on tablets.
           right: const SpChangePasswordCard(),
         ),
+        const SpAppVersion(),
       ];
     }
 
@@ -684,6 +685,7 @@ extension _AdminHomePageFragments on _AdminHomePageState {
       const SpAppearanceCard(),
       const SizedBox(height: 12),
       signOutButton,
+      const SpAppVersion(),
     ];
   }
 

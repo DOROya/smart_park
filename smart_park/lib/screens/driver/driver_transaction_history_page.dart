@@ -6,6 +6,7 @@ import '../../services/driver_transactions.dart';
 import '../../services/parking_refunds.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/smartpark_ui.dart';
+import '../../widgets/sp_connection.dart';
 import '../../widgets/sp_loading.dart';
 
 /// Every payment the driver made (tickets, extra hours, overtime) and every
@@ -44,56 +45,58 @@ class _DriverTransactionHistoryPageState
         backgroundColor: AppTheme.surface,
         title: const Text('Transaction History'),
       ),
-      body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-        stream: _mine('transactions'),
-        builder: (BuildContext context, ticketSnap) =>
-            StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-              stream: _mine('payments'),
-              builder: (BuildContext context, paymentSnap) =>
-                  StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                    stream: _mine('refunds'),
-                    builder: (BuildContext context, refundSnap) {
-                      if (ticketSnap.hasError) {
-                        return const SpEmptyState(
-                          icon: Icons.error_outline_rounded,
-                          message: 'Unable to load your transactions now.',
+      body: SpPullToRefresh(
+        child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+          stream: _mine('transactions'),
+          builder: (BuildContext context, ticketSnap) =>
+              StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                stream: _mine('payments'),
+                builder: (BuildContext context, paymentSnap) =>
+                    StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                      stream: _mine('refunds'),
+                      builder: (BuildContext context, refundSnap) {
+                        if (ticketSnap.hasError) {
+                          return const SpEmptyState(
+                            icon: Icons.error_outline_rounded,
+                            message: 'Unable to load your transactions now.',
+                          );
+                        }
+                        if (!ticketSnap.hasData) {
+                          return const Padding(
+                            padding: EdgeInsets.all(24),
+                            child: SpSkeletonList(),
+                          );
+                        }
+                        return _list(
+                          driverTransactions(
+                            tickets: <String, Map<String, dynamic>>{
+                              for (final QueryDocumentSnapshot<
+                                    Map<String, dynamic>
+                                  >
+                                  d
+                                  in ticketSnap.data!.docs)
+                                d.id: d.data(),
+                            },
+                            payments: <Map<String, dynamic>>[
+                              for (final QueryDocumentSnapshot<
+                                    Map<String, dynamic>
+                                  >
+                                  d
+                                  in paymentSnap.data?.docs ??
+                                      <
+                                        QueryDocumentSnapshot<
+                                          Map<String, dynamic>
+                                        >
+                                      >[])
+                                d.data(),
+                            ],
+                            refunds: refundsByTicket(refundSnap.data).values,
+                          ),
                         );
-                      }
-                      if (!ticketSnap.hasData) {
-                        return const Padding(
-                          padding: EdgeInsets.all(24),
-                          child: SpSkeletonList(),
-                        );
-                      }
-                      return _list(
-                        driverTransactions(
-                          tickets: <String, Map<String, dynamic>>{
-                            for (final QueryDocumentSnapshot<
-                                  Map<String, dynamic>
-                                >
-                                d
-                                in ticketSnap.data!.docs)
-                              d.id: d.data(),
-                          },
-                          payments: <Map<String, dynamic>>[
-                            for (final QueryDocumentSnapshot<
-                                  Map<String, dynamic>
-                                >
-                                d
-                                in paymentSnap.data?.docs ??
-                                    <
-                                      QueryDocumentSnapshot<
-                                        Map<String, dynamic>
-                                      >
-                                    >[])
-                              d.data(),
-                          ],
-                          refunds: refundsByTicket(refundSnap.data).values,
-                        ),
-                      );
-                    },
-                  ),
-            ),
+                      },
+                    ),
+              ),
+        ),
       ),
     );
   }

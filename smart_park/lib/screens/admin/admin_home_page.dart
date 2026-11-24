@@ -16,6 +16,7 @@ import '../../theme/app_theme.dart';
 import '../../widgets/smartpark_logo.dart';
 import '../../utils/friendly_error.dart';
 import '../../widgets/smartpark_ui.dart';
+import '../../widgets/sp_app_version.dart';
 import '../../widgets/sp_vehicle_type.dart';
 import '../../widgets/sp_audit_log.dart';
 import '../../widgets/sp_admin_access.dart';

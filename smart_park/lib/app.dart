@@ -68,12 +68,22 @@ class _SmartParkAppState extends State<SmartParkApp> {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'Smart Park',
+      title: 'SmartPark',
       theme: AppTheme.theme,
+      // The phone's font size still applies, up to 1.3x: beyond that the
+      // fixed-size cards, chips and tab labels run out of room.
+      builder: (BuildContext context, Widget? child) =>
+          MediaQuery.withClampedTextScaling(
+            maxScaleFactor: kMaxTextScale,
+            child: child!,
+          ),
       home: const InternetGate(),
     );
   }
 }
+
+/// Largest text scale the app follows from the phone's font-size setting.
+const double kMaxTextScale = 1.3;
 
 class InternetGate extends StatefulWidget {
   const InternetGate({super.key});

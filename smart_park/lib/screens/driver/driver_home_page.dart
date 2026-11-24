@@ -17,6 +17,7 @@ import '../../services/last_ticket_store.dart';
 import 'saved_ticket_page.dart';
 import '../../widgets/smartpark_logo.dart';
 import '../../widgets/smartpark_ui.dart';
+import '../../widgets/sp_connection.dart';
 import '../../widgets/sp_profile_view.dart';
 import '../auth/sign_in_screen.dart';
 import 'driver_guide_page.dart';
@@ -650,7 +651,7 @@ class _DriverHomePageState extends State<DriverHomePage>
   Widget _buildBodyByIndex() {
     switch (_selectedIndex) {
       case 1:
-        return const DriverTicketHistorySection();
+        return const SpPullToRefresh(child: DriverTicketHistorySection());
       case 2:
         return SpProfileView(
           roleLabel: 'Driver',
