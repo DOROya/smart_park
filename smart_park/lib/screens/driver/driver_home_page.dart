@@ -18,6 +18,7 @@ import 'saved_ticket_page.dart';
 import '../../widgets/smartpark_logo.dart';
 import '../../widgets/smartpark_ui.dart';
 import '../../widgets/sp_connection.dart';
+import '../../widgets/sp_dialog.dart';
 import '../../widgets/sp_profile_view.dart';
 import '../auth/sign_in_screen.dart';
 import 'driver_guide_page.dart';
@@ -539,23 +540,10 @@ class _DriverHomePageState extends State<DriverHomePage>
       context: context,
       builder: (BuildContext dialogContext) {
         return AlertDialog(
-          backgroundColor: AppTheme.background,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(AppTheme.radiusLarge),
-          ),
-          title: Text(
-            'Enable Location Services',
-            style: TextStyle(
-              color: AppTheme.textDark,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          content: Text(
+          icon: const SpDialogIcon(Icons.location_on_rounded),
+          title: const Text('Enable Location Services'),
+          content: const Text(
             'SmartPark needs GPS enabled to discover nearby parking.',
-            style: TextStyle(
-              color: AppTheme.textMuted,
-              fontWeight: FontWeight.w500,
-            ),
           ),
           actions: [
             TextButton(

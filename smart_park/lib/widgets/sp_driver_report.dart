@@ -8,6 +8,7 @@ import '../theme/app_theme.dart';
 import '../utils/friendly_error.dart';
 import 'smartpark_ui.dart';
 import 'sp_reason_dropdowns.dart';
+import 'sp_dialog.dart';
 
 /// Owner's "Report driver" control for one ticket. Once the owner has
 /// reported it, shows where the report stands instead.
@@ -440,6 +441,7 @@ class _ReportDriverDialogState extends State<_ReportDriverDialog> {
     final String plate = ((widget.ticket['vehiclePlate'] as String?) ?? '')
         .trim();
     return AlertDialog(
+      icon: const SpDialogIcon(Icons.flag_outlined, tone: SpDialogTone.warning),
       title: Text(widget.title),
       content: SizedBox(
         width: 460,

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import '../theme/app_theme.dart';
+import '../widgets/sp_dialog.dart';
 
 class PermissionService {
   const PermissionService();
@@ -116,24 +117,9 @@ class PermissionService {
       context: context,
       builder: (BuildContext dialogContext) {
         return AlertDialog(
-          backgroundColor: AppTheme.background,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(AppTheme.radiusLarge),
-          ),
-          title: Text(
-            title,
-            style: TextStyle(
-              color: AppTheme.textDark,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          content: Text(
-            message,
-            style: TextStyle(
-              color: AppTheme.textMuted,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
+          icon: const SpDialogIcon(Icons.lock_open_rounded),
+          title: Text(title),
+          content: Text(message),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(dialogContext).pop(false),

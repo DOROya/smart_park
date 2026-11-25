@@ -5,6 +5,7 @@ import '../../../services/facility_status.dart'
 import '../../../theme/app_theme.dart';
 import '../../../utils/friendly_error.dart';
 import '../../../widgets/smartpark_ui.dart';
+import '../../../widgets/sp_dialog.dart';
 
 /// Shows the admin review state of a facility (`establishment_details.status`)
 /// to its owner, including the admin's rejection reason when present.
@@ -262,6 +263,10 @@ Future<void> showFacilityAppealDialog(
       String? error;
       return StatefulBuilder(
         builder: (BuildContext context, StateSetter setState) => AlertDialog(
+          icon: const SpDialogIcon(
+            Icons.rate_review_outlined,
+            tone: SpDialogTone.info,
+          ),
           title: const Text('Ask for review'),
           content: SizedBox(
             width: 460,

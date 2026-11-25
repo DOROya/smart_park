@@ -8,6 +8,7 @@ import '../services/gate_scan_service.dart'
 import '../services/parking_pricing.dart';
 import '../services/sales_report.dart' show formatSalesPeso;
 import '../theme/app_theme.dart';
+import 'sp_dialog.dart';
 import 'sp_vehicle_type.dart' show spVehicleTypeIcon, spVehicleTypeLabel;
 import '../utils/staff_credentials.dart';
 
@@ -206,6 +207,10 @@ Future<bool> spConfirmSignOut(BuildContext context) async {
     context: context,
     builder: (BuildContext dialogContext) {
       return AlertDialog(
+        icon: const SpDialogIcon(
+          Icons.logout_rounded,
+          tone: SpDialogTone.danger,
+        ),
         title: const Text('Sign out?'),
         content: const Text('You will need your password to sign back in.'),
         actions: [

@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import '../../../services/driver_reports.dart';
 import '../../../theme/app_theme.dart';
 import '../../../widgets/smartpark_ui.dart';
+import '../../../widgets/sp_dialog.dart';
 
 /// Shows the signed-in driver, once, the warnings the SmartPark admin sent
 /// since they last opened the app. Checked when the app opens or comes back
@@ -127,10 +128,9 @@ class _WarningDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      icon: Icon(
+      icon: const SpDialogIcon(
         Icons.warning_amber_rounded,
-        color: AppTheme.warning,
-        size: 36,
+        tone: SpDialogTone.warning,
       ),
       title: Text(
         warnings.length == 1
@@ -266,6 +266,7 @@ class _NoticeRowState extends State<_NoticeRow> {
     final bool? ok = await showDialog<bool>(
       context: context,
       builder: (BuildContext context) => AlertDialog(
+        icon: const SpDialogIcon(Icons.gavel_rounded, tone: SpDialogTone.info),
         title: const Text('Contest this warning'),
         content: Column(
           mainAxisSize: MainAxisSize.min,

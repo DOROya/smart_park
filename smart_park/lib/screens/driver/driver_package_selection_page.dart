@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../services/parking_pricing.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/smartpark_ui.dart';
+import '../../widgets/sp_dialog.dart';
 
 class DriverPackageOption {
   const DriverPackageOption({
@@ -111,31 +112,63 @@ class _DriverPackageSelectionPageState
       context: context,
       builder: (BuildContext ctx) => StatefulBuilder(
         builder: (BuildContext ctx, StateSetter setLocal) => AlertDialog(
-          icon: Icon(Icons.info_outline_rounded, color: AppTheme.textDark),
+          icon: const SpDialogIcon(Icons.local_parking_rounded),
           title: const Text('This is not a reservation'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text(
-                'This ticket pays for your parking time. It does not hold '
-                'a slot for you. If the lot is full when you arrive, or if '
-                'you leave and come back, a space may not be available. It '
-                'is meant to make paying and passing the gate quicker.',
+          content: SizedBox(
+            width: 400,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const SpDialogPoint(
+                    icon: Icons.payments_outlined,
+                    tone: SpDialogTone.success,
+                    text: 'This ticket pays for your parking time.',
+                  ),
+                  const SizedBox(height: 12),
+                  const SpDialogPoint(
+                    icon: Icons.event_busy_outlined,
+                    tone: SpDialogTone.warning,
+                    text:
+                        'It does not hold a slot for you. If the lot is '
+                        'full when you arrive, or if you leave and come '
+                        'back, a space may not be available.',
+                  ),
+                  const SizedBox(height: 12),
+                  const SpDialogPoint(
+                    icon: Icons.bolt_rounded,
+                    text: 'It makes paying and passing the gate quicker.',
+                  ),
+                  const SizedBox(height: 16),
+                  Material(
+                    color: AppTheme.surfaceAlt,
+                    borderRadius: BorderRadius.circular(AppTheme.radius),
+                    clipBehavior: Clip.antiAlias,
+                    child: CheckboxListTile(
+                      value: dontShow,
+                      onChanged: (bool? v) =>
+                          setLocal(() => dontShow = v ?? false),
+                      dense: true,
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+                      controlAffinity: ListTileControlAffinity.leading,
+                      title: Text(
+                        'Do not show again',
+                        style: TextStyle(
+                          fontSize: 13.5,
+                          fontWeight: FontWeight.w500,
+                          color: AppTheme.textDark,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(height: 8),
-              CheckboxListTile(
-                value: dontShow,
-                onChanged: (bool? v) => setLocal(() => dontShow = v ?? false),
-                contentPadding: EdgeInsets.zero,
-                controlAffinity: ListTileControlAffinity.leading,
-                title: const Text('Do not show again'),
-              ),
-            ],
+            ),
           ),
           actions: [
-            FilledButton(
+            SpDialogButton(
+              label: 'I understand',
               onPressed: () => Navigator.of(ctx).pop(),
-              child: const Text('I understand'),
             ),
           ],
         ),

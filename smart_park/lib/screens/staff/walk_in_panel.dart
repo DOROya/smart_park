@@ -12,6 +12,7 @@ import '../../theme/app_theme.dart';
 import '../../utils/friendly_error.dart';
 import '../../widgets/smartpark_ui.dart';
 import '../../widgets/sp_vehicle_type.dart';
+import '../../widgets/sp_dialog.dart';
 
 /// Gate panel for drive-up customers without a SmartPark ticket.
 ///
@@ -536,6 +537,10 @@ class _WalkInFeeDialogState extends State<_WalkInFeeDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
+      icon: const SpDialogIcon(
+        Icons.directions_car_rounded,
+        tone: SpDialogTone.info,
+      ),
       title: Text(widget.title),
       content: Column(
         mainAxisSize: MainAxisSize.min,

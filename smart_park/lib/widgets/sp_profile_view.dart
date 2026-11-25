@@ -315,11 +315,14 @@ class _SpProfileViewState extends State<SpProfileView> {
             key: ValueKey<String>(widget.email),
             initialValue: widget.email,
             readOnly: true,
+            enabled: false,
             enableInteractiveSelection: false,
+            style: TextStyle(color: AppTheme.textMuted),
             decoration: _spFieldDecoration(
               label: 'Email Address',
               icon: Icons.lock_outline_rounded,
               helper: 'Your sign-in email cannot be changed.',
+              locked: true,
             ),
           ),
           const SizedBox(height: 14),
@@ -585,13 +588,24 @@ InputDecoration _spFieldDecoration({
   required String label,
   IconData? icon,
   String? helper,
+  // Read-only fields (e.g. sign-in email) get a grayed-out look so they
+  // don't read as editable next to the name and password inputs.
+  bool locked = false,
 }) {
   return InputDecoration(
     labelText: label,
     helperText: helper,
     filled: true,
-    fillColor: AppTheme.surfaceAlt,
-    prefixIcon: icon == null ? null : Icon(icon, size: 20),
+    fillColor: locked
+        ? AppTheme.border.withValues(alpha: 0.45)
+        : AppTheme.surfaceAlt,
+    prefixIcon: icon == null
+        ? null
+        : Icon(icon, size: 20, color: locked ? AppTheme.textHint : null),
+    disabledBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(AppTheme.radius),
+      borderSide: BorderSide(color: AppTheme.border.withValues(alpha: 0.6)),
+    ),
     contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
     border: OutlineInputBorder(
       borderRadius: BorderRadius.circular(AppTheme.radius),

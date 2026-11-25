@@ -206,6 +206,27 @@ class AppTheme {
       dialogTheme: DialogThemeData(
         backgroundColor: surface,
         surfaceTintColor: surface,
+        elevation: 0,
+        barrierColor: Colors.black.withValues(alpha: dark ? 0.7 : 0.45),
+        insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(radiusXLarge + 4),
+          side: BorderSide(color: border),
+        ),
+        iconColor: textDark,
+        titleTextStyle: GoogleFonts.poppins(
+          fontSize: 18,
+          fontWeight: FontWeight.w700,
+          height: 1.3,
+          color: textDark,
+        ),
+        contentTextStyle: GoogleFonts.poppins(
+          fontSize: 14,
+          fontWeight: FontWeight.w400,
+          height: 1.5,
+          color: textSecondary,
+        ),
+        actionsPadding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
       ),
       bottomSheetTheme: BottomSheetThemeData(
         backgroundColor: surface,

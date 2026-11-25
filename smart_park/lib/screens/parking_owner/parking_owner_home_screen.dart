@@ -69,6 +69,7 @@ import 'widgets/facility_registration_dialog.dart';
 import 'widgets/facility_review_status_banner.dart';
 import '../staff/staff_home_page.dart';
 import 'widgets/parking_trends_card.dart';
+import '../../widgets/sp_dialog.dart';
 
 part 'parking_owner_home_fragments.dart';
 part 'parking_owner_commissions.dart';
@@ -559,6 +560,10 @@ class _ParkingOwnerHomePageState extends State<ParkingOwnerHomePage>
       barrierDismissible: false,
       builder: (BuildContext dialogContext) {
         return AlertDialog(
+          icon: const SpDialogIcon(
+            Icons.badge_outlined,
+            tone: SpDialogTone.success,
+          ),
           title: Text(title),
           content: Column(
             mainAxisSize: MainAxisSize.min,
@@ -606,6 +611,10 @@ class _ParkingOwnerHomePageState extends State<ParkingOwnerHomePage>
       context: context,
       builder: (BuildContext dialogContext) {
         return AlertDialog(
+          icon: const SpDialogIcon(
+            Icons.lock_reset_rounded,
+            tone: SpDialogTone.warning,
+          ),
           title: const Text('Reset staff password?'),
           content: Text(
             '$staffName gets a new password and is signed out of every '
@@ -672,6 +681,10 @@ class _ParkingOwnerHomePageState extends State<ParkingOwnerHomePage>
         context: context,
         builder: (BuildContext dialogContext) {
           return AlertDialog(
+            icon: const SpDialogIcon(
+              Icons.person_off_outlined,
+              tone: SpDialogTone.danger,
+            ),
             title: const Text('Deactivate staff?'),
             content: Text(
               '$staffName will be signed out and can no longer scan at your '
