@@ -8,6 +8,7 @@ import '../services/announcements.dart';
 import '../services/platform_fees.dart' show commissionPercent;
 import '../theme/app_theme.dart';
 import 'smartpark_ui.dart';
+import 'sp_dialog.dart';
 
 /// Pops up announcements for the signed-in [role], one at a time, when the
 /// app opens or comes back: never seen ones, and a commission change until
@@ -94,6 +95,10 @@ class AnnouncementDialog extends StatelessWidget {
     final double? from = a.oldRate;
     final double? to = a.newRate;
     return AlertDialog(
+      icon: const SpDialogIcon(
+        Icons.campaign_outlined,
+        tone: SpDialogTone.info,
+      ),
       title: Text(a.title),
       content: SingleChildScrollView(
         child: Column(
@@ -130,6 +135,10 @@ class AnnouncementDialog extends StatelessWidget {
                 onPressed: () => showDialog<void>(
                   context: context,
                   builder: (BuildContext c) => AlertDialog(
+                    icon: const SpDialogIcon(
+                      Icons.description_outlined,
+                      tone: SpDialogTone.info,
+                    ),
                     title: const Text('Terms and Conditions'),
                     content: SizedBox(
                       width: 480,

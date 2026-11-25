@@ -24,6 +24,7 @@ import '../../../widgets/smartpark_ui.dart' show spFormatDate;
 import '../../../widgets/sp_network_image.dart';
 import '../../../widgets/sp_vehicle_type.dart';
 import 'facility_review_status_banner.dart';
+import '../../../widgets/sp_dialog.dart';
 
 class FacilityRegistrationPage extends StatefulWidget {
   const FacilityRegistrationPage({super.key, this.facilityData, this.onSave});
@@ -200,6 +201,10 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
     final bool? discard = await showDialog<bool>(
       context: context,
       builder: (BuildContext context) => AlertDialog(
+        icon: const SpDialogIcon(
+          Icons.edit_off_rounded,
+          tone: SpDialogTone.warning,
+        ),
         title: const Text('Discard changes?'),
         content: const Text(
           'You have changes that are not saved yet. Leaving now throws '
@@ -666,6 +671,10 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
       context: context,
       builder: (BuildContext dialogContext) {
         return AlertDialog(
+          icon: const SpDialogIcon(
+            Icons.verified_outlined,
+            tone: SpDialogTone.warning,
+          ),
           title: const Text('Re-approval required'),
           content: const Text(
             'You changed your business documents. Your facility will go back '

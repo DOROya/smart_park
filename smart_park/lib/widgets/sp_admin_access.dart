@@ -5,6 +5,7 @@ import '../services/admin_access.dart';
 import '../theme/app_theme.dart';
 import '../utils/friendly_error.dart';
 import 'smartpark_ui.dart';
+import 'sp_dialog.dart';
 
 /// Colour of an access level's chip.
 Color accessLevelColor(AccessLevel level) => switch (level) {
@@ -242,6 +243,10 @@ class _PasswordDialogState extends State<_PasswordDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
+      icon: const SpDialogIcon(
+        Icons.lock_outline_rounded,
+        tone: SpDialogTone.info,
+      ),
       title: Text(widget.title),
       content: Column(
         mainAxisSize: MainAxisSize.min,
@@ -336,6 +341,10 @@ class _PromoteDialogState extends State<_PromoteDialog> {
       builder: (BuildContext context, AsyncSnapshot<AdminCandidate> snap) {
         final AdminCandidate? c = snap.data;
         return AlertDialog(
+          icon: const SpDialogIcon(
+            Icons.admin_panel_settings_outlined,
+            tone: SpDialogTone.warning,
+          ),
           title: const Text('Make admin?'),
           content: SingleChildScrollView(
             child: snap.hasError

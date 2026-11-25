@@ -7,6 +7,7 @@ import '../../services/facility_reports.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/friendly_error.dart';
 import '../../widgets/smartpark_ui.dart';
+import '../../widgets/sp_dialog.dart';
 
 String _when(Object? timestamp) {
   final DateTime? at = spParseDateTime(timestamp);
@@ -44,6 +45,10 @@ Future<String?> _askNote(
   final bool? ok = await showDialog<bool>(
     context: context,
     builder: (BuildContext context) => AlertDialog(
+      icon: const SpDialogIcon(
+        Icons.edit_note_rounded,
+        tone: SpDialogTone.info,
+      ),
       title: Text(title),
       content: TextField(
         controller: controller,
@@ -291,6 +296,10 @@ class _AdminWarningContestsCardState extends State<AdminWarningContestsCard> {
     final bool? ok = await showDialog<bool>(
       context: context,
       builder: (BuildContext context) => AlertDialog(
+        icon: const SpDialogIcon(
+          Icons.undo_rounded,
+          tone: SpDialogTone.warning,
+        ),
         title: const Text('Withdraw this warning?'),
         content: const Text(
           'The warning is removed from the driver\'s account for good.',

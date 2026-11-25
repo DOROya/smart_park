@@ -4,6 +4,7 @@ import '../../../services/facility_closure.dart';
 import '../../../theme/app_theme.dart';
 import '../../../utils/friendly_error.dart';
 import '../../../widgets/smartpark_ui.dart';
+import '../../../widgets/sp_dialog.dart';
 
 /// Close the facility for a while (a holiday, repairs) and reopen it. While
 /// closed, the gate admits no one, exits still go through, overtime
@@ -170,37 +171,100 @@ class _CloseDialogState extends State<_CloseDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
+      icon: const SpDialogIcon(
+        Icons.event_busy_rounded,
+        tone: SpDialogTone.warning,
+      ),
       title: const Text('Close temporarily'),
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            const Text(
-              'No entries or walk-ins until then. Tickets and temporary QRs '
-              'stay valid, and drivers holding them are notified.',
-            ),
-            const SizedBox(height: 14),
-            OutlinedButton.icon(
-              onPressed: _pick,
-              icon: const Icon(Icons.event_rounded, size: 18),
-              label: Text(
-                'Until ${spFormatDate(_until)}, ${spFormatClockTime(_until)}',
+      content: SizedBox(
+        width: 400,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              const SpDialogPoint(
+                icon: Icons.block_rounded,
+                tone: SpDialogTone.warning,
+                text: 'No entries or walk-ins until then.',
               ),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _reason,
-              maxLength: kMaxClosureReasonLength,
-              decoration: const InputDecoration(
-                labelText: 'Reason (optional)',
-                hintText: 'Closed for the holiday',
-                border: OutlineInputBorder(),
+              const SizedBox(height: 12),
+              const SpDialogPoint(
+                icon: Icons.confirmation_number_outlined,
+                tone: SpDialogTone.success,
+                text:
+                    'Tickets and temporary QRs stay valid, and drivers '
+                    'holding them are notified.',
               ),
-            ),
-            if (_error != null)
-              Text(_error!, style: TextStyle(color: spDeniedColor)),
-          ],
+              const SizedBox(height: 18),
+              Text(
+                'Closed until',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: AppTheme.textMuted,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Material(
+                color: AppTheme.surfaceAlt,
+                borderRadius: BorderRadius.circular(AppTheme.radius),
+                clipBehavior: Clip.antiAlias,
+                child: InkWell(
+                  onTap: _pick,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 12,
+                    ),
+                    child: Row(
+                      children: <Widget>[
+                        Icon(
+                          Icons.event_rounded,
+                          size: 20,
+                          color: AppTheme.textDark,
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            '${spFormatDate(_until)}, '
+                            '${spFormatClockTime(_until)}',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              color: AppTheme.textDark,
+                            ),
+                          ),
+                        ),
+                        Text(
+                          'Change',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            color: AppTheme.accentText,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: _reason,
+                maxLength: kMaxClosureReasonLength,
+                decoration: InputDecoration(
+                  labelText: 'Reason (optional)',
+                  hintText: 'Closed for the holiday',
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(AppTheme.radius),
+                  ),
+                ),
+              ),
+              if (_error != null)
+                Text(_error!, style: TextStyle(color: spDeniedColor)),
+            ],
+          ),
         ),
       ),
       actions: <Widget>[
@@ -209,6 +273,10 @@ class _CloseDialogState extends State<_CloseDialog> {
           child: const Text('Cancel'),
         ),
         FilledButton(
+          style: FilledButton.styleFrom(
+            backgroundColor: AppTheme.danger,
+            foregroundColor: AppTheme.onInk,
+          ),
           onPressed: () {
             final String? denial = closureDenial(_until, _reason.text);
             if (denial != null) {

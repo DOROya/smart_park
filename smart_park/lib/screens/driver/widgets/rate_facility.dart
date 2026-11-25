@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../../services/error_reporter.dart';
 import '../../../theme/app_theme.dart';
 import '../../../utils/friendly_error.dart';
+import '../../../widgets/sp_dialog.dart';
 
 /// After parking, a driver rates the facility 1-5 stars with an optional
 /// comment: one rating per ticket (`facility_ratings/{ticketId}`), which
@@ -180,6 +181,7 @@ class _RatingDialogState extends State<_RatingDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
+      icon: const SpDialogIcon(Icons.star_rounded, tone: SpDialogTone.info),
       title: Text('How was ${widget.facility}?'),
       content: Column(
         mainAxisSize: MainAxisSize.min,

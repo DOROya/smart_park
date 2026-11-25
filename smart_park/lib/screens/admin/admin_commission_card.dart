@@ -9,6 +9,7 @@ import '../../services/platform_fees.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/friendly_error.dart';
 import '../../widgets/smartpark_ui.dart';
+import '../../widgets/sp_dialog.dart';
 
 /// Settings › Commission rate: the rate now, any scheduled change and how
 /// many owners acknowledged it. A super admin schedules or calls off a
@@ -225,6 +226,7 @@ class _ScheduleDialogState extends State<_ScheduleDialog> {
       Duration(days: rate != null && rate < widget.current ? 1 : 30),
     );
     return AlertDialog(
+      icon: const SpDialogIcon(Icons.percent_rounded, tone: SpDialogTone.info),
       title: const Text('Schedule a commission change'),
       content: SingleChildScrollView(
         child: Column(

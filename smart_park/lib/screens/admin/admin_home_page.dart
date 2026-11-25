@@ -34,6 +34,7 @@ import '../../widgets/sp_sales_report_card.dart';
 import '../auth/sign_in_screen.dart';
 import 'admin_driver_reports.dart';
 import 'admin_facility_reports.dart';
+import '../../widgets/sp_dialog.dart';
 
 part 'admin_home_page_fragments.dart';
 part 'admin_facility_review.dart';
@@ -943,6 +944,10 @@ class _AdminHomePageState extends State<AdminHomePage>
       context: dialogContext,
       builder: (BuildContext confirmContext) {
         return AlertDialog(
+          icon: const SpDialogIcon(
+            Icons.description_outlined,
+            tone: SpDialogTone.warning,
+          ),
           title: const Text('Approve without documents?'),
           content: const Text(
             'This establishment has no business documents on file. '
@@ -984,6 +989,10 @@ class _AdminHomePageState extends State<AdminHomePage>
     final bool? act = await showDialog<bool>(
       context: dialogContext,
       builder: (BuildContext context) => AlertDialog(
+        icon: const SpDialogIcon(
+          Icons.mail_outline_rounded,
+          tone: SpDialogTone.warning,
+        ),
         title: Text(
           standing == null ? 'Give the owner notice first' : 'Notice sent',
         ),
@@ -1061,6 +1070,10 @@ class _AdminHomePageState extends State<AdminHomePage>
       context: dialogContext,
       builder: (BuildContext confirmContext) {
         return AlertDialog(
+          icon: SpDialogIcon(
+            suspend ? Icons.block_rounded : Icons.power_settings_new_rounded,
+            tone: SpDialogTone.danger,
+          ),
           title: Text(
             suspend ? 'Suspend this facility?' : 'Deactivate this facility?',
           ),

@@ -21,6 +21,7 @@ import '../../../services/ticket_plate.dart';
 import '../../../theme/app_theme.dart';
 import '../../../utils/friendly_error.dart';
 import '../../../widgets/smartpark_ui.dart';
+import '../../../widgets/sp_dialog.dart';
 import '../../../widgets/sp_loading.dart';
 import '../../../widgets/sp_max_brightness.dart'
     show SpMaxBrightness, kTicketQrEyeStyle, kTicketQrModuleStyle;
@@ -985,6 +986,7 @@ class _ChangePlateDialogState extends State<_ChangePlateDialog> {
   Widget build(BuildContext context) {
     final Map<String, dynamic> data = widget.doc.data();
     return AlertDialog(
+      icon: const SpDialogIcon(Icons.edit_rounded, tone: SpDialogTone.info),
       title: const Text('Change plate'),
       content: SizedBox(
         width: 420,
@@ -1533,6 +1535,7 @@ class _RefundPanelState extends State<_RefundPanel> {
     final bool? ok = await showDialog<bool>(
       context: context,
       builder: (BuildContext context) => AlertDialog(
+        icon: const SpDialogIcon(Icons.currency_exchange_rounded),
         title: const Text('Request a refund?'),
         content: SingleChildScrollView(
           child: Column(

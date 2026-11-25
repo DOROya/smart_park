@@ -9,6 +9,7 @@ import '../../../services/gate_cash.dart';
 import '../../../theme/app_theme.dart';
 import '../../../utils/friendly_error.dart';
 import '../../../widgets/smartpark_ui.dart';
+import '../../../widgets/sp_dialog.dart';
 
 /// Cash each staff member took at the gate (overtime and walk-in fees) and
 /// hasn't handed over yet, with "Received" to record the handover, and the
@@ -100,6 +101,10 @@ class _OwnerCashHandoverCardState extends State<OwnerCashHandoverCard> {
     final bool? ok = await showDialog<bool>(
       context: context,
       builder: (BuildContext context) => AlertDialog(
+        icon: const SpDialogIcon(
+          Icons.payments_outlined,
+          tone: SpDialogTone.success,
+        ),
         title: Text('Received ${spPeso(due.total)} from $name?'),
         content: Column(
           mainAxisSize: MainAxisSize.min,

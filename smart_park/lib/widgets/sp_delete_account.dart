@@ -11,6 +11,7 @@ import '../services/parking_pricing.dart';
 import '../theme/app_theme.dart';
 import '../utils/friendly_error.dart';
 import 'smartpark_ui.dart';
+import 'sp_dialog.dart';
 
 /// The paid parking a driver gives up by deleting their account: the hours
 /// still unused across their [tickets], and how many tickets hold them.
@@ -215,6 +216,10 @@ class _DeleteAccountDialogState extends State<_DeleteAccountDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
+      icon: const SpDialogIcon(
+        Icons.delete_forever_rounded,
+        tone: SpDialogTone.danger,
+      ),
       title: const Text('Delete your account?'),
       content: SizedBox(
         width: 420,

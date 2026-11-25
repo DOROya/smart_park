@@ -12,6 +12,7 @@ import '../../utils/friendly_error.dart';
 import '../../utils/sp_haptics.dart';
 import '../../widgets/smartpark_ui.dart' show spParseDateTime, spPeso;
 import '../../widgets/sp_max_brightness.dart';
+import '../../widgets/sp_dialog.dart';
 import '../../widgets/sp_save_qr_button.dart';
 import '../../widgets/sp_ticket_cost.dart';
 import '../../widgets/sp_vehicle_type.dart';
@@ -239,6 +240,10 @@ class _DriverParkingPassPageState extends State<DriverParkingPassPage> {
     final bool? confirmed = await showDialog<bool>(
       context: context,
       builder: (BuildContext context) => AlertDialog(
+        icon: const SpDialogIcon(
+          Icons.qr_code_2_rounded,
+          tone: SpDialogTone.danger,
+        ),
         title: const Text('Cancel this temporary QR?'),
         content: const Text(
           'You have not been charged. You can make a new one any time.',

@@ -7,6 +7,7 @@ import '../../../services/staff_shifts.dart';
 import '../../../theme/app_theme.dart';
 import '../../../utils/friendly_error.dart';
 import '../../../widgets/smartpark_ui.dart';
+import '../../../widgets/sp_dialog.dart';
 
 /// Who is on duty now, and the duty log for a day: each staff member's
 /// clock-in and clock-out. The owner can end a shift someone forgot.
@@ -55,6 +56,10 @@ class _OwnerDutyLogCardState extends State<OwnerDutyLogCard> {
     final bool? ok = await showDialog<bool>(
       context: context,
       builder: (BuildContext context) => AlertDialog(
+        icon: const SpDialogIcon(
+          Icons.timer_off_outlined,
+          tone: SpDialogTone.warning,
+        ),
         title: Text('End $name\'s shift?'),
         content: const Text(
           'Use this when someone forgot to clock out. The shift ends now and '

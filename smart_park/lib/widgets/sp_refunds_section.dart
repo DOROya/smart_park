@@ -5,6 +5,7 @@ import '../services/parking_refunds.dart';
 import '../theme/app_theme.dart';
 import '../utils/friendly_error.dart';
 import 'smartpark_ui.dart';
+import 'sp_dialog.dart';
 
 /// Refunds for tickets at facilities SmartPark pulled, on the Report tab.
 /// Admins see every refund and approve or reject drivers' requests; owners
@@ -57,6 +58,10 @@ class _SpRefundsSectionState extends State<SpRefundsSection> {
       final bool? ok = await showDialog<bool>(
         context: context,
         builder: (BuildContext context) => AlertDialog(
+          icon: const SpDialogIcon(
+            Icons.cancel_outlined,
+            tone: SpDialogTone.danger,
+          ),
           title: const Text('Reject this refund request?'),
           content: TextField(
             controller: controller,
@@ -261,6 +266,10 @@ class _SpRefundsSectionState extends State<SpRefundsSection> {
     final bool? ok = await showDialog<bool>(
       context: context,
       builder: (BuildContext context) => AlertDialog(
+        icon: const SpDialogIcon(
+          Icons.currency_exchange_rounded,
+          tone: SpDialogTone.info,
+        ),
         title: Text(title),
         content: Column(
           mainAxisSize: MainAxisSize.min,
@@ -416,6 +425,10 @@ class _SpRefundsSectionState extends State<SpRefundsSection> {
     final bool? ok = await showDialog<bool>(
       context: context,
       builder: (BuildContext context) => AlertDialog(
+        icon: const SpDialogIcon(
+          Icons.payments_outlined,
+          tone: SpDialogTone.success,
+        ),
         title: const Text('Record a direct payment'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
