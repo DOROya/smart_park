@@ -5,6 +5,15 @@ import 'package:cloud_firestore/cloud_firestore.dart' show Timestamp;
 String facilityStatus(Map<String, dynamic>? details) =>
     ((details?['status'] as String?) ?? 'pending').trim().toLowerCase();
 
+/// The owner changed the business documents of a reviewed facility and no
+/// admin has checked them yet (`establishment_details.documentsUpdatedAt`).
+/// The facility keeps its status meanwhile: an approved one stays open, and
+/// the admin suspends it if the new documents are bad. Any admin decision
+/// (or "Documents OK") clears it.
+bool documentsAwaitCheck(Map<String, dynamic>? details) =>
+    details?['documentsUpdatedAt'] != null &&
+    facilityStatus(details) != 'pending';
+
 /// Reasons an admin picks from (one or more) when suspending or deactivating
 /// a facility, stored as `establishment_details.restrictionReasons`, with
 /// `restrictionReason` holding them joined for screens that show one line.

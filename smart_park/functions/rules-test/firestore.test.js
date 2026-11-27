@@ -202,6 +202,24 @@ test("only admins lift a suspension or deactivation", async () => {
   }
 });
 
+test("new documents keep a live facility open; only an admin clears the flag", async () => {
+  await env.withSecurityRulesDisabled((ctx) =>
+    setDoc(doc(ctx.firestore(), "establishment_details/est1"), { status: "approved", reviewedBy: "admin1", rates: {} }));
+  // The owner stamps new documents without leaving approved.
+  await assertSucceeds(updateDoc(doc(owner(), "establishment_details/est1"), {
+    rates: { car: 50 }, documentsUpdatedAt: serverTimestamp(),
+  }));
+  const saved = (await getDoc(doc(owner(), "establishment_details/est1"))).data();
+  assert.equal(saved.status, "approved");
+  assert.ok(saved.documentsUpdatedAt);
+  // Other edits keep the flag; the owner can't clear or backdate it.
+  await assertSucceeds(updateDoc(doc(owner(), "establishment_details/est1"), { policies: "No overnight." }));
+  await assertFails(updateDoc(doc(owner(), "establishment_details/est1"), { documentsUpdatedAt: deleteField() }));
+  await assertFails(updateDoc(doc(owner(), "establishment_details/est1"), { documentsUpdatedAt: null }));
+  await assertFails(updateDoc(doc(owner(), "establishment_details/est1"), { documentsUpdatedAt: new Date(0) }));
+  await assertSucceeds(updateDoc(doc(admin(), "establishment_details/est1"), { documentsUpdatedAt: deleteField() }));
+});
+
 test("only admins give or withdraw a notice to fix something", async () => {
   const notice = { reasons: ["Rates differ from the listing"], message: "" };
   await env.withSecurityRulesDisabled((ctx) =>

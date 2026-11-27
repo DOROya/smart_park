@@ -40,7 +40,8 @@ function reasonText(data) {
 
 /**
  * The admins' alert for a change to establishment_details, or null:
- * a new application, a resubmission, or an owner asking for review.
+ * a new application, a resubmission, new documents on a reviewed facility,
+ * or an owner asking for review.
  */
 function facilityReviewAlert(before, after, name) {
   if (!after) return null;
@@ -54,6 +55,16 @@ function facilityReviewAlert(before, after, name) {
     if (status(before) !== "pending" || (resubmitted && resubmitted !== millis(before.resubmittedAt))) {
       return { title: "Facility resubmitted", body: `${facility} sent its application again for review.`, data };
     }
+  }
+  // New documents on a reviewed facility: it stays as it is (an approved
+  // one stays open) until an admin checks them.
+  const docs = millis(after.documentsUpdatedAt);
+  if (docs && status(after) !== "pending" && docs !== millis(before?.documentsUpdatedAt)) {
+    return {
+      title: "New documents to check",
+      body: `${facility} uploaded new business documents. Check them, or suspend it if they are invalid.`,
+      data,
+    };
   }
   if (after.appealedAt && !before?.appealedAt) {
     return {

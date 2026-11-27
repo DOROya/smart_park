@@ -21,12 +21,15 @@ class EstablishmentRepository {
   /// Creates or updates a facility. On update, the review status is left
   /// untouched unless [FacilityRegistrationData.requiresReview] says the edit
   /// must be re-verified, in which case the facility goes back to `pending`.
+  /// New documents on a reviewed facility stamp `documentsUpdatedAt`
+  /// instead, which puts it in the admin's queue while it stays open.
   /// [failedDocumentUploads] counts picked documents that did not reach
   /// Storage, so the caller can tell the owner instead of failing silently.
   Future<
     ({
       String establishmentId,
       bool submittedForReview,
+      bool documentsSentForCheck,
       int failedDocumentUploads,
     })
   >
@@ -40,6 +43,10 @@ class EstablishmentRepository {
     final bool isCreate = establishmentId == null;
     final bool resubmit =
         !isCreate && formData.requiresReview(previousStatus: previousStatus);
+    final bool documentCheck =
+        !isCreate &&
+        !resubmit &&
+        formData.flagsDocumentCheck(previousStatus: previousStatus);
     final String savedId = establishmentId ?? _establishments.doc().id;
 
     final Map<String, dynamic> establishmentPayload = formData
@@ -61,6 +68,9 @@ class EstablishmentRepository {
           ..remove('rejectionReason')
           ..remove('reviewedAt')
           ..remove('reviewedBy');
+        if (documentCheck) {
+          detailsPayload['documentsUpdatedAt'] = FieldValue.serverTimestamp();
+        }
       }
     }
 
@@ -151,6 +161,7 @@ class EstablishmentRepository {
     return (
       establishmentId: savedId,
       submittedForReview: isCreate || resubmit,
+      documentsSentForCheck: documentCheck,
       failedDocumentUploads: failedDocumentUploads,
     );
   }

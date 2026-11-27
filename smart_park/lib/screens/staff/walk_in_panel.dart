@@ -551,7 +551,7 @@ class _WalkInFeeDialogState extends State<_WalkInFeeDialog> {
             // "Parked just now." / "Parked 1h 05m."
             'Parked ${widget.stay == 'Just now' ? 'just now' : widget.stay}. '
             'Enter the parking fee you collected in '
-            'cash; it is added to the cash you hand to the owner.',
+            'cash; it is added to the cash you hand over at the end of your shift.',
             style: TextStyle(color: AppTheme.textSecondary, height: 1.35),
           ),
           const SizedBox(height: 12),

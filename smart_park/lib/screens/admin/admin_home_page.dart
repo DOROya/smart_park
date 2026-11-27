@@ -50,6 +50,10 @@ enum _UserRoleFilter { all, driver, parkingOwner, admins }
 enum _UserSortOption { newest, name }
 
 /// A status change offered in the establishment review dialog.
+/// The "Documents OK" action: clears the new-documents flag of a live
+/// facility without changing its status.
+const String _documentsOk = 'documents_ok';
+
 typedef _StatusAction = ({
   String status,
   String label,
@@ -297,10 +301,11 @@ class _AdminHomePageState extends State<AdminHomePage>
     return establishments.where((
       QueryDocumentSnapshot<Map<String, dynamic>> doc,
     ) {
-      final String status =
-          ((_mergedEstablishmentData(doc)['status'] as String?) ?? 'pending')
-              .toLowerCase();
-      return status == 'pending';
+      final Map<String, dynamic> data = _mergedEstablishmentData(doc);
+      final String status = ((data['status'] as String?) ?? 'pending')
+          .toLowerCase();
+      // A live facility with new documents waits here too, still open.
+      return status == 'pending' || documentsAwaitCheck(data);
     }).toList();
   }
 
@@ -632,6 +637,8 @@ class _AdminHomePageState extends State<AdminHomePage>
     updates['appealMessage'] = null;
     updates['appealedAt'] = null;
     updates['complianceNotice'] = null;
+    // Deciding means the admin has looked at the documents too.
+    updates['documentsUpdatedAt'] = FieldValue.delete();
     // The picked reasons only apply while the facility is pulled.
     final bool pulled = status == 'suspended' || status == 'deactivated';
     updates['restrictionReasons'] = pulled && restrictionReasons.isNotEmpty
@@ -717,6 +724,18 @@ class _AdminHomePageState extends State<AdminHomePage>
         .whereType<String>()
         .where((String url) => url.trim().isNotEmpty)
         .toList();
+  }
+
+  /// "New documents · Nov 27": the owner changed the documents of a
+  /// reviewed facility, which stays as it is until an admin checks them.
+  Widget _buildNewDocumentsChip(Map<String, dynamic> data) {
+    final DateTime? at = _parseDateTime(data['documentsUpdatedAt']);
+    return SpChip(
+      label: at == null
+          ? 'New documents'
+          : 'New documents · ${_formatReviewDate(at)}',
+      color: AppTheme.warning,
+    );
   }
 
   Widget _buildReviewStatusChip(String status, {required bool resubmitted}) {
@@ -1322,6 +1341,43 @@ class _AdminHomePageState extends State<AdminHomePage>
                 final String current = _normalize(status);
 
                 Future<void> submit(String newStatus) async {
+                  if (newStatus == _documentsOk) {
+                    setDialogState(() => submittingStatus = newStatus);
+                    try {
+                      await FirebaseFirestore.instance
+                          .collection('establishment_details')
+                          .doc(doc.id)
+                          .update(<String, dynamic>{
+                            'documentsUpdatedAt': FieldValue.delete(),
+                            'updatedAt': FieldValue.serverTimestamp(),
+                          });
+                      if (dialogContext.mounted) {
+                        Navigator.of(dialogContext).pop();
+                      }
+                      if (mounted) {
+                        ScaffoldMessenger.of(this.context).showSnackBar(
+                          const SnackBar(
+                            content: Text('New documents marked as checked.'),
+                          ),
+                        );
+                      }
+                    } catch (error) {
+                      setDialogState(() => submittingStatus = null);
+                      if (mounted) {
+                        ScaffoldMessenger.of(this.context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              friendlyError(
+                                error,
+                                fallback: 'Unable to save. Try again.',
+                              ),
+                            ),
+                          ),
+                        );
+                      }
+                    }
+                    return;
+                  }
                   bool confirmed = true;
                   if (newStatus == 'suspended' || newStatus == 'deactivated') {
                     final List<String> reasons = spPickedReasons(
@@ -1435,6 +1491,15 @@ class _AdminHomePageState extends State<AdminHomePage>
                       color: AppTheme.warning,
                       primary: false,
                     ),
+                    // New documents on a live facility: fine, or suspend.
+                    if (documentsAwaitCheck(data))
+                      (
+                        status: _documentsOk,
+                        label: 'Documents OK',
+                        icon: Icons.task_alt_rounded,
+                        color: AppTheme.accent,
+                        primary: true,
+                      ),
                   ],
                   'suspended' => <_StatusAction>[
                     (
@@ -1565,6 +1630,8 @@ class _AdminHomePageState extends State<AdminHomePage>
                                           status,
                                           resubmitted: resubmitted,
                                         ),
+                                        if (documentsAwaitCheck(data))
+                                          _buildNewDocumentsChip(data),
                                         if (submittedAt != null)
                                           Text(
                                             '${resubmitted ? 'Resubmitted' : 'Submitted'} '
@@ -2100,22 +2167,12 @@ class _AdminHomePageState extends State<AdminHomePage>
                                       final int establishmentCount =
                                           establishments.length;
 
+                                      // Same as the review queue: new
+                                      // applications and new documents.
                                       final int pendingCount =
-                                          establishments.where((
-                                            QueryDocumentSnapshot<
-                                              Map<String, dynamic>
-                                            >
-                                            doc,
-                                          ) {
-                                            final String status =
-                                                ((_mergedEstablishmentData(
-                                                              doc,
-                                                            )['status']
-                                                            as String?) ??
-                                                        'pending')
-                                                    .toLowerCase();
-                                            return status == 'pending';
-                                          }).length;
+                                          _pendingEstablishments(
+                                            establishments,
+                                          ).length;
 
                                       final double commission = _sumCommission(
                                         payments,

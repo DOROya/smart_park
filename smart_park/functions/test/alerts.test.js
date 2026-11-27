@@ -40,6 +40,22 @@ test("admins hear when an owner asks for review", () => {
   assert.equal(facilityReviewAlert({ ...suspended, appealedAt: ts(5) }, { ...suspended, appealedAt: ts(5) }, "Lot A"), null);
 });
 
+test("admins hear about new documents on a reviewed facility, once each", () => {
+  const live = { status: "approved" };
+  const a = facilityReviewAlert(live, { ...live, documentsUpdatedAt: ts(3) }, "Lot A");
+  assert.equal(a.title, "New documents to check");
+  assert.match(a.body, /Lot A/);
+  const flagged = { ...live, documentsUpdatedAt: ts(3) };
+  assert.equal(facilityReviewAlert(flagged, { ...flagged, policies: "x" }, "Lot A"), null);
+  assert.equal(facilityReviewAlert(flagged, { ...live, documentsUpdatedAt: ts(4) }, "Lot A").title, "New documents to check");
+  // A suspended owner's new documents reach the admin too.
+  const suspended = { status: "suspended" };
+  assert.equal(
+    facilityReviewAlert(suspended, { ...suspended, documentsUpdatedAt: ts(5) }, "Lot A").title,
+    "New documents to check",
+  );
+});
+
 test("owners hear every decision on their facility", () => {
   const titles = (was, now, extra = {}) =>
     facilityStatusAlert({ status: was }, { status: now, ...extra }, "Lot A")?.title;

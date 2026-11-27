@@ -238,11 +238,11 @@ class _ActivityDetailsSheetState extends State<_ActivityDetailsSheet> {
                 'Walk-in fee',
                 '${spPeso(walkInFeeOf(log))} cash',
               ),
-            // Gate cash the owner received (or not yet).
+            // Gate cash the owner or a supervisor received (or not yet).
             if (overtimeCashOf(log) > 0 || walkInFeeOf(log) > 0)
               _row(
                 Icons.account_balance_wallet_outlined,
-                'Handed to owner',
+                'Handed over',
                 awaitsHandover(log) ? 'Not yet' : 'Yes',
               ),
             if (transactionId.isNotEmpty) _ticketRow(context, transactionId),
