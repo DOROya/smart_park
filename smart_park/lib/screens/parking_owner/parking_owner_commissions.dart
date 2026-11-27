@@ -88,9 +88,6 @@ class _CommissionsListContentState extends State<_CommissionsListContent>
     DateTime.now(),
   );
 
-  /// Whether the transaction list shows past its first page.
-  bool _showAll = false;
-
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
@@ -440,8 +437,7 @@ class _CommissionsListContentState extends State<_CommissionsListContent>
     final bool isTablet = spIsTablet(context);
     final int limit = isTablet ? 12 : 6;
     final List<Widget> transactionCards = <Widget>[
-      for (final _CommissionRecord record
-          in _showAll ? periodRecords : periodRecords.take(limit))
+      for (final _CommissionRecord record in periodRecords.take(limit))
         _TransactionCard(
           record: record,
           dateText: record.createdAt == null
@@ -456,10 +452,7 @@ class _CommissionsListContentState extends State<_CommissionsListContent>
         SpFinancePeriodBar(
           range: range,
           earliest: earliest,
-          onChanged: (FinanceRange r) => setState(() {
-            _range = r;
-            _showAll = false;
-          }),
+          onChanged: (FinanceRange r) => setState(() => _range = r),
         ),
         const SizedBox(height: 12),
         SpStatRow(
@@ -583,10 +576,19 @@ class _CommissionsListContentState extends State<_CommissionsListContent>
                       SpGrid(equalHeight: true, children: transactionCards)
                     else
                       ...transactionCards,
-                    if (!_showAll && periodRecords.length > limit)
-                      TextButton(
-                        onPressed: () => setState(() => _showAll = true),
-                        child: Text(
+                    if (periodRecords.length > limit)
+                      TextButton.icon(
+                        onPressed: () => Navigator.of(context).push<void>(
+                          MaterialPageRoute<void>(
+                            builder: (_) => _OwnerTransactionsPage(
+                              records: periodRecords,
+                              periodLabel: salesReportPeriod(report),
+                              formatShortDate: formatShortDate,
+                            ),
+                          ),
+                        ),
+                        icon: const Icon(Icons.open_in_new_rounded, size: 18),
+                        label: Text(
                           'Show all ${periodRecords.length} transactions',
                         ),
                       ),
@@ -850,6 +852,635 @@ class _TransactionCard extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Every transaction in the chosen period on its own page, opened from
+/// "Show all" so the Reports tab stays short: where the money went, a
+/// driver search, filters, and the sales grouped by day like a statement.
+class _OwnerTransactionsPage extends StatefulWidget {
+  const _OwnerTransactionsPage({
+    required this.records,
+    required this.periodLabel,
+    required this.formatShortDate,
+  });
+
+  final List<_CommissionRecord> records;
+  final String periodLabel;
+  final String Function(DateTime) formatShortDate;
+
+  @override
+  State<_OwnerTransactionsPage> createState() => _OwnerTransactionsPageState();
+}
+
+enum _TxFilter { all, extraHours, overtime, cashDue }
+
+class _OwnerTransactionsPageState extends State<_OwnerTransactionsPage> {
+  static const int _pageSize = 15;
+
+  _TxFilter _filter = _TxFilter.all;
+  String _query = '';
+  int _limit = _pageSize;
+  final Set<String> _open = <String>{};
+
+  bool _cashDue(_CommissionRecord r) =>
+      r.hasOvertime && r.overtimeStatus != kOvertimeCollected;
+
+  /// "Isaiah Calamba · Extra 4 hrs" -> ("Isaiah Calamba", "Extra 4 hrs").
+  static (String, String) _nameAndKind(_CommissionRecord r) {
+    final int dot = r.driverName.indexOf(' · ');
+    if (dot < 0) {
+      return (r.driverName.isEmpty ? 'Driver' : r.driverName, 'Ticket');
+    }
+    return (r.driverName.substring(0, dot), r.driverName.substring(dot + 3));
+  }
+
+  static bool _isExtra(_CommissionRecord r) =>
+      _nameAndKind(r).$2.startsWith('Extra');
+
+  void _setFilter(_TxFilter f) => setState(() {
+    _filter = f;
+    _limit = _pageSize;
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final List<_CommissionRecord> all = widget.records;
+    final List<_CommissionRecord> paid = all
+        .where((_CommissionRecord r) => r.status == 'PAID')
+        .toList();
+    double sum(double Function(_CommissionRecord) f) =>
+        paid.fold<double>(0, (double t, _CommissionRecord r) => t + f(r));
+    final double gross = sum((_CommissionRecord r) => r.grossAmount);
+    final double commission = sum((_CommissionRecord r) => r.platformFee);
+    final double processing = sum((_CommissionRecord r) => r.processingFee);
+    final double payout = sum((_CommissionRecord r) => r.netToOwner);
+
+    final int extraCount = all.where(_isExtra).length;
+    final int overtimeCount = all
+        .where((_CommissionRecord r) => r.hasOvertime)
+        .length;
+    final int cashDueCount = all.where(_cashDue).length;
+    final String q = _query.trim().toLowerCase();
+    final List<_CommissionRecord> shown = all
+        .where(
+          (_CommissionRecord r) => switch (_filter) {
+            _TxFilter.all => true,
+            _TxFilter.extraHours => _isExtra(r),
+            _TxFilter.overtime => r.hasOvertime,
+            _TxFilter.cashDue => _cashDue(r),
+          },
+        )
+        .where(
+          (_CommissionRecord r) =>
+              q.isEmpty || r.driverName.toLowerCase().contains(q),
+        )
+        .toList();
+
+    return Scaffold(
+      backgroundColor: AppTheme.background,
+      appBar: AppBar(
+        backgroundColor: AppTheme.background,
+        surfaceTintColor: Colors.transparent,
+        title: const Text('Transactions'),
+      ),
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 760),
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 32),
+            children: <Widget>[
+              _hero(
+                count: paid.length,
+                gross: gross,
+                payout: payout,
+                commission: commission,
+                processing: processing,
+              ),
+              const SizedBox(height: 16),
+              _search(),
+              const SizedBox(height: 10),
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: <Widget>[
+                    for (final (_TxFilter f, String label, int n)
+                        in <(_TxFilter, String, int)>[
+                          (_TxFilter.all, 'All', all.length),
+                          (_TxFilter.extraHours, 'Extra hours', extraCount),
+                          (_TxFilter.overtime, 'With overtime', overtimeCount),
+                          (
+                            _TxFilter.cashDue,
+                            'Cash not collected',
+                            cashDueCount,
+                          ),
+                        ])
+                      if (f == _TxFilter.all || n > 0)
+                        Padding(
+                          padding: const EdgeInsets.only(right: 8),
+                          child: ChoiceChip(
+                            label: Text('$label · $n'),
+                            selected: _filter == f,
+                            showCheckmark: false,
+                            onSelected: (_) => _setFilter(f),
+                          ),
+                        ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 8),
+              if (shown.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: SpEmptyState(
+                    icon: Icons.receipt_long_outlined,
+                    message: q.isNotEmpty
+                        ? 'No transactions from a driver matching "$_query".'
+                        : 'No transactions match this filter.',
+                  ),
+                )
+              else ...<Widget>[
+                ..._days(shown.take(_limit).toList(), shown),
+                if (shown.length > _limit)
+                  Center(
+                    child: TextButton.icon(
+                      onPressed: () => setState(() => _limit += _pageSize),
+                      icon: const Icon(Icons.expand_more_rounded),
+                      label: Text(
+                        'Show ${shown.length - _limit < _pageSize ? shown.length - _limit : _pageSize} more '
+                        '(${shown.length - _limit} left)',
+                      ),
+                    ),
+                  ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Gross sales up top, then a bar and legend of where it went.
+  Widget _hero({
+    required int count,
+    required double gross,
+    required double payout,
+    required double commission,
+    required double processing,
+  }) {
+    final Color payoutColor = spEntryColor;
+    final Color commissionColor = AppTheme.accentText;
+    final Color processingColor = AppTheme.textMuted;
+    int flex(double v) => (v * 100).round();
+    Widget legend(Color color, String label, double value) => Expanded(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Container(
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+              ),
+              const SizedBox(width: 6),
+              Flexible(
+                child: Text(
+                  label,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 11.5, color: AppTheme.textMuted),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 2),
+          Text(
+            spPeso(value),
+            style: TextStyle(
+              fontSize: 13.5,
+              fontWeight: FontWeight.w800,
+              color: AppTheme.textDark,
+            ),
+          ),
+        ],
+      ),
+    );
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: <Color>[AppTheme.accentSoft, AppTheme.surface],
+        ),
+        borderRadius: BorderRadius.circular(AppTheme.radiusXLarge),
+        border: Border.all(color: AppTheme.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Icon(
+                Icons.calendar_month_rounded,
+                size: 16,
+                color: AppTheme.accentText,
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  widget.periodLabel,
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w700,
+                    color: AppTheme.accentText,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Text(
+            'Gross sales',
+            style: TextStyle(fontSize: 12.5, color: AppTheme.textMuted),
+          ),
+          Text(
+            spPeso(gross),
+            style: TextStyle(
+              fontSize: 30,
+              height: 1.15,
+              fontWeight: FontWeight.w800,
+              letterSpacing: -0.5,
+              color: AppTheme.textDark,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            <String>[
+              '$count paid transaction${count == 1 ? '' : 's'}',
+              if (count > 0) 'Avg. ${spPeso(gross / count)}',
+            ].joinDots(),
+            style: TextStyle(fontSize: 12.5, color: AppTheme.textSecondary),
+          ),
+          if (gross > 0) ...<Widget>[
+            const SizedBox(height: 14),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(99),
+              child: SizedBox(
+                height: 10,
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    if (payout > 0)
+                      Expanded(
+                        flex: flex(payout),
+                        child: ColoredBox(color: payoutColor),
+                      ),
+                    if (commission > 0) ...<Widget>[
+                      const SizedBox(width: 2),
+                      Expanded(
+                        flex: flex(commission),
+                        child: ColoredBox(color: commissionColor),
+                      ),
+                    ],
+                    if (processing > 0) ...<Widget>[
+                      const SizedBox(width: 2),
+                      Expanded(
+                        flex: flex(processing),
+                        child: ColoredBox(color: processingColor),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                legend(payoutColor, 'Your payout', payout),
+                legend(commissionColor, 'Commission', commission),
+                legend(processingColor, 'Processing', processing),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _search() => TextField(
+    onChanged: (String v) => setState(() {
+      _query = v;
+      _limit = _pageSize;
+    }),
+    decoration: InputDecoration(
+      prefixIcon: const Icon(Icons.search_rounded),
+      hintText: 'Search by driver',
+      isDense: true,
+      filled: true,
+      fillColor: AppTheme.surface,
+      contentPadding: const EdgeInsets.symmetric(vertical: 12),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(99),
+        borderSide: BorderSide(color: AppTheme.border),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(99),
+        borderSide: BorderSide(color: AppTheme.border),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(99),
+        borderSide: BorderSide(color: AppTheme.accentText, width: 1.5),
+      ),
+    ),
+  );
+
+  /// [page] grouped by day, newest first: a heading with the day's total
+  /// (over every matching sale that day, not just this page), then one
+  /// card holding that day's rows.
+  List<Widget> _days(
+    List<_CommissionRecord> page,
+    List<_CommissionRecord> matching,
+  ) {
+    String keyOf(_CommissionRecord r) {
+      final DateTime? d = r.createdAt;
+      return d == null ? '' : '${d.year}-${d.month}-${d.day}';
+    }
+
+    final Map<String, double> dayTotals = <String, double>{};
+    for (final _CommissionRecord r in matching) {
+      if (r.status != 'PAID') continue;
+      dayTotals[keyOf(r)] = (dayTotals[keyOf(r)] ?? 0) + r.grossAmount;
+    }
+    final List<Widget> out = <Widget>[];
+    int i = 0;
+    while (i < page.length) {
+      final String key = keyOf(page[i]);
+      final List<_CommissionRecord> day = <_CommissionRecord>[];
+      while (i < page.length && keyOf(page[i]) == key) {
+        day.add(page[i]);
+        i++;
+      }
+      out.add(_dayHeading(day.first.createdAt, dayTotals[key] ?? 0));
+      out.add(
+        Container(
+          margin: const EdgeInsets.only(bottom: 6),
+          decoration: BoxDecoration(
+            color: AppTheme.surface,
+            borderRadius: BorderRadius.circular(AppTheme.radiusLarge),
+            border: Border.all(color: AppTheme.border),
+          ),
+          child: Column(
+            children: <Widget>[
+              for (int j = 0; j < day.length; j++) ...<Widget>[
+                if (j > 0)
+                  Divider(height: 1, indent: 64, color: AppTheme.border),
+                _row(day[j]),
+              ],
+            ],
+          ),
+        ),
+      );
+    }
+    return out;
+  }
+
+  Widget _dayHeading(DateTime? d, double total) {
+    final DateTime now = DateTime.now();
+    final DateTime today = DateTime(now.year, now.month, now.day);
+    String label;
+    if (d == null) {
+      label = 'Date unavailable';
+    } else {
+      final DateTime day = DateTime(d.year, d.month, d.day);
+      final int ago = today.difference(day).inDays;
+      label = ago == 0
+          ? 'Today'
+          : ago == 1
+          ? 'Yesterday'
+          : '${const <String>['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][d.weekday - 1]}, '
+                '${widget.formatShortDate(d)}';
+    }
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(4, 14, 4, 8),
+      child: Row(
+        children: <Widget>[
+          Expanded(
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w800,
+                color: AppTheme.textDark,
+              ),
+            ),
+          ),
+          if (total > 0)
+            Text(
+              spPeso(total),
+              style: TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w700,
+                color: AppTheme.textMuted,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// One sale: who, what and when on the left; the price and the payout on
+  /// the right. Tapping opens the fee breakdown.
+  Widget _row(_CommissionRecord r) {
+    final (String name, String kind) = _nameAndKind(r);
+    final bool extra = kind.startsWith('Extra');
+    final bool paid = r.status == 'PAID';
+    final bool open = _open.contains(r.id);
+    final Color tint = extra ? spExitColor : AppTheme.accentText;
+    final DateTime? at = r.createdAt;
+    final TextStyle small = TextStyle(fontSize: 12, color: AppTheme.textMuted);
+
+    Widget line(
+      String label,
+      double v, {
+      bool strong = false,
+      bool minus = false,
+      Color? color,
+    }) => Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: Row(
+        children: <Widget>[
+          Expanded(
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 12.5,
+                fontWeight: strong ? FontWeight.w800 : FontWeight.w500,
+                color: strong ? AppTheme.textDark : AppTheme.textSecondary,
+              ),
+            ),
+          ),
+          Text(
+            minus ? '− ${spPeso(v)}' : spPeso(v),
+            style: TextStyle(
+              fontSize: 12.5,
+              fontWeight: strong ? FontWeight.w800 : FontWeight.w600,
+              color: color ?? AppTheme.textDark,
+            ),
+          ),
+        ],
+      ),
+    );
+
+    return InkWell(
+      onTap: () => setState(() => open ? _open.remove(r.id) : _open.add(r.id)),
+      borderRadius: BorderRadius.circular(AppTheme.radiusLarge),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            Row(
+              children: <Widget>[
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: tint.withValues(alpha: 0.12),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    extra
+                        ? Icons.more_time_rounded
+                        : Icons.confirmation_number_outlined,
+                    size: 20,
+                    color: tint,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text(
+                        name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                          color: AppTheme.textDark,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        <String>[
+                          kind,
+                          if (at != null) spFormatClockTime(at),
+                        ].joinDots(),
+                        style: small,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: <Widget>[
+                    Text(
+                      spPeso(r.grossAmount),
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800,
+                        color: AppTheme.textDark,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    paid
+                        ? Text(
+                            'You get ${spPeso(r.netToOwner)}',
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w600,
+                              color: spEntryColor,
+                            ),
+                          )
+                        : SpChip(label: r.status, color: spInsideColor),
+                  ],
+                ),
+              ],
+            ),
+            if (r.hasOvertime)
+              Padding(
+                padding: const EdgeInsets.only(left: 52, top: 8),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: SpChip(
+                    label:
+                        '${spPeso(r.overtimeAmount)} overtime cash · '
+                        '${r.overtimeStatus == kOvertimeCollected ? 'Collected' : 'Not collected'}',
+                    color: r.overtimeStatus == kOvertimeCollected
+                        ? spEntryColor
+                        : spInsideColor,
+                  ),
+                ),
+              ),
+            if (open)
+              Container(
+                margin: const EdgeInsets.only(left: 52, top: 10),
+                padding: const EdgeInsets.fromLTRB(12, 6, 12, 10),
+                decoration: BoxDecoration(
+                  color: AppTheme.surfaceAlt,
+                  borderRadius: BorderRadius.circular(AppTheme.radius),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    line('Paid by the driver', r.grossAmount),
+                    line(
+                      'SmartPark commission',
+                      r.platformFee,
+                      minus: true,
+                      color: AppTheme.textSecondary,
+                    ),
+                    line(
+                      'PayMongo processing (est.)',
+                      r.processingFee,
+                      minus: true,
+                      color: AppTheme.textSecondary,
+                    ),
+                    Divider(height: 14, color: AppTheme.border),
+                    line(
+                      'Your payout (est.)',
+                      r.netToOwner,
+                      strong: true,
+                      color: spEntryColor,
+                    ),
+                    if (r.hasOvertime) ...<Widget>[
+                      Divider(height: 14, color: AppTheme.border),
+                      line(
+                        'Overtime cash, ${formatParkingHours(r.overtimeHours)}',
+                        r.overtimeAmount,
+                      ),
+                    ],
+                    const SizedBox(height: 6),
+                    Text(
+                      <String>[
+                        if (at != null)
+                          '${widget.formatShortDate(at)}, ${spFormatClockTime(at)}',
+                        'Ref ${r.id}',
+                      ].joinDots(),
+                      style: TextStyle(fontSize: 11, color: AppTheme.textMuted),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
