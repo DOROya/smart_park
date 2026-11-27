@@ -789,7 +789,8 @@ extension _StaffHomePageFragments on _StaffHomePageState {
 /// Shown above the scanner while an admin has the facility pulled, so staff
 /// know why every entry is refused before the first car is turned away.
 /// The overtime cash this staff member took at the gate today, so the
-/// end-of-shift handover to the owner can be checked against it.
+/// end-of-shift handover (to the owner or a supervisor) can be checked
+/// against it.
 class _ShiftCashCard extends StatelessWidget {
   const _ShiftCashCard({
     required this.cash,
@@ -802,7 +803,7 @@ class _ShiftCashCard extends StatelessWidget {
   /// Walk-in parking fees this staff member took today.
   final List<double> walkInFees;
 
-  /// Today's gate cash the owner hasn't marked received yet.
+  /// Today's gate cash no one has marked received yet.
   final double notHandedOver;
 
   @override
@@ -814,7 +815,8 @@ class _ShiftCashCard extends StatelessWidget {
     return SpSectionCard(
       icon: Icons.payments_rounded,
       title: 'Your Gate Cash Today',
-      subtitle: 'Hand this to the owner at the end of your shift.',
+      subtitle:
+          'Hand this to the owner or a supervisor at the end of your shift.',
       trailing: owed
           ? SpChip(label: '${cash.dueCount} to confirm', color: spInsideColor)
           : null,
@@ -852,7 +854,7 @@ class _ShiftCashCard extends StatelessWidget {
           if (total > 0) ...[
             const SizedBox(height: 12),
             // Where today's cash is now: with this staff member, or
-            // already handed to the owner.
+            // already handed over.
             Row(
               children: <Widget>[
                 Expanded(

@@ -23,6 +23,7 @@ class FacilityRegistrationData {
     this.newDocumentFiles = const <File>[],
     this.removedDocumentUrls = const <String>[],
     this.permitExpiresAt,
+    this.previousPermitExpiresAt,
     this.contactNumber = '',
   });
 
@@ -52,22 +53,46 @@ class FacilityRegistrationData {
   /// admin sees it and the owner is reminded before it passes.
   final DateTime? permitExpiresAt;
 
+  /// The expiry date saved before this edit; null for a new facility or
+  /// one that never set it.
+  final DateTime? previousPermitExpiresAt;
+
+  /// A new expiry date counts as a document change: pushing it out stops
+  /// the expiry reminders, so an admin checks it against the permit.
+  bool get permitDateChanged {
+    final DateTime? now = permitExpiresAt;
+    final DateTime? was = previousPermitExpiresAt;
+    if (now == null) return false;
+    return was == null ||
+        now.year != was.year ||
+        now.month != was.month ||
+        now.day != was.day;
+  }
+
   bool get documentsChanged =>
-      newDocumentFiles.isNotEmpty || removedDocumentUrls.isNotEmpty;
+      newDocumentFiles.isNotEmpty ||
+      removedDocumentUrls.isNotEmpty ||
+      permitDateChanged;
 
   /// Whether saving this edit must send the facility back to admin review:
-  /// a rejected facility is being resubmitted, or the proof documents of an
-  /// already-reviewed facility changed and need to be verified again.
-  /// Suspended and deactivated facilities keep their status: only an admin
-  /// can lift those.
-  bool requiresReview({required String? previousStatus}) {
+  /// only when a rejected facility is resubmitted. An approved facility
+  /// that changes its documents (e.g. a renewed permit) stays open; the
+  /// admin is asked to check the new documents instead
+  /// ([flagsDocumentCheck]) and suspends it if they're bad. Suspended and
+  /// deactivated facilities keep their status: only an admin lifts those.
+  bool requiresReview({required String? previousStatus}) =>
+      (previousStatus ?? 'pending').toLowerCase() == 'rejected';
+
+  /// Whether saving this edit asks an admin to check the documents again
+  /// without taking the facility offline: they changed on a facility that
+  /// was already reviewed (approved, suspended or deactivated). A suspended
+  /// owner's new documents show up for the admin this way, to reinstate.
+  bool flagsDocumentCheck({required String? previousStatus}) {
     final String status = (previousStatus ?? 'pending').toLowerCase();
-    if (status == 'pending' ||
-        status == 'suspended' ||
-        status == 'deactivated') {
-      return false;
-    }
-    return status == 'rejected' || documentsChanged;
+    return documentsChanged &&
+        (status == 'approved' ||
+            status == 'suspended' ||
+            status == 'deactivated');
   }
 
   int get availability =>

@@ -68,6 +68,9 @@ const Map<String, String> _fieldLabels = <String, String>{
   'deactivatedAt': 'Deactivated on',
   'endedAt': 'Shift ended',
   'adminLevel': 'Admin level',
+  'documentsUpdatedAt': 'New documents to check',
+  'ownerReceivedAt': 'Owner received it',
+  'ownerReceivedBy': 'Owner',
   '...': 'Other fields',
 };
 

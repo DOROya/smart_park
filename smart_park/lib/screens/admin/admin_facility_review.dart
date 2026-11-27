@@ -20,7 +20,7 @@ extension _AdminFacilityReview on _AdminHomePageState {
         icon: Icons.pending_actions_rounded,
         color: spInsideColor,
         label: 'Pending Review',
-        caption: 'Waiting for approval',
+        caption: 'Applications and new documents',
         value: '$pendingCount',
       ),
     );
@@ -529,6 +529,10 @@ extension _AdminFacilityReview on _AdminHomePageState {
                     const SizedBox(height: 2),
                     SpChip(label: 'Review requested', color: spExitColor),
                   ],
+                  if (documentsAwaitCheck(data)) ...[
+                    const SizedBox(height: 2),
+                    SpChip(label: 'New documents', color: AppTheme.warning),
+                  ],
                 ],
               ),
             ),
@@ -618,6 +622,10 @@ extension _AdminFacilityReview on _AdminHomePageState {
                       if (appealed) ...[
                         const SizedBox(width: 6),
                         SpChip(label: 'Review requested', color: spExitColor),
+                      ],
+                      if (documentsAwaitCheck(data)) ...[
+                        const SizedBox(width: 6),
+                        SpChip(label: 'New documents', color: AppTheme.warning),
                       ],
                     ],
                   ),

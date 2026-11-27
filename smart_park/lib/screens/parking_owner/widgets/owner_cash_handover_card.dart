@@ -42,6 +42,12 @@ class _OwnerCashHandoverCardState extends State<OwnerCashHandoverCard> {
   bool _loaded = false;
   final Set<String> _busy = <String>{};
 
+  /// Staff uid -> (name, role) for the facility, so a receipt can say who
+  /// received the cash: the owner or a supervisor.
+  Map<String, ({String name, bool supervisor})> _staff =
+      <String, ({String name, bool supervisor})>{};
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _staffSub;
+
   late final Stream<QuerySnapshot<Map<String, dynamic>>> _handovers =
       FirebaseFirestore.instance
           .collection('cash_handovers')
@@ -74,10 +80,44 @@ class _OwnerCashHandoverCardState extends State<OwnerCashHandoverCard> {
         ),
       );
     }
+    // The rules let the owner list staff by ownerId and a supervisor by
+    // facilityId.
+    final CollectionReference<Map<String, dynamic>> staff = FirebaseFirestore
+        .instance
+        .collection('staff_accounts');
+    final bool owner = FirebaseAuth.instance.currentUser?.uid == widget.ownerId;
+    _staffSub =
+        (owner
+                ? staff.where('ownerId', isEqualTo: widget.ownerId)
+                : staff.where('facilityId', isEqualTo: widget.facilityId))
+            .snapshots()
+            .listen(
+              (QuerySnapshot<Map<String, dynamic>> snap) {
+                if (!mounted) return;
+                setState(() {
+                  _staff = <String, ({String name, bool supervisor})>{
+                    for (final QueryDocumentSnapshot<Map<String, dynamic>> d
+                        in snap.docs)
+                      _uidOf(d): (
+                        name: ((d.data()['name'] as String?) ?? '').trim(),
+                        supervisor: d.data()['role'] == 'supervisor',
+                      ),
+                  };
+                });
+              },
+              onError: (Object error, StackTrace stack) =>
+                  reportError(error, stack, reason: 'Cash card staff names'),
+            );
+  }
+
+  static String _uidOf(QueryDocumentSnapshot<Map<String, dynamic>> d) {
+    final String uid = ((d.data()['userId'] as String?) ?? '').trim();
+    return uid.isEmpty ? d.id : uid;
   }
 
   @override
   void dispose() {
+    _staffSub?.cancel();
     for (final StreamSubscription<QuerySnapshot<Map<String, dynamic>>> s
         in _subs) {
       s.cancel();
@@ -92,6 +132,8 @@ class _OwnerCashHandoverCardState extends State<OwnerCashHandoverCard> {
   String _name(StaffCashDue due) {
     final String listed = (widget.staffNames[due.staffId] ?? '').trim();
     if (listed.isNotEmpty) return listed;
+    final String known = _staff[due.staffId]?.name ?? '';
+    if (known.isNotEmpty) return known;
     return due.staffName.isNotEmpty ? due.staffName : 'Staff member';
   }
 
@@ -192,8 +234,8 @@ class _OwnerCashHandoverCardState extends State<OwnerCashHandoverCard> {
       icon: Icons.account_balance_wallet_rounded,
       title: 'Cash to Receive',
       subtitle:
-          'Overtime and walk-in fees your staff took at the gate. Mark it '
-          'received when they hand it over.',
+          'Overtime and walk-in fees staff took at the gate. The owner or a '
+          'supervisor marks it received when it is handed over.',
       trailing: total > 0
           ? SpChip(label: spPeso(total), color: spInsideColor)
           : null,
@@ -213,7 +255,7 @@ class _OwnerCashHandoverCardState extends State<OwnerCashHandoverCard> {
           else
             for (final StaffCashDue d in due) _dueRow(d),
           const SizedBox(height: 12),
-          _recentHandovers(),
+          _handoverSections(),
         ],
       ),
     );
@@ -244,10 +286,10 @@ class _OwnerCashHandoverCardState extends State<OwnerCashHandoverCard> {
                   ),
                 ),
               ),
-              // A supervisor's own cash is received by the owner, not by them.
+              // A supervisor never receives their own cash.
               if (d.staffId == FirebaseAuth.instance.currentUser?.uid)
                 Text(
-                  'The owner receives this',
+                  'The owner or another supervisor receives this',
                   style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
                 )
               else
@@ -309,38 +351,194 @@ class _OwnerCashHandoverCardState extends State<OwnerCashHandoverCard> {
     );
   }
 
-  Widget _recentHandovers() {
+  bool get _isOwner => FirebaseAuth.instance.currentUser?.uid == widget.ownerId;
+
+  /// Cash supervisors received from staff and still hold, then the latest
+  /// receipts.
+  Widget _handoverSections() {
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
       stream: _handovers,
       builder: (context, snapshot) {
+        final List<QueryDocumentSnapshot<Map<String, dynamic>>> docs =
+            snapshot.data?.docs ??
+            <QueryDocumentSnapshot<Map<String, dynamic>>>[];
+        final List<SupervisorCashHeld> held = cashHeldBySupervisors(
+          docs.map((d) => (id: d.id, data: d.data())),
+          widget.ownerId,
+        );
         final List<Map<String, dynamic>> recent =
-            (snapshot.data?.docs ??
-                    <QueryDocumentSnapshot<Map<String, dynamic>>>[])
-                .map((d) => d.data())
-                .toList()
-              ..sort(
-                (a, b) => (spParseDateTime(b['receivedAt']) ?? DateTime(0))
-                    .compareTo(spParseDateTime(a['receivedAt']) ?? DateTime(0)),
-              );
-        if (recent.isEmpty) return const SizedBox.shrink();
+            docs.map((d) => d.data()).toList()..sort(
+              (a, b) => (spParseDateTime(b['receivedAt']) ?? DateTime(0))
+                  .compareTo(spParseDateTime(a['receivedAt']) ?? DateTime(0)),
+            );
         return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
-            Text(
-              'Recent handovers',
-              style: TextStyle(
-                fontWeight: FontWeight.w800,
-                color: AppTheme.textDark,
-                fontSize: 14,
+            _heldSection(held),
+            if (recent.isNotEmpty) ...<Widget>[
+              Text(
+                'Recent handovers',
+                style: TextStyle(
+                  fontWeight: FontWeight.w800,
+                  color: AppTheme.textDark,
+                  fontSize: 14,
+                ),
               ),
-            ),
-            const SizedBox(height: 4),
-            for (final Map<String, dynamic> h in recent.take(5))
-              _handoverRow(h),
+              const SizedBox(height: 4),
+              for (final Map<String, dynamic> h in recent.take(5))
+                _handoverRow(h),
+            ],
           ],
         );
       },
     );
+  }
+
+  /// Supervisors holding cash for the owner. The owner marks it received;
+  /// a supervisor sees only what they hold, to hand to the owner.
+  Widget _heldSection(List<SupervisorCashHeld> held) {
+    final String? me = FirebaseAuth.instance.currentUser?.uid;
+    final List<SupervisorCashHeld> shown = _isOwner
+        ? held
+        : held.where((h) => h.supervisorId == me).toList();
+    if (shown.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Text(
+            _isOwner ? 'With supervisors' : 'With you, for the owner',
+            style: TextStyle(
+              fontWeight: FontWeight.w800,
+              color: AppTheme.textDark,
+              fontSize: 14,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            _isOwner
+                ? 'Cash a supervisor received from staff. Mark it received '
+                      'when they hand it to you.'
+                : 'Cash you received from staff. Hand it to the owner; they '
+                      'mark it received.',
+            style: TextStyle(fontSize: 12.5, color: AppTheme.textSecondary),
+          ),
+          const SizedBox(height: 8),
+          for (final SupervisorCashHeld h in shown) _heldRow(h),
+        ],
+      ),
+    );
+  }
+
+  Widget _heldRow(SupervisorCashHeld h) {
+    final String key = 'held_${h.supervisorId}';
+    final bool busy = _busy.contains(key);
+    final String name = _staff[h.supervisorId]?.name ?? '';
+    final int count = h.handoverIds.length;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
+        border: Border.all(color: AppTheme.border),
+      ),
+      child: Row(
+        children: <Widget>[
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  _isOwner ? (name.isEmpty ? 'Supervisor' : name) : 'You hold',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w800,
+                    color: AppTheme.textDark,
+                  ),
+                ),
+                Text(
+                  '${spPeso(h.total)} · $count handover'
+                  '${count == 1 ? '' : 's'}',
+                  style: TextStyle(fontSize: 13, color: AppTheme.textSecondary),
+                ),
+              ],
+            ),
+          ),
+          if (_isOwner)
+            FilledButton(
+              onPressed: busy ? null : () => _receiveFromSupervisor(h, name),
+              style: FilledButton.styleFrom(
+                backgroundColor: AppTheme.accent,
+                foregroundColor: AppTheme.onAccent,
+              ),
+              child: Text(busy ? 'Saving...' : 'Received'),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _receiveFromSupervisor(SupervisorCashHeld h, String name) async {
+    final String who = name.isEmpty ? 'the supervisor' : name;
+    final bool? ok = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) => AlertDialog(
+        icon: const SpDialogIcon(
+          Icons.payments_outlined,
+          tone: SpDialogTone.success,
+        ),
+        title: Text('Received ${spPeso(h.total)} from $who?'),
+        content: const Text(
+          'This is saved on each handover and can\'t be undone.',
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Mark received'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    final String key = 'held_${h.supervisorId}';
+    setState(() => _busy.add(key));
+    try {
+      await recordSupervisorCashToOwner(ownerId: widget.ownerId, held: h);
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Recorded: received from $who.')));
+    } catch (error, stack) {
+      reportError(error, stack, reason: 'Supervisor cash to owner');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              friendlyError(error, fallback: 'Could not save. Try again.'),
+            ),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _busy.remove(key));
+    }
+  }
+
+  /// Who took the cash: "the owner", "you", "Maria Santos (supervisor)",
+  /// or "a supervisor" while names load. Records made before supervisors
+  /// existed were all the owner's.
+  String _receiverLabel(Map<String, dynamic> h) {
+    final String by = ((h['receivedBy'] as String?) ?? '').trim();
+    if (by == FirebaseAuth.instance.currentUser?.uid) return 'you';
+    if (by.isEmpty || by == widget.ownerId) return 'the owner';
+    final String name = _staff[by]?.name ?? '';
+    return name.isEmpty ? 'a supervisor' : '$name (supervisor)';
   }
 
   /// One received handover: the amount and when, then who and what for.
@@ -349,6 +547,11 @@ class _OwnerCashHandoverCardState extends State<OwnerCashHandoverCard> {
     final String name = ((h['staffName'] as String?) ?? '').trim();
     final String note = ((h['note'] as String?) ?? '').trim();
     final String parts = _handoverParts(h);
+    final String receiver = _receiverLabel(h);
+    // A supervisor's handover also says whether the owner has the cash.
+    final String passedOn = heldBySupervisor(h, widget.ownerId)
+        ? ' · not yet with the owner'
+        : (h['ownerReceivedAt'] != null ? ' · now with the owner' : '');
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 8),
       decoration: BoxDecoration(
@@ -389,6 +592,7 @@ class _OwnerCashHandoverCardState extends State<OwnerCashHandoverCard> {
             padding: const EdgeInsets.only(left: 26, top: 2),
             child: Text(
               'From ${name.isEmpty ? 'staff' : name}$parts'
+              '\nReceived by $receiver$passedOn'
               '${note.isEmpty ? '' : '\n"$note"'}',
               style: TextStyle(fontSize: 13, color: AppTheme.textSecondary),
             ),

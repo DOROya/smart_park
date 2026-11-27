@@ -829,6 +829,7 @@ class _ParkingOwnerHomePageState extends State<ParkingOwnerHomePage>
       final ({
         String establishmentId,
         bool submittedForReview,
+        bool documentsSentForCheck,
         int failedDocumentUploads,
       })
       result;
@@ -864,6 +865,12 @@ class _ParkingOwnerHomePageState extends State<ParkingOwnerHomePage>
               ? 'Facility registered and submitted for admin review.'
               : result.submittedForReview
               ? 'Facility updated and resubmitted for admin review.'
+              : result.documentsSentForCheck
+              ? (currentData?['status'] as String?) == 'approved'
+                    ? 'Facility updated. It stays open while an admin '
+                          'checks the new documents.'
+                    : 'Facility updated. An admin will check the new '
+                          'documents.'
               : 'Facility updated.',
         );
       }

@@ -337,3 +337,35 @@ test("a user records only their own announcement reads", async () => {
   );
   await assertSucceeds(getDoc(doc(admin(), "users/owner1/announcement_reads/a1")));
 });
+
+test("cash a supervisor received reaches the owner, stamped once", async () => {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const d = ctx.firestore();
+    await setDoc(doc(d, "cash_handovers/hs"), {
+      establishmentId: "est1", ownerId: "owner1", staffId: "staff1", amount: 40, logCount: 1,
+      receivedAt: new Date(), receivedBy: "sup1",
+    });
+    await setDoc(doc(d, "cash_handovers/ho"), {
+      establishmentId: "est1", ownerId: "owner1", staffId: "staff1", amount: 40, logCount: 1,
+      receivedAt: new Date(), receivedBy: "owner1",
+    });
+  });
+  const stamp = { ownerReceivedAt: serverTimestamp(), ownerReceivedBy: "owner1" };
+  // Not the supervisor, not with other fields, not on the owner's own receipt.
+  await assertFails(updateDoc(doc(supervisor(), "cash_handovers/hs"), { ...stamp, ownerReceivedBy: "sup1" }));
+  await assertFails(updateDoc(doc(owner(), "cash_handovers/hs"), { ...stamp, amount: 1 }));
+  await assertFails(updateDoc(doc(owner(), "cash_handovers/hs"), { ...stamp, ownerReceivedAt: new Date(0) }));
+  await assertFails(updateDoc(doc(owner(), "cash_handovers/ho"), stamp));
+  await assertSucceeds(updateDoc(doc(owner(), "cash_handovers/hs"), stamp));
+  await assertFails(updateDoc(doc(owner(), "cash_handovers/hs"), stamp));
+});
+
+test("the permit date and document links change only under review", async () => {
+  // est1 is approved with no new-documents flag.
+  await assertSucceeds(updateDoc(doc(owner(), "establishment_private/est1"), { businessDocumentUrls: ["u"] }));
+  await assertFails(updateDoc(doc(owner(), "establishment_private/est1"), { permitExpiresAt: new Date(2030, 0, 1) }));
+  await assertFails(updateDoc(doc(owner(), "establishment_private/est1"), { businessDocumentUrls: ["fake"] }));
+  // Once flagged, the admin will look, so the change goes through.
+  await assertSucceeds(updateDoc(doc(owner(), "establishment_details/est1"), { documentsUpdatedAt: serverTimestamp() }));
+  await assertSucceeds(updateDoc(doc(owner(), "establishment_private/est1"), { permitExpiresAt: new Date(2030, 0, 1) }));
+});

@@ -219,12 +219,21 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    // New documents on a reviewed facility stamp documentsUpdatedAt, which
+    // asks an admin to check them while the facility stays open. The owner
+    // may only stamp it now, never clear it; the admin clears it.
+    function documentsStampOk() {
+      return unchanged('documentsUpdatedAt') ||
+        request.resource.data.get('documentsUpdatedAt', null) == request.time;
+    }
+
     // Owners may only (re)submit for review; approving, rejecting, suspending,
     // giving notice to fix something (complianceNotice),
     // deactivating and the review fields belong to admins. A suspended or
     // deactivated facility cannot be resubmitted - only an admin lifts it.
     function ownerReviewFieldsOk() {
-      return request.resource.data.get('status', 'pending') == 'pending'
+      return documentsStampOk() &&
+        (request.resource.data.get('status', 'pending') == 'pending'
           ? !(resource.data.get('status', 'pending') in ['suspended', 'deactivated']) &&
             unchanged('rating') &&
             unchanged('ratingCount') &&
@@ -241,7 +250,7 @@ service cloud.firestore {
             unchanged('rejectionReason') &&
             unchanged('restrictionReason') &&
             unchanged('restrictionReasons') &&
-            unchanged('complianceNotice');
+            unchanged('complianceNotice'));
     }
 
     // Minutes past the paid time a vehicle may leave without overtime.
@@ -297,10 +306,27 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // The permit's expiry date and the document links change only while an
+    // admin will look at them: the application is pending or rejected, or
+    // the new-documents flag is up (see documentsStampOk). Otherwise an
+    // owner could swap a document or push the date out unseen.
+    function privateDocsChangeOk(establishmentId) {
+      return (unchanged('permitExpiresAt') && unchanged('businessDocumentUrls')) ||
+        !existsAfter(/databases/$(database)/documents/establishment_details/$(establishmentId)) ||
+        docsUnderReview(getAfter(/databases/$(database)/documents/establishment_details/$(establishmentId)).data);
+    }
+
+    function docsUnderReview(details) {
+      return details.get('status', 'pending') in ['pending', 'rejected'] ||
+        details.get('documentsUpdatedAt', null) != null;
+    }
+
     // Business-document proofs: owner and admins only.
     match /establishment_private/{establishmentId} {
       allow read: if isAdmin() || isOwnerOf(establishmentId);
-      allow create, update: if isOwnerOf(establishmentId);
+      allow create: if isOwnerOf(establishmentId);
+      allow update: if isOwnerOf(establishmentId) &&
+        privateDocsChangeOk(establishmentId);
       allow delete: if isAdmin();
     }
 
@@ -431,7 +457,8 @@ service cloud.firestore {
 
     // An owner's record of cash a staff member handed over: how much, from
     // how many gate logs, received when and by whom. A receipt, never
-    // edited; the staff member sees their own.
+    // edited, except that the owner stamps one a supervisor received when
+    // that cash reaches them. The staff member sees their own.
     match /cash_handovers/{handoverId} {
       allow read: if isAdmin() || canOperate(resource.data.establishmentId) ||
         (signedIn() && resource.data.staffId == uid());
@@ -439,7 +466,16 @@ service cloud.firestore {
       allow create: if canOperate(request.resource.data.establishmentId) &&
         request.resource.data.staffId != uid() &&
         cashHandoverCreateOk(request.resource.data);
-      allow update, delete: if false;
+      // Cash a supervisor received reaches the owner: the owner stamps the
+      // handover once. Nothing else on it changes.
+      allow update: if isOwnerOf(resource.data.establishmentId) &&
+        resource.data.get('receivedBy', '') != uid() &&
+        !('ownerReceivedAt' in resource.data) &&
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['ownerReceivedAt', 'ownerReceivedBy']) &&
+        request.resource.data.ownerReceivedAt == request.time &&
+        request.resource.data.ownerReceivedBy == uid();
+      allow delete: if false;
     }
 
     function cashHandoverCreateOk(d) {

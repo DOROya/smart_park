@@ -123,13 +123,28 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
   final List<String> _existingDocumentUrls = <String>[];
   final List<String> _removedDocumentUrls = <String>[];
   DateTime? _permitExpiresAt;
+
+  /// The expiry date as saved, to tell whether the owner changed it.
+  DateTime? _savedPermitExpiresAt;
   final List<File> _newDocumentFiles = <File>[];
 
   int get _totalDocumentCount =>
       _existingDocumentUrls.length + _newDocumentFiles.length;
 
   bool get _documentsChanged =>
-      _newDocumentFiles.isNotEmpty || _removedDocumentUrls.isNotEmpty;
+      _newDocumentFiles.isNotEmpty ||
+      _removedDocumentUrls.isNotEmpty ||
+      (_facilityData != null && _permitDateChanged);
+
+  bool get _permitDateChanged {
+    final DateTime? now = _permitExpiresAt;
+    final DateTime? was = _savedPermitExpiresAt;
+    if (now == null) return false;
+    return was == null ||
+        now.year != was.year ||
+        now.month != was.month ||
+        now.day != was.day;
+  }
 
   String? get _reviewStatus =>
       (_facilityData?['status'] as String?)?.toLowerCase();
@@ -380,6 +395,7 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
       ..addAll(documentUrls.whereType<String>());
     final Object? permitExpiry = data['permitExpiresAt'];
     _permitExpiresAt = permitExpiry is Timestamp ? permitExpiry.toDate() : null;
+    _savedPermitExpiresAt = _permitExpiresAt;
   }
 
   Future<void> _pickPermitExpiry() async {
@@ -666,7 +682,7 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
     });
   }
 
-  Future<bool> _confirmReapproval() async {
+  Future<bool> _confirmDocumentCheck() async {
     final bool? confirmed = await showDialog<bool>(
       context: context,
       builder: (BuildContext dialogContext) {
@@ -675,11 +691,11 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
             Icons.verified_outlined,
             tone: SpDialogTone.warning,
           ),
-          title: const Text('Re-approval required'),
+          title: const Text('Send new documents?'),
           content: const Text(
-            'You changed your business documents. Your facility will go back '
-            'to Pending Review and be hidden from drivers until an admin '
-            'approves it again.',
+            'Your facility stays open while an admin checks them. If they '
+            'are invalid or false, the admin may suspend the facility until '
+            'it is fixed.',
           ),
           actions: [
             TextButton(
@@ -692,7 +708,7 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
                 backgroundColor: AppTheme.accent,
                 foregroundColor: AppTheme.onAccent,
               ),
-              child: const Text('Submit for Review'),
+              child: const Text('Save and send'),
             ),
           ],
         );
@@ -759,7 +775,7 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
     }
 
     if (_reviewStatus == 'approved' && _documentsChanged) {
-      if (!await _confirmReapproval() || !mounted) {
+      if (!await _confirmDocumentCheck() || !mounted) {
         return;
       }
     }
@@ -845,6 +861,7 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
       newDocumentFiles: List<File>.from(_newDocumentFiles),
       removedDocumentUrls: List<String>.from(_removedDocumentUrls),
       permitExpiresAt: _permitExpiresAt,
+      previousPermitExpiresAt: _savedPermitExpiresAt,
     );
 
     if (widget.onSave == null) {
@@ -1956,7 +1973,8 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
                           _facilityData,
                         ),
                         hint: _reviewStatus == 'approved'
-                            ? 'Changing business documents will require re-approval.'
+                            ? 'New business documents are checked by an admin. '
+                                  'Your facility stays open meanwhile.'
                             : null,
                       ),
                     ],

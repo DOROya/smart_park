@@ -195,3 +195,59 @@ Future<String> recordCashHandover({
   await batch.commit();
   return ref.id;
 }
+
+/// A handover a supervisor received that hasn't reached the owner yet: the
+/// supervisor holds that cash until the owner marks it received
+/// (`ownerReceivedAt`). Handovers the owner took have nothing to pass on.
+bool heldBySupervisor(Map<String, dynamic> handover, String ownerId) {
+  final String by = ((handover['receivedBy'] as String?) ?? '').trim();
+  return by.isNotEmpty && by != ownerId && handover['ownerReceivedAt'] == null;
+}
+
+/// Cash one supervisor holds for the owner: the handovers it came from.
+class SupervisorCashHeld {
+  SupervisorCashHeld(this.supervisorId);
+
+  final String supervisorId;
+  final List<String> handoverIds = <String>[];
+  double total = 0;
+}
+
+/// [heldBySupervisor] handovers grouped by supervisor, largest first.
+List<SupervisorCashHeld> cashHeldBySupervisors(
+  Iterable<({String id, Map<String, dynamic> data})> handovers,
+  String ownerId,
+) {
+  final Map<String, SupervisorCashHeld> bySupervisor =
+      <String, SupervisorCashHeld>{};
+  for (final h in handovers) {
+    if (!heldBySupervisor(h.data, ownerId)) continue;
+    final String by = (h.data['receivedBy'] as String).trim();
+    final SupervisorCashHeld held = bySupervisor.putIfAbsent(
+      by,
+      () => SupervisorCashHeld(by),
+    );
+    held.handoverIds.add(h.id);
+    held.total += ((h.data['amount'] as num?) ?? 0).toDouble();
+  }
+  return bySupervisor.values.toList()
+    ..sort((a, b) => b.total.compareTo(a.total));
+}
+
+/// The owner received [held] from a supervisor: stamps each handover it
+/// came from (up to [kMaxHandoverLogs]) so it's counted once.
+Future<void> recordSupervisorCashToOwner({
+  required String ownerId,
+  required SupervisorCashHeld held,
+  FirebaseFirestore? firestore,
+}) async {
+  final FirebaseFirestore db = firestore ?? FirebaseFirestore.instance;
+  final WriteBatch batch = db.batch();
+  for (final String id in held.handoverIds.take(kMaxHandoverLogs)) {
+    batch.update(db.collection('cash_handovers').doc(id), <String, dynamic>{
+      'ownerReceivedAt': FieldValue.serverTimestamp(),
+      'ownerReceivedBy': ownerId,
+    });
+  }
+  await batch.commit();
+}
