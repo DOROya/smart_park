@@ -1539,19 +1539,19 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
         const SizedBox(height: 8),
         _tripleFields(
           first: _buildInputField(
-            label: 'Base Rate (₱)',
+            label: 'Base Rate (PHP)',
             hint: 'e.g. 50',
             controller: initialCtrl,
             keyboardType: TextInputType.number,
           ),
           second: _buildInputField(
-            label: 'Succeeding /hr (₱)',
+            label: 'Succeeding /hr (PHP)',
             hint: 'e.g. 20',
             controller: succHCtrl,
             keyboardType: TextInputType.number,
           ),
           third: _buildInputField(
-            label: 'Daily Rate (₱)',
+            label: 'Daily Rate (PHP)',
             hint: 'e.g. 250',
             controller: succDCtrl,
             keyboardType: TextInputType.number,
@@ -1757,14 +1757,14 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
             const SizedBox(height: 12),
             _doubleFields(
               first: _buildInputField(
-                label: 'Car Weekly Rate (₱)',
+                label: 'Car Weekly Rate (PHP)',
                 hint: 'e.g. 1200 · Leave blank if not offered',
                 validator: _optionalAmountValidator,
                 controller: _rateCarWeeklyController,
                 keyboardType: TextInputType.number,
               ),
               second: _buildInputField(
-                label: 'Car Monthly Rate (₱)',
+                label: 'Car Monthly Rate (PHP)',
                 hint: 'e.g. 4000 · Leave blank if not offered',
                 validator: _optionalAmountValidator,
                 controller: _rateCarMonthlyController,
@@ -1774,14 +1774,14 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
             const SizedBox(height: 10),
             _doubleFields(
               first: _buildInputField(
-                label: 'Motorcycle Weekly Rate (₱)',
+                label: 'Motorcycle Weekly Rate (PHP)',
                 hint: 'e.g. 500 · Leave blank if not offered',
                 validator: _optionalAmountValidator,
                 controller: _rateMotorWeeklyController,
                 keyboardType: TextInputType.number,
               ),
               second: _buildInputField(
-                label: 'Motorcycle Monthly Rate (₱)',
+                label: 'Motorcycle Monthly Rate (PHP)',
                 hint: 'e.g. 1800 · Leave blank if not offered',
                 validator: _optionalAmountValidator,
                 controller: _rateMotorMonthlyController,
@@ -1792,14 +1792,14 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
               const SizedBox(height: 10),
               _doubleFields(
                 first: _buildInputField(
-                  label: '${_customLabel()} Weekly Rate (₱)',
+                  label: '${_customLabel()} Weekly Rate (PHP)',
                   hint: 'blank = not offered',
                   validator: _optionalAmountValidator,
                   controller: _rateCustomWeeklyController,
                   keyboardType: TextInputType.number,
                 ),
                 second: _buildInputField(
-                  label: '${_customLabel()} Monthly Rate (₱)',
+                  label: '${_customLabel()} Monthly Rate (PHP)',
                   hint: 'blank = not offered',
                   validator: _optionalAmountValidator,
                   controller: _rateCustomMonthlyController,

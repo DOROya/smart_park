@@ -266,6 +266,7 @@ class _NoticeRowState extends State<_NoticeRow> {
     final bool? ok = await showDialog<bool>(
       context: context,
       builder: (BuildContext context) => AlertDialog(
+        scrollable: true,
         icon: const SpDialogIcon(Icons.gavel_rounded, tone: SpDialogTone.info),
         title: const Text('Contest this warning'),
         content: Column(
@@ -304,7 +305,7 @@ class _NoticeRowState extends State<_NoticeRow> {
       ),
     );
     final String message = controller.text.trim();
-    controller.dispose();
+    spDisposeAfterClose(controller);
     if (ok != true || !mounted) return;
     final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
     if (message.isEmpty) {

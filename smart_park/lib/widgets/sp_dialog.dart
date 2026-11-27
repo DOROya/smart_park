@@ -167,3 +167,13 @@ class SpHelpButton extends StatelessWidget {
     );
   }
 }
+
+/// Frees [controller] once the pop-up that used it has finished closing.
+///
+/// `await showDialog(...)` returns as soon as the pop-up starts closing, but
+/// its text box stays on screen (and listening) for the rest of the closing
+/// animation. Disposing the controller right away trips a framework assertion
+/// (a red error screen in debug builds), so wait until the animation is done.
+void spDisposeAfterClose(ChangeNotifier controller) {
+  Future<void>.delayed(const Duration(milliseconds: 600), controller.dispose);
+}

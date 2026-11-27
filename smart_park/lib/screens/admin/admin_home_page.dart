@@ -1068,6 +1068,7 @@ class _AdminHomePageState extends State<AdminHomePage>
       context: dialogContext,
       builder: (BuildContext confirmContext) {
         return AlertDialog(
+          scrollable: true,
           icon: SpDialogIcon(
             suspend ? Icons.block_rounded : Icons.power_settings_new_rounded,
             tone: SpDialogTone.danger,
@@ -2068,7 +2069,6 @@ class _AdminHomePageState extends State<AdminHomePage>
                                       >
                                       filteredUsers = _filteredUsers(users);
 
-                                      final int totalUsers = users.length;
                                       final int driverCount = users.where((
                                         QueryDocumentSnapshot<
                                           Map<String, dynamic>
@@ -2143,7 +2143,11 @@ class _AdminHomePageState extends State<AdminHomePage>
                                                 24,
                                               ),
                                         children: _buildTabContent(
-                                          totalUsers: totalUsers,
+                                          // The tile says "Drivers and
+                                          // owners": staff, supervisors
+                                          // and admins aren't counted.
+                                          totalUsers:
+                                              driverCount + parkingOwnerCount,
                                           driverCount: driverCount,
                                           parkingOwnerCount: parkingOwnerCount,
                                           filteredUsersCount:

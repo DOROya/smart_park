@@ -47,6 +47,19 @@ void main() {
       );
       expect(spAuditActorLabel(<String, dynamic>{'actorName': 'Ben'}), 'Ben');
       expect(spAuditActorLabel(<String, dynamic>{}), 'Unknown');
+      // Older entries logged a supervisor under their sign-in email.
+      expect(
+        spAuditActorLabel(<String, dynamic>{
+          'actorName': 'e6zfa_boss@staff.smartpark.internal',
+          'actorRole': 'supervisor',
+        }),
+        'e6zfa_boss (Supervisor)',
+      );
+      // A console or script edit by a project member.
+      expect(
+        spAuditActorLabel(<String, dynamic>{'actorName': 'dev@gmail.com'}),
+        'SmartPark team',
+      );
     });
 
     testWidgets('the card names itself for admins and owners', (

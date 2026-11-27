@@ -734,6 +734,7 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
 
           final bool overtime = leftAt.isAfter(stay.assumedExit);
           return AlertDialog(
+            scrollable: true,
             icon: const SpDialogIcon(
               Icons.logout_rounded,
               tone: SpDialogTone.warning,

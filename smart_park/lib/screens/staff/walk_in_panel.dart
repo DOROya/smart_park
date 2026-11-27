@@ -537,6 +537,7 @@ class _WalkInFeeDialogState extends State<_WalkInFeeDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
+      scrollable: true,
       icon: const SpDialogIcon(
         Icons.directions_car_rounded,
         tone: SpDialogTone.info,
@@ -565,7 +566,7 @@ class _WalkInFeeDialogState extends State<_WalkInFeeDialog> {
             ],
             decoration: InputDecoration(
               labelText: 'Fee collected',
-              prefixText: '₱ ',
+              prefixText: 'PHP ',
               errorText: _error,
               border: const OutlineInputBorder(),
             ),

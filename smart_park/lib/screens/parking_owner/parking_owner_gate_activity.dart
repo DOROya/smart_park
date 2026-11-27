@@ -85,6 +85,7 @@ Future<bool> _ownerSetOvertimeRate(
         final double? typed = double.tryParse(controller.text.trim());
         final bool valid = typed != null && typed > 0 && typed <= 100000;
         return AlertDialog(
+          scrollable: true,
           icon: const SpDialogIcon(
             Icons.price_change_outlined,
             tone: SpDialogTone.info,
@@ -139,7 +140,7 @@ Future<bool> _ownerSetOvertimeRate(
       },
     ),
   );
-  controller.dispose();
+  spDisposeAfterClose(controller);
   if (rate == null || !context.mounted) return false;
   try {
     final double amount = await setOvertimeRateAsOwner(

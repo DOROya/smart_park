@@ -58,6 +58,7 @@ class _SpRefundsSectionState extends State<SpRefundsSection> {
       final bool? ok = await showDialog<bool>(
         context: context,
         builder: (BuildContext context) => AlertDialog(
+          scrollable: true,
           icon: const SpDialogIcon(
             Icons.cancel_outlined,
             tone: SpDialogTone.danger,
@@ -84,7 +85,7 @@ class _SpRefundsSectionState extends State<SpRefundsSection> {
         ),
       );
       note = controller.text.trim();
-      controller.dispose();
+      spDisposeAfterClose(controller);
       if (ok != true) return;
     }
     setState(() => _busy.add(r.ticketId));
@@ -331,6 +332,7 @@ class _SpRefundsSectionState extends State<SpRefundsSection> {
     final bool? ok = await showDialog<bool>(
       context: context,
       builder: (BuildContext context) => AlertDialog(
+        scrollable: true,
         icon: const SpDialogIcon(
           Icons.currency_exchange_rounded,
           tone: SpDialogTone.info,
@@ -363,7 +365,7 @@ class _SpRefundsSectionState extends State<SpRefundsSection> {
       ),
     );
     final String text = controller.text.trim();
-    controller.dispose();
+    spDisposeAfterClose(controller);
     return ok == true ? text : null;
   }
 
@@ -490,6 +492,7 @@ class _SpRefundsSectionState extends State<SpRefundsSection> {
     final bool? ok = await showDialog<bool>(
       context: context,
       builder: (BuildContext context) => AlertDialog(
+        scrollable: true,
         icon: const SpDialogIcon(
           Icons.payments_outlined,
           tone: SpDialogTone.success,
@@ -531,7 +534,7 @@ class _SpRefundsSectionState extends State<SpRefundsSection> {
     );
     final int centavos = ((double.tryParse(controller.text.trim()) ?? 0) * 100)
         .round();
-    controller.dispose();
+    spDisposeAfterClose(controller);
     if (ok != true || !mounted) return;
     final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
     if (centavos <= 0 || centavos > owed) {

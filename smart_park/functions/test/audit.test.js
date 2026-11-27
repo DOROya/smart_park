@@ -240,3 +240,22 @@ test("admin entries use the right article", () => {
   assert.equal(withArticle("super admin"), "a super admin");
   assert.equal(withArticle("Driver"), "a Driver");
 });
+
+test("resolveActor names supervisors and console edits without their emails", async () => {
+  const { resolveActor } = require("../src/audit");
+  const docs = {
+    "users/sup1": { role: "supervisor", email: "e6zfa_boss@staff.smartpark.internal" },
+    "staff_accounts/sup1": { name: "Test Supervisor", role: "supervisor" },
+    "users/own1": { firstName: "Saya", lastName: "Calamba", role: "Parking Owner" },
+  };
+  const db = {
+    collection: (c) => ({ doc: (id) => ({ get: async () => ({ data: () => docs[`${c}/${id}`] }) }) }),
+  };
+  assert.deepEqual(await resolveActor(db, "sup1"), {
+    actorId: "sup1",
+    actorName: "Test Supervisor",
+    actorRole: "supervisor",
+  });
+  assert.equal((await resolveActor(db, "own1")).actorName, "Saya Calamba");
+  assert.equal((await resolveActor(db, "dev@gmail.com")).actorName, "SmartPark team");
+});

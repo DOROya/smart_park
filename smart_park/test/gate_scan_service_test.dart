@@ -952,6 +952,40 @@ void main() {
       expect(r.transactionId, 'b-parked');
       expect((await ticket('a-unused'))['entryStatus'], 'not_checked_in');
     });
+
+    test('finds the ticket when the space is left out or added', () async {
+      await seedTicket('spaced', <String, dynamic>{'vehiclePlate': 'GAJ 789'});
+      final GateScanResult? r = await lookup('gaj789');
+      expect(r!.isAllowed, isTrue);
+      expect(r.transactionId, 'spaced');
+
+      await seedTicket('bare', <String, dynamic>{'vehiclePlate': 'CARD1'});
+      final GateScanResult? r2 = await lookup('CARD 1');
+      expect(r2!.transactionId, 'bare');
+    });
+
+    test(
+      'a parked vehicle reads as inside, not as an old used-up ticket',
+      () async {
+        await seedTicket('a-old', <String, dynamic>{
+          'vehiclePlate': 'XYZ',
+          'entryStatus': 'checked_out',
+          'remainingHours': 0,
+        });
+        await seedTicket('b-parked', <String, dynamic>{
+          'vehiclePlate': 'XYZ',
+          'entryStatus': 'checked_in',
+          'remainingHours': 2,
+          'entryAt': Timestamp.fromDate(
+            now.subtract(const Duration(minutes: 5)),
+          ),
+        });
+        final GateScanResult? r = await lookup('XYZ');
+        expect(r!.isAllowed, isFalse);
+        expect(r.transactionId, 'b-parked');
+        expect(r.reason, 'Already inside. Do not admit twice.');
+      },
+    );
   });
 
   group('vehicle type', () {
