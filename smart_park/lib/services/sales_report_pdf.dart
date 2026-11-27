@@ -60,7 +60,14 @@ Future<Uint8List> buildSalesReportPdf({
     (metrics[0].label, metrics[0]),
     ('Transactions', metrics[1]),
     ('Avg. per transaction', metrics[2]),
-    owner ? ('Take-home (est.)', metrics[7]) : (metrics[3].label, metrics[3]),
+    owner
+        ? (
+            'Take-home (est.)',
+            metrics.firstWhere(
+              (SalesMetric m) => m.label.startsWith('Take-home'),
+            ),
+          )
+        : (metrics[3].label, metrics[3]),
   ];
 
   doc.addPage(
