@@ -3,6 +3,7 @@
 //   cd functions && node scripts/demo-prep.js            # full cleanup + setup
 //   cd functions && node scripts/demo-prep.js overtime   # only refresh the overtime ticket
 //   cd functions && node scripts/demo-prep.js policies   # only rewrite the posted policies
+//   cd functions && node scripts/demo-prep.js logs       # close gate entries left open by tickets that left
 //
 // Uses the Firebase CLI login (firebase login), through the Firestore REST
 // API, since this PC has no gcloud Application Default Credentials.
@@ -79,6 +80,45 @@ async function query(col, field, value) {
     .filter((x) => x.document)
     .map((x) => ({ id: x.document.name.split("/").pop(), ...decF(x.document.fields || {}) }));
 }
+async function queryWhere(col, equals) {
+  const filters = Object.entries(equals).map(([field, value]) => ({
+    fieldFilter: { field: { fieldPath: field }, op: "EQUAL", value: enc(value) },
+  }));
+  const body = {
+    structuredQuery: {
+      from: [{ collectionId: col }],
+      where: filters.length === 1 ? filters[0] : { compositeFilter: { op: "AND", filters } },
+    },
+  };
+  const rows = await call(`${BASE}:runQuery`, { method: "POST", body: JSON.stringify(body) });
+  return rows
+    .filter((x) => x.document)
+    .map((x) => ({ id: x.document.name.split("/").pop(), ...decF(x.document.fields || {}) }));
+}
+
+// The app shows a facility's posted policies from establishment_details
+// (laid over establishments), so both must be written.
+async function writePolicies() {
+  await patch(`establishments/${FACILITY}`, { policies: POLICIES });
+  await patch(`establishment_details/${FACILITY}`, { policies: POLICIES, updatedAt: new Date() });
+}
+
+// Gate entry logs still marked inside although their ticket has left count
+// toward "Inside Now". Close them, as an exit scan would.
+async function closeStaleEntryLogs() {
+  const open = await queryWhere("activity_logs", { establishmentID: FACILITY, isActive: true });
+  let closed = 0;
+  for (const log of open) {
+    if (log.scanType !== "entry" || !log.transactionId) continue;
+    const ticket = await call(`${BASE}/transactions/${log.transactionId}`).catch(() => null);
+    const entry = String(decF(ticket?.fields || {}).entryStatus || "").toLowerCase();
+    if (entry === "checked_in" || entry === "inside") continue;
+    await patch(`activity_logs/${log.id}`, { isActive: false, exitAt: new Date(), updatedAt: new Date() });
+    closed++;
+  }
+  console.log(`Closed ${closed} gate entries left open.`);
+}
+
 async function patch(docPath, fields) {
   const mask = Object.keys(fields).map((k) => `updateMask.fieldPaths=${encodeURIComponent(k)}`).join("&");
   const body = { fields: Object.fromEntries(Object.entries(fields).map(([k, v]) => [k, enc(v)])) };
@@ -102,6 +142,19 @@ async function refreshOvertime() {
     exitAt: null,
     updatedAt: new Date(),
   });
+  // Its latest entry log shows it as inside again (Inside Now, Activity).
+  const entries = (await queryWhere("activity_logs", { transactionId: OVERTIME_TICKET, scanType: "entry" }))
+    .filter((l) => l.establishmentID === FACILITY)
+    .sort((a, b) => String(b.timestamp || "").localeCompare(String(a.timestamp || "")));
+  if (entries.length > 0) {
+    await patch(`activity_logs/${entries[0].id}`, {
+      isActive: true,
+      timestamp: entryAt,
+      exitAt: null,
+      exitLogId: null,
+      updatedAt: new Date(),
+    });
+  }
   console.log(`Overtime ticket ${OVERTIME_TICKET}: entered ${entryAt.toLocaleString()}, ${OVERTIME_MINUTES} min over.`);
 }
 
@@ -110,17 +163,18 @@ async function main() {
   if (process.argv[2] === "overtime") return refreshOvertime();
   // Only rewrite the facility's posted policies.
   if (process.argv[2] === "policies") {
-    await patch(`establishments/${FACILITY}`, { policies: POLICIES });
+    await writePolicies();
     console.log("Policies updated.");
     return;
   }
+  if (process.argv[2] === "logs") return closeStaleEntryLogs();
 
   // 1. Facility name and policy.
   await patch(`establishments/${FACILITY}`, {
     name: NAME,
-    policies: POLICIES,
     contactNumber: "0912 345 6789",
   });
+  await writePolicies();
   let renamed = 0;
   for (const col of ["transactions", "parking_checkouts", "staff_accounts"]) {
     for (const d of await query(col, "establishmentId", FACILITY)) {
@@ -162,6 +216,7 @@ async function main() {
     }
   }
   console.log(`Closed ${closed} leftover open tickets.`);
+  await closeStaleEntryLogs();
 
   // 4. One parked ticket that is in overtime.
   await refreshOvertime();

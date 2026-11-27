@@ -537,6 +537,20 @@ async function payGatePass(request, secretKey) {
 
 // ---- Staff -----------------------------------------------------------------
 
+/**
+ * The ways one plate may have been typed, upper-cased: as typed, without
+ * spaces or dashes, and with a space (or dash) between letters and digits.
+ * "gaj789" -> ["GAJ789", "GAJ 789", "GAJ-789"], so a lookup still finds
+ * the QR when staff type the plate without the space.
+ */
+function plateVariants(raw) {
+  const typed = asString(raw).replace(/\s+/g, " ").trim().toUpperCase();
+  if (!typed) return [];
+  const bare = typed.replace(/[\s-]/g, "");
+  const split = bare.replace(/([A-Z])(?=\d)|(\d)(?=[A-Z])/g, "$1$2 ");
+  return [...new Set([typed, bare, split, split.replace(/ /g, "-")])];
+}
+
 /** Finds a pass at the caller's facility by its QR id or by plate. */
 async function findGatePass(request) {
   const db = getFirestore();
@@ -558,7 +572,7 @@ async function findGatePass(request) {
   const matches = await db
     .collection(CHECKOUTS)
     .where("establishmentId", "==", facilityId)
-    .where("vehiclePlate", "==", plate)
+    .where("vehiclePlate", "in", plateVariants(plate))
     .get();
   const active = matches.docs
     .filter((d) => isActivePass(d.data(), nowMs))
@@ -762,6 +776,7 @@ module.exports = {
   payGatePass,
   openPayment,
   findGatePass,
+  plateVariants,
   startGatePayment,
   turnAwayGatePass,
   checkGatePayment,

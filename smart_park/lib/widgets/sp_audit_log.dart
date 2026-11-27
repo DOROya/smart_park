@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import 'smartpark_ui.dart';
 import 'sp_audit_format.dart';
+import '../utils/staff_credentials.dart' show isStaffAuthEmail;
 
 /// Groups of audit actions, for the filter chips and icons.
 enum SpAuditCategory {
@@ -60,7 +61,16 @@ String spAuditActorLabel(Map<String, dynamic> entry) {
   // A Cloud Function acting on someone's request signs as its service
   // account ("...@developer.gserviceaccount.com"): that is SmartPark itself.
   if (name.endsWith('gserviceaccount.com')) return 'SmartPark';
-  final String who = name.isEmpty ? 'Unknown' : name;
+  // Older entries: a staff member or supervisor logged under their sign-in
+  // email ("user@staff.smartpark.internal"): show the username instead.
+  // An email with no role is a project member's console or script edit.
+  final String who = name.isEmpty
+      ? 'Unknown'
+      : isStaffAuthEmail(name)
+      ? name.split('@').first
+      : (name.contains('@') && role.isEmpty)
+      ? 'SmartPark team'
+      : name;
   if (role.isEmpty) return who;
   return '$who (${role[0].toUpperCase()}${role.substring(1)})';
 }

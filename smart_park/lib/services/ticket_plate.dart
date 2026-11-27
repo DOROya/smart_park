@@ -111,3 +111,26 @@ Future<void> changeTicketPlate({
     });
   });
 }
+
+/// The ways one plate may have been typed, for the gate's plate lookup: as
+/// typed (older tickets kept their case), upper-cased, without spaces or
+/// dashes, and with a space (or dash) between letters and digits.
+/// "gaj789" -> gaj789, GAJ789, GAJ 789, GAJ-789. At most 5, so it fits a
+/// Firestore `whereIn`.
+List<String> plateLookupVariants(String raw) {
+  final String typed = raw.trim().replaceAll(RegExp(r'\s+'), ' ');
+  if (typed.isEmpty) return const <String>[];
+  final String upper = typed.toUpperCase();
+  final String bare = upper.replaceAll(RegExp(r'[\s-]'), '');
+  final String split = bare.replaceAllMapped(
+    RegExp(r'([A-Z])(?=\d)|(\d)(?=[A-Z])'),
+    (Match m) => '${m[1] ?? ''}${m[2] ?? ''} ',
+  );
+  return <String>{
+    typed,
+    upper,
+    bare,
+    split,
+    split.replaceAll(' ', '-'),
+  }.toList();
+}

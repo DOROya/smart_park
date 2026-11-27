@@ -400,18 +400,30 @@ function describeReport(kind) {
 /** Name and role of [uid], for showing in an entry. */
 async function resolveActor(db, uid) {
   if (!uid) return { actorId: "", actorName: "Unknown", actorRole: "" };
+  // A Google account (an email, not a Firebase uid) writing straight to
+  // Firestore is a project member using the console or a script.
+  if (uid.includes("@")) return { actorId: uid, actorName: "SmartPark team", actorRole: "" };
   try {
     const profile = (await db.collection("users").doc(uid).get()).data();
     if (profile) {
-      const name = [profile.firstName, profile.lastName].filter(Boolean).join(" ").trim();
+      const role = String(profile.role || profile.Role || profile.userRole || "");
+      let name = [profile.firstName, profile.lastName].filter(Boolean).join(" ").trim();
+      // Staff and supervisors have no first/last name on their profile;
+      // their name lives on the staff record, not their sign-in email.
+      if (!name && (role === "staff" || role === "supervisor")) {
+        const staff = (await db.collection("staff_accounts").doc(uid).get()).data();
+        name = String(staff?.name || "").trim();
+      }
       return {
         actorId: uid,
-        actorName: name || profile.email || profile.name || uid,
-        actorRole: String(profile.role || profile.Role || profile.userRole || ""),
+        actorName: name || profile.name || profile.email || uid,
+        actorRole: role,
       };
     }
     const staff = (await db.collection("staff_accounts").doc(uid).get()).data();
-    if (staff) return { actorId: uid, actorName: staff.name || uid, actorRole: "staff" };
+    if (staff) {
+      return { actorId: uid, actorName: staff.name || uid, actorRole: staff.role === "supervisor" ? "supervisor" : "staff" };
+    }
   } catch (error) {
     logger.warn(`Could not load audit actor ${uid}`, error);
   }

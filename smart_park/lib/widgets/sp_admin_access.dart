@@ -253,6 +253,7 @@ class _PasswordDialogState extends State<_PasswordDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
+      scrollable: true,
       icon: const SpDialogIcon(
         Icons.lock_outline_rounded,
         tone: SpDialogTone.info,

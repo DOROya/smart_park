@@ -45,6 +45,7 @@ Future<String?> _askNote(
   final bool? ok = await showDialog<bool>(
     context: context,
     builder: (BuildContext context) => AlertDialog(
+      scrollable: true,
       icon: const SpDialogIcon(
         Icons.edit_note_rounded,
         tone: SpDialogTone.info,
@@ -69,7 +70,7 @@ Future<String?> _askNote(
     ),
   );
   final String note = controller.text.trim();
-  controller.dispose();
+  spDisposeAfterClose(controller);
   return ok == true ? note : null;
 }
 

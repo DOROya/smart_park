@@ -10,6 +10,7 @@ import 'gate_unsent_exits.dart';
 import 'operating_hours.dart';
 import 'parking_checkout_service.dart' show GatePass;
 import 'parking_pricing.dart';
+import 'ticket_plate.dart' show plateLookupVariants;
 
 /// Looks up a temporary QR by its id or plate (the `findGatePass` function).
 typedef GatePassFinder =
@@ -602,10 +603,8 @@ class GateScanService {
             .collection('transactions')
             .where('establishmentId', isEqualTo: facilityId)
             // New tickets store the plate upper-cased; older ones as typed.
-            .where(
-              'vehiclePlate',
-              whereIn: <String>{plate, plate.toUpperCase()}.toList(),
-            )
+            // Staff may also drop or add the space ("GAJ789" / "GAJ 789").
+            .where('vehiclePlate', whereIn: plateLookupVariants(plate))
             // Room for a regular's past tickets as well as the current one.
             .limit(50),
       );
@@ -664,15 +663,22 @@ class GateScanService {
 
       QueryDocumentSnapshot<Map<String, dynamic>> chosen = mine.first;
       QueryDocumentSnapshot<Map<String, dynamic>>? firstPaid;
+      // At entry with nothing usable, a ticket that is parked right now
+      // explains the denial best ("Already inside"), better than an older,
+      // used-up ticket on the same plate ("no hours left").
+      QueryDocumentSnapshot<Map<String, dynamic>>? parkedPaid;
       for (final QueryDocumentSnapshot<Map<String, dynamic>> d in mine) {
         if (_status(d.data()) != 'paid') continue;
         firstPaid ??= d;
         if (usableHere(d.data())) {
           firstPaid = d;
+          parkedPaid = null;
           break;
         }
+        final String entry = _entryStatus(d.data());
+        if (entry == 'checked_in' || entry == 'inside') parkedPaid ??= d;
       }
-      if (firstPaid != null) chosen = firstPaid;
+      if (firstPaid != null) chosen = parkedPaid ?? firstPaid;
       if (_status(chosen.data()) != 'paid') {
         await _logDeniedScan(
           staff: staff,

@@ -101,6 +101,7 @@ class _OwnerCashHandoverCardState extends State<OwnerCashHandoverCard> {
     final bool? ok = await showDialog<bool>(
       context: context,
       builder: (BuildContext context) => AlertDialog(
+        scrollable: true,
         icon: const SpDialogIcon(
           Icons.payments_outlined,
           tone: SpDialogTone.success,
@@ -125,7 +126,7 @@ class _OwnerCashHandoverCardState extends State<OwnerCashHandoverCard> {
               maxLength: 300,
               decoration: const InputDecoration(
                 labelText: 'Note (optional)',
-                hintText: 'e.g. short by ₱20, will settle tomorrow',
+                hintText: 'e.g. short by PHP 20, will settle tomorrow',
                 border: OutlineInputBorder(),
               ),
             ),
@@ -148,7 +149,7 @@ class _OwnerCashHandoverCardState extends State<OwnerCashHandoverCard> {
       ),
     );
     final String noteText = note.text;
-    note.dispose();
+    spDisposeAfterClose(note);
     if (ok != true || !mounted) return;
     setState(() => _busy.add(due.staffId));
     try {

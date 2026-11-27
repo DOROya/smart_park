@@ -164,3 +164,11 @@ test("an intent counts as paid once it succeeded or has a paid payment", () => {
   assert.equal(isIntentPaid({ attributes: { status: "awaiting_next_action" } }), false);
   assert.equal(isIntentPaid({}), false);
 });
+
+test("plateVariants matches a plate typed with or without the space", () => {
+  const { plateVariants } = require("../src/gate_pass");
+  assert.deepEqual(plateVariants("gaj789"), ["GAJ789", "GAJ 789", "GAJ-789"]);
+  assert.deepEqual(plateVariants(" ABC  1234 "), ["ABC 1234", "ABC1234", "ABC-1234"]);
+  assert.ok(plateVariants("ABC-1234").includes("ABC 1234"));
+  assert.deepEqual(plateVariants("   "), []);
+});

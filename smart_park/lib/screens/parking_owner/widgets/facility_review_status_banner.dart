@@ -263,6 +263,7 @@ Future<void> showFacilityAppealDialog(
       String? error;
       return StatefulBuilder(
         builder: (BuildContext context, StateSetter setState) => AlertDialog(
+          scrollable: true,
           icon: const SpDialogIcon(
             Icons.rate_review_outlined,
             tone: SpDialogTone.info,
@@ -356,7 +357,7 @@ Future<void> showFacilityAppealDialog(
       );
     },
   );
-  message.dispose();
+  spDisposeAfterClose(message);
   if (sent == true && context.mounted) {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Review request sent to the admin.')),

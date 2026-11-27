@@ -276,6 +276,7 @@ class _RatingDialogState extends State<_RatingDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
+      scrollable: true,
       icon: const SpDialogIcon(Icons.star_rounded, tone: SpDialogTone.info),
       title: Text('How was ${widget.facility}?'),
       content: Column(
