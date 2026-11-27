@@ -90,6 +90,14 @@ class _CommissionsListContentState extends State<_CommissionsListContent>
 
   @override
   Widget build(BuildContext context) {
+    // Same-width digits, so amounts line up down the page.
+    return DefaultTextStyle.merge(
+      style: spTabularFigures,
+      child: _buildContent(context),
+    );
+  }
+
+  Widget _buildContent(BuildContext context) {
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
       // Only this facility's records; owners may not read anyone else's.
       stream: cachedStream(
@@ -946,76 +954,83 @@ class _OwnerTransactionsPageState extends State<_OwnerTransactionsPage> {
         surfaceTintColor: Colors.transparent,
         title: const Text('Transactions'),
       ),
-      body: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 760),
-          child: ListView(
-            padding: const EdgeInsets.fromLTRB(16, 4, 16, 32),
-            children: <Widget>[
-              _hero(
-                count: paid.length,
-                gross: gross,
-                payout: payout,
-                commission: commission,
-                processing: processing,
-              ),
-              const SizedBox(height: 16),
-              _search(),
-              const SizedBox(height: 10),
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(
-                  children: <Widget>[
-                    for (final (_TxFilter f, String label, int n)
-                        in <(_TxFilter, String, int)>[
-                          (_TxFilter.all, 'All', all.length),
-                          (_TxFilter.extraHours, 'Extra hours', extraCount),
-                          (_TxFilter.overtime, 'With overtime', overtimeCount),
-                          (
-                            _TxFilter.cashDue,
-                            'Cash not collected',
-                            cashDueCount,
-                          ),
-                        ])
-                      if (f == _TxFilter.all || n > 0)
-                        Padding(
-                          padding: const EdgeInsets.only(right: 8),
-                          child: ChoiceChip(
-                            label: Text('$label · $n'),
-                            selected: _filter == f,
-                            showCheckmark: false,
-                            onSelected: (_) => _setFilter(f),
-                          ),
-                        ),
-                  ],
+      body: DefaultTextStyle.merge(
+        style: spTabularFigures,
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 760),
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 32),
+              children: <Widget>[
+                _hero(
+                  count: paid.length,
+                  gross: gross,
+                  payout: payout,
+                  commission: commission,
+                  processing: processing,
                 ),
-              ),
-              const SizedBox(height: 8),
-              if (shown.isEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: SpEmptyState(
-                    icon: Icons.receipt_long_outlined,
-                    message: q.isNotEmpty
-                        ? 'No transactions from a driver matching "$_query".'
-                        : 'No transactions match this filter.',
+                const SizedBox(height: 16),
+                _search(),
+                const SizedBox(height: 10),
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: <Widget>[
+                      for (final (_TxFilter f, String label, int n)
+                          in <(_TxFilter, String, int)>[
+                            (_TxFilter.all, 'All', all.length),
+                            (_TxFilter.extraHours, 'Extra hours', extraCount),
+                            (
+                              _TxFilter.overtime,
+                              'With overtime',
+                              overtimeCount,
+                            ),
+                            (
+                              _TxFilter.cashDue,
+                              'Cash not collected',
+                              cashDueCount,
+                            ),
+                          ])
+                        if (f == _TxFilter.all || n > 0)
+                          Padding(
+                            padding: const EdgeInsets.only(right: 8),
+                            child: ChoiceChip(
+                              label: Text('$label · $n'),
+                              selected: _filter == f,
+                              showCheckmark: false,
+                              onSelected: (_) => _setFilter(f),
+                            ),
+                          ),
+                    ],
                   ),
-                )
-              else ...<Widget>[
-                ..._days(shown.take(_limit).toList(), shown),
-                if (shown.length > _limit)
-                  Center(
-                    child: TextButton.icon(
-                      onPressed: () => setState(() => _limit += _pageSize),
-                      icon: const Icon(Icons.expand_more_rounded),
-                      label: Text(
-                        'Show ${shown.length - _limit < _pageSize ? shown.length - _limit : _pageSize} more '
-                        '(${shown.length - _limit} left)',
+                ),
+                const SizedBox(height: 8),
+                if (shown.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: SpEmptyState(
+                      icon: Icons.receipt_long_outlined,
+                      message: q.isNotEmpty
+                          ? 'No transactions from a driver matching "$_query".'
+                          : 'No transactions match this filter.',
+                    ),
+                  )
+                else ...<Widget>[
+                  ..._days(shown.take(_limit).toList(), shown),
+                  if (shown.length > _limit)
+                    Center(
+                      child: TextButton.icon(
+                        onPressed: () => setState(() => _limit += _pageSize),
+                        icon: const Icon(Icons.expand_more_rounded),
+                        label: Text(
+                          'Show ${shown.length - _limit < _pageSize ? shown.length - _limit : _pageSize} more '
+                          '(${shown.length - _limit} left)',
+                        ),
                       ),
                     ),
-                  ),
+                ],
               ],
-            ],
+            ),
           ),
         ),
       ),

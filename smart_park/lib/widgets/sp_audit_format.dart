@@ -264,11 +264,11 @@ final RegExp _isoDate = RegExp(r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}');
 final RegExp _clock24 = RegExp(r'^([01]?\d|2[0-3]):([0-5]\d)$');
 final RegExp _geo = RegExp(r'^(-?\d+\.\d+),\s*(-?\d+\.\d+)$');
 
-String _peso(num amount) =>
-    'PHP ${amount == amount.roundToDouble() ? amount.toInt() : amount.toStringAsFixed(2)}';
+/// A rate: "PHP 1,500", or "PHP 12.50" when it has centavos.
+String _peso(num amount) => spRate(amount);
 
-/// Cash amounts read like the rest of the app's money: "PHP 30.00".
-String _cash(num amount) => 'PHP ${amount.toStringAsFixed(2)}';
+/// Cash amounts read like the rest of the app's money: "PHP 1,030.00".
+String _cash(num amount) => spPeso(amount.toDouble());
 
 bool _isCashField(String last) =>
     last.toLowerCase().endsWith('amount') && !last.endsWith('Centavos');
