@@ -522,15 +522,21 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
       if (initial.isEmpty) {
         return 'Not set';
       }
+      // "PHP 1,500" with a thousands comma, like every other amount.
+      String peso(String raw) {
+        final num? n = num.tryParse(raw.replaceAll(',', ''));
+        return n == null ? 'PHP $raw' : spRate(n);
+      }
+
       final List<String> parts = <String>[
-        'PHP $initial first $spBaseStayLabel',
+        '${peso(initial)} first $spBaseStayLabel',
       ];
-      if (perHour.isNotEmpty) parts.add('+PHP $perHour/hr');
-      if (perDay.isNotEmpty) parts.add('PHP $perDay/day');
+      if (perHour.isNotEmpty) parts.add('+${peso(perHour)}/hr');
+      if (perDay.isNotEmpty) parts.add('${peso(perDay)}/day');
       final String perWeek = (value['weekly'] ?? '').toString().trim();
       final String perMonth = (value['monthly'] ?? '').toString().trim();
-      if (perWeek.isNotEmpty) parts.add('PHP $perWeek/week');
-      if (perMonth.isNotEmpty) parts.add('PHP $perMonth/month');
+      if (perWeek.isNotEmpty) parts.add('${peso(perWeek)}/week');
+      if (perMonth.isNotEmpty) parts.add('${peso(perMonth)}/month');
       return parts.joinDots();
     }
     final String text = (value ?? '').toString().trim();

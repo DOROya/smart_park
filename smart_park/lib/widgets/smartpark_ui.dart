@@ -1240,6 +1240,7 @@ class SpStatTile extends StatelessWidget {
                 fontWeight: FontWeight.w800,
                 fontSize: 24,
                 height: 1.1,
+                fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
               ),
             ),
           ),
@@ -2309,12 +2310,22 @@ String spRate(num value) {
 /// Money as shown everywhere in the app, e.g. "PHP 1,234.50".
 String spPeso(double value) => formatSalesPeso((value * 100).round());
 
-/// Short money label for chart peaks, e.g. "PHP 1.2k".
+/// Short money label for chart peaks, e.g. "PHP 1.2k" or "PHP 1k" (no ".0").
 String spCompactPeso(double value) {
-  if (value >= 1000000) return 'PHP ${(value / 1000000).toStringAsFixed(1)}M';
-  if (value >= 1000) return 'PHP ${(value / 1000).toStringAsFixed(1)}k';
+  String short(double v) {
+    final String s = v.toStringAsFixed(1);
+    return s.endsWith('.0') ? s.substring(0, s.length - 2) : s;
+  }
+
+  if (value >= 1000000) return 'PHP ${short(value / 1000000)}M';
+  if (value >= 1000) return 'PHP ${short(value / 1000)}k';
   return 'PHP ${value.toStringAsFixed(value % 1 == 0 ? 0 : 2)}';
 }
+
+/// Same-width digits, so amounts in a list or column line up.
+const TextStyle spTabularFigures = TextStyle(
+  fontFeatures: <FontFeature>[FontFeature.tabularFigures()],
+);
 
 /// Keeps Firestore streams alive across rebuilds. Creating `.snapshots()`
 /// inline in `build` hands StreamBuilder a new stream on every setState, so
