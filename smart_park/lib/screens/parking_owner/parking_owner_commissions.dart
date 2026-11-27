@@ -9,6 +9,13 @@ DateTime? _parseDateTime(dynamic value) {
   return null;
 }
 
+/// A stored status for a chip: "PAID" -> "Paid", "PARTIALLY_REFUNDED" ->
+/// "Partially refunded".
+String _statusLabel(String status) {
+  final String s = status.replaceAll('_', ' ').trim().toLowerCase();
+  return s.isEmpty ? '' : '${s[0].toUpperCase()}${s.substring(1)}';
+}
+
 class _CommissionRecord {
   const _CommissionRecord({
     required this.id,
@@ -836,7 +843,10 @@ class _TransactionCard extends StatelessWidget {
                         ),
                       ),
                     ),
-                    SpChip(label: record.status, color: statusColor),
+                    SpChip(
+                      label: _statusLabel(record.status),
+                      color: statusColor,
+                    ),
                   ],
                 ),
                 const SizedBox(height: 2),
@@ -1424,7 +1434,10 @@ class _OwnerTransactionsPageState extends State<_OwnerTransactionsPage> {
                               color: spEntryColor,
                             ),
                           )
-                        : SpChip(label: r.status, color: spInsideColor),
+                        : SpChip(
+                            label: _statusLabel(r.status),
+                            color: spInsideColor,
+                          ),
                   ],
                 ),
               ],

@@ -218,7 +218,7 @@ class _GatePassPanelState extends State<GatePassPanel> {
           const SizedBox(height: 10),
           SpTicketCost(
             ticket: t,
-            amountLabel: _paying ? 'PAYING NOW' : 'TO COLLECT',
+            amountLabel: _paying ? 'PAYING NOW' : 'PAYS ONLINE',
             amountNote: _methodNote(_pass.paymentMethod),
           ),
           const SizedBox(height: 10),
@@ -368,9 +368,9 @@ String gatePaymentStageText(String stage, String apiType) => switch (stage) {
 
 /// "Pay with GCash" for the method the driver picked.
 String _methodNote(String apiType) => switch (apiType) {
-  'card' => 'Pay with card',
-  'gcash' => 'Pay with GCash',
-  'paymaya' => 'Pay with Maya',
-  'qrph' => 'Pay with QR Ph',
-  _ => 'Online payment',
+  'card' => 'By card · No cash',
+  'gcash' => 'By GCash · No cash',
+  'paymaya' => 'By Maya · No cash',
+  'qrph' => 'By QR Ph · No cash',
+  _ => 'Online · No cash',
 };
