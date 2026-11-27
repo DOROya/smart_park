@@ -1,7 +1,8 @@
 // Facility ratings: after parking, a driver rates the facility 1-5 stars
-// (with an optional comment), once per ticket and editable. Ratings live in
-// facility_ratings/{ticketId}; security rules check the ticket is the
-// driver's and has been used. This module keeps each facility's average on
+// (with an optional comment), once per facility and editable. Ratings live
+// in facility_ratings/{driverId}_{establishmentId}; security rules check
+// the driver has a used ticket there. Older ratings were saved once per
+// ticket, so a driver may have several: only their newest one counts. This module keeps each facility's average on
 // establishment_details (rating, ratingCount), which only the server
 // writes, so an owner can't set their own score.
 
@@ -18,6 +19,23 @@ function ratingSummary(stars) {
   return { rating: Math.round((sum / valid.length) * 10) / 10, ratingCount: valid.length };
 }
 
+function millis(value) {
+  return value && typeof value.toMillis === "function" ? value.toMillis() : 0;
+}
+
+/** Each driver's newest rating among [ratings] (rating documents' data). */
+function latestPerDriver(ratings) {
+  const byDriver = new Map();
+  let anonymous = 0;
+  for (const r of ratings) {
+    const key = r.driverId || `#${anonymous++}`;
+    const kept = byDriver.get(key);
+    const at = millis(r.updatedAt) || millis(r.createdAt);
+    if (!kept || at > (millis(kept.updatedAt) || millis(kept.createdAt))) byDriver.set(key, r);
+  }
+  return [...byDriver.values()];
+}
+
 /** Trigger on facility_ratings: recounts the facility(ies) it touched. */
 async function onRatingWritten(before, after) {
   const ids = new Set([before?.establishmentId, after?.establishmentId].filter(Boolean));
@@ -25,7 +43,8 @@ async function onRatingWritten(before, after) {
   for (const id of ids) {
     try {
       const snap = await db.collection("facility_ratings").where("establishmentId", "==", id).get();
-      const summary = ratingSummary(snap.docs.map((d) => d.data().stars));
+      const ratings = latestPerDriver(snap.docs.map((d) => d.data()));
+      const summary = ratingSummary(ratings.map((r) => r.stars));
       await db
         .collection("establishment_details")
         .doc(id)
@@ -41,4 +60,4 @@ async function onRatingWritten(before, after) {
   }
 }
 
-module.exports = { ratingSummary, onRatingWritten };
+module.exports = { ratingSummary, latestPerDriver, onRatingWritten };

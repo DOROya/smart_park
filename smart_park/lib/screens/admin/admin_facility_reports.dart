@@ -396,7 +396,7 @@ class _AdminWarningContestsCardState extends State<AdminWarningContestsCard> {
             'Driver says: ${((data['contestMessage'] as String?) ?? '').trim()}',
           ),
           _line(
-            '${facility.isEmpty ? 'Facility' : facility} · contested '
+            '${facility.isEmpty ? 'Facility' : facility} · Contested '
             '${_when(data['contestedAt'])}',
             muted: true,
           ),

@@ -543,7 +543,7 @@ class _DriverHomePageState extends State<DriverHomePage>
           icon: const SpDialogIcon(Icons.location_on_rounded),
           title: const Text('Enable Location Services'),
           content: const Text(
-            'SmartPark needs GPS enabled to discover nearby parking.',
+            'Turn on location so SmartPark can show parking near you.',
           ),
           actions: [
             TextButton(

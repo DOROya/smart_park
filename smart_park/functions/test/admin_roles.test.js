@@ -7,6 +7,7 @@ const {
   promoteDenial,
   levelDenial,
   removeDenial,
+  FOUNDING_SUPER_ADMIN,
   FRESH_SIGN_IN_SECONDS,
 } = require("../src/admin_roles");
 const { selfCaseCheck } = require("../src/refunds");
@@ -59,6 +60,15 @@ test("a super admin is demoted in two steps; nobody removes themselves", () => {
   assert.match(removeDenial("s", "s2", superAdmin)[1], /normal admin first/);
   assert.match(removeDenial("a", "a", admin)[1], /your own access/);
   assert.equal(removeDenial("s", "d", driver)[0], "not-found");
+});
+
+test("other super admins can't demote or remove the first super admin", () => {
+  const founder = FOUNDING_SUPER_ADMIN;
+  assert.match(levelDenial("s2", founder, superAdmin, "admin", 5)[1], /first super admin/);
+  assert.equal(levelDenial("s2", founder, superAdmin, "admin", 5)[0], "permission-denied");
+  assert.match(removeDenial("s2", founder, superAdmin)[1], /first super admin/);
+  // Anyone else is still demoted as before.
+  assert.equal(levelDenial("s2", "s3", superAdmin, "admin", 5), null);
 });
 
 test("no admin decides a refund about their own account", () => {

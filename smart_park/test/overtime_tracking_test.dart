@@ -170,12 +170,12 @@ void main() {
       expect(closing.overAt(at3am), Duration.zero);
       expect(
         spParkedStayTiming(closing, at3am),
-        'paid time ended while closed',
+        'Paid time ended while closed',
       );
       // Ten minutes after it reopens: in grace, 11 minutes of it left.
       expect(
         spParkedStayTiming(closing, DateTime(2026, 9, 27, 6, 10)),
-        startsWith('in grace · overtime in '),
+        startsWith('In grace · Overtime in '),
       );
     });
 

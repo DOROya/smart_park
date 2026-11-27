@@ -113,7 +113,7 @@ class _DriverPackageSelectionPageState
       builder: (BuildContext ctx) => StatefulBuilder(
         builder: (BuildContext ctx, StateSetter setLocal) => AlertDialog(
           icon: const SpDialogIcon(Icons.local_parking_rounded),
-          title: const Text('This is not a reservation'),
+          title: const Text('Your ticket is not a reservation'),
           content: SizedBox(
             width: 400,
             child: SingleChildScrollView(
@@ -123,21 +123,27 @@ class _DriverPackageSelectionPageState
                   const SpDialogPoint(
                     icon: Icons.payments_outlined,
                     tone: SpDialogTone.success,
-                    text: 'This ticket pays for your parking time.',
+                    text:
+                        'You pay at the gate, and only after the staff '
+                        'confirm there is a free slot. Nothing is charged '
+                        'before that.',
                   ),
                   const SizedBox(height: 12),
                   const SpDialogPoint(
                     icon: Icons.event_busy_outlined,
                     tone: SpDialogTone.warning,
                     text:
-                        'It does not hold a slot for you. If the lot is '
-                        'full when you arrive, or if you leave and come '
-                        'back, a space may not be available.',
+                        'It does not save you a slot. If the lot is full '
+                        'when you arrive, you are not charged: you can wait '
+                        'or park somewhere else.',
                   ),
                   const SizedBox(height: 12),
                   const SpDialogPoint(
-                    icon: Icons.bolt_rounded,
-                    text: 'It makes paying and passing the gate quicker.',
+                    icon: Icons.history_toggle_off_rounded,
+                    text:
+                        'Your hours only count down while you are parked. '
+                        'Hours you do not use stay on the ticket for your '
+                        'next visit.',
                   ),
                   const SizedBox(height: 16),
                   Material(
@@ -185,11 +191,7 @@ class _DriverPackageSelectionPageState
     (DriverPackageOption option) => option.key == _selectedPlan,
   );
 
-  String _amountText(double amount) {
-    return amount % 1 == 0
-        ? '₱${amount.toStringAsFixed(0)}'
-        : '₱${amount.toStringAsFixed(2)}';
-  }
+  String _amountText(double amount) => spRate(amount);
 
   double _calculateTotalAmount(DriverPackageOption option, int duration) {
     return packageTotal(

@@ -334,8 +334,25 @@ function describeWarning(before, after, changes) {
  * themselves are the gate log and aren't repeated here.
  */
 function describeGateLog(before, after, changes) {
+  // An exit the gate never scanned, recorded later by the owner or a
+  // supervisor: who closed it, and when they say the vehicle left.
+  if (!before && after?.missedExit === true) {
+    const plate = after.vehiclePlate || after.plate || "a vehicle";
+    const left = manilaDateTime(after.timestamp);
+    return {
+      action: "gate.missed_exit_recorded",
+      summary: `Recorded a missed exit for ${plate}${left ? `, left ${left}` : ""}`,
+    };
+  }
   if (!before || !after || !changes.overtimeStatus) return null;
   const plate = after.plate || after.vehiclePlate || "a vehicle";
+  if (before.overtimeStatus === "rate_unresolved") {
+    const amount = Number(after.overtimeAmount || 0);
+    return {
+      action: "gate.overtime_rate_set",
+      summary: `Set the overtime for ${plate}: PHP ${Number(after.overtimeRate || 0)} an hour, PHP ${amount.toFixed(2)} owed`,
+    };
+  }
   const to = after.overtimeStatus === "collected" ? "collected" : "owed";
   return {
     action: "gate.overtime_status_changed",

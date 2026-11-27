@@ -61,11 +61,11 @@ void main() {
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
     // The not-a-reservation notice pops up when the step opens.
-    expect(find.text('This is not a reservation'), findsOneWidget);
+    expect(find.text('Your ticket is not a reservation'), findsOneWidget);
     expect(find.text('Do not show again'), findsOneWidget);
     await tester.tap(find.text('I understand'));
     await tester.pumpAndSettle();
-    expect(find.text('This is not a reservation'), findsNothing);
+    expect(find.text('Your ticket is not a reservation'), findsNothing);
     return () => result;
   }
 
@@ -88,12 +88,12 @@ void main() {
     await tester.pumpAndSettle();
     // The not-a-reservation note sits above the summary, so scroll to it.
     await tester.scrollUntilVisible(
-      find.text('2 weeks × ₱1200'),
+      find.text('2 weeks × PHP 1,200'),
       120,
       scrollable: find.byType(Scrollable).first,
     );
-    expect(find.text('2 weeks × ₱1200'), findsOneWidget);
-    expect(find.text('₱2400'), findsWidgets);
+    expect(find.text('2 weeks × PHP 1,200'), findsOneWidget);
+    expect(find.text('PHP 2,400'), findsWidgets);
 
     await tester.tap(find.text('Continue'));
     await tester.pumpAndSettle();
@@ -115,7 +115,7 @@ void main() {
       await tester.pumpAndSettle();
     }
     expect(find.text('Maximum of 3 months.'), findsOneWidget);
-    expect(find.text('₱12000'), findsWidgets);
+    expect(find.text('PHP 12,000'), findsWidgets);
 
     await tester.tap(find.text('Continue'));
     await tester.pumpAndSettle();
@@ -138,11 +138,11 @@ void main() {
     await tester.pumpAndSettle();
     // The not-a-reservation note sits above the summary, so scroll to it.
     await tester.scrollUntilVisible(
-      find.text('2 weeks × ₱1200'),
+      find.text('2 weeks × PHP 1,200'),
       120,
       scrollable: find.byType(Scrollable).first,
     );
-    expect(find.text('2 weeks × ₱1200'), findsOneWidget);
+    expect(find.text('2 weeks × PHP 1,200'), findsOneWidget);
     // The content column stays readable instead of stretching edge to edge.
     expect(tester.getSize(find.text('Weekly Package')).width, lessThan(640));
     await tester.tap(find.text('Continue'));

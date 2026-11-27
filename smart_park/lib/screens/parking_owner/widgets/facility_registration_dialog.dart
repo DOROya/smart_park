@@ -1758,14 +1758,14 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
             _doubleFields(
               first: _buildInputField(
                 label: 'Car Weekly Rate (₱)',
-                hint: 'e.g. 1200 · blank = not offered',
+                hint: 'e.g. 1200 · Leave blank if not offered',
                 validator: _optionalAmountValidator,
                 controller: _rateCarWeeklyController,
                 keyboardType: TextInputType.number,
               ),
               second: _buildInputField(
                 label: 'Car Monthly Rate (₱)',
-                hint: 'e.g. 4000 · blank = not offered',
+                hint: 'e.g. 4000 · Leave blank if not offered',
                 validator: _optionalAmountValidator,
                 controller: _rateCarMonthlyController,
                 keyboardType: TextInputType.number,
@@ -1775,14 +1775,14 @@ class _FacilityRegistrationPageState extends State<FacilityRegistrationPage> {
             _doubleFields(
               first: _buildInputField(
                 label: 'Motorcycle Weekly Rate (₱)',
-                hint: 'e.g. 500 · blank = not offered',
+                hint: 'e.g. 500 · Leave blank if not offered',
                 validator: _optionalAmountValidator,
                 controller: _rateMotorWeeklyController,
                 keyboardType: TextInputType.number,
               ),
               second: _buildInputField(
                 label: 'Motorcycle Monthly Rate (₱)',
-                hint: 'e.g. 1800 · blank = not offered',
+                hint: 'e.g. 1800 · Leave blank if not offered',
                 validator: _optionalAmountValidator,
                 controller: _rateMotorMonthlyController,
                 keyboardType: TextInputType.number,

@@ -28,6 +28,7 @@ Future<void> showSpActivityDetails(
   Future<void> Function(Map<String, dynamic> log)? onMarkOvertimeCollected,
   Future<void> Function(Map<String, dynamic> log, String status)?
   onSetOvertimeStatus,
+  Future<bool> Function(Map<String, dynamic> log)? onSetOvertimeRate,
   bool canReportDriver = false,
   String? flaggingStaffName,
 }) {
@@ -41,6 +42,7 @@ Future<void> showSpActivityDetails(
       staffNames: staffNames,
       onMarkOvertimeCollected: onMarkOvertimeCollected,
       onSetOvertimeStatus: onSetOvertimeStatus,
+      onSetOvertimeRate: onSetOvertimeRate,
       canReportDriver: canReportDriver,
       flaggingStaffName: flaggingStaffName,
     ),
@@ -60,9 +62,14 @@ class _ActivityDetailsSheet extends StatefulWidget {
     required this.staffNames,
     this.onMarkOvertimeCollected,
     this.onSetOvertimeStatus,
+    this.onSetOvertimeRate,
     this.canReportDriver = false,
     this.flaggingStaffName,
   });
+
+  /// Owners: sets the hourly rate on an exit whose overtime had none.
+  /// Returns true once saved.
+  final Future<bool> Function(Map<String, dynamic> log)? onSetOvertimeRate;
 
   final Map<String, dynamic> log;
   final Map<String, String>? staffNames;
@@ -433,6 +440,25 @@ class _ActivityDetailsSheetState extends State<_ActivityDetailsSheet> {
               label: Text(
                 _marking ? 'Saving...' : 'Cash collected (${spPeso(amount)})',
               ),
+            ),
+          ),
+        if (status == 'rate_unresolved' && widget.onSetOvertimeRate != null)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: FilledButton.icon(
+              onPressed: _marking
+                  ? null
+                  : () async {
+                      setState(() => _marking = true);
+                      final bool saved = await widget.onSetOvertimeRate!(log);
+                      if (!mounted) return;
+                      setState(() => _marking = false);
+                      // The sheet shows a snapshot; reopen it to see the
+                      // new amount.
+                      if (saved) Navigator.of(context).pop();
+                    },
+              icon: const Icon(Icons.price_change_outlined),
+              label: const Text('Set overtime rate'),
             ),
           ),
         if (ownerCanSet)

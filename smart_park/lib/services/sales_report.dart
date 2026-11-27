@@ -197,7 +197,9 @@ class FinanceRange {
 /// One sale (or one day's pre-summed sales) dated [at].
 ///
 /// An owner sees one entry per paid ticket, plus one per overtime cash
-/// collection ([count] 0, only [cashCentavos]). The admin sees one entry per
+/// collection ([count] 0, only [cashCentavos]), one per walk-in exit
+/// ([walkInCount] 1, [walkInCentavos]) and one per cash handover from
+/// staff ([handoverCentavos]: cash moved, not a sale). The admin sees one entry per
 /// `stats_daily` doc, which already sums that day's payments.
 class SalesEntry {
   const SalesEntry({
@@ -208,6 +210,9 @@ class SalesEntry {
     this.processingCentavos = 0,
     this.payoutCentavos = 0,
     this.cashCentavos = 0,
+    this.walkInCount = 0,
+    this.walkInCentavos = 0,
+    this.handoverCentavos = 0,
   });
 
   final DateTime at;
@@ -229,6 +234,16 @@ class SalesEntry {
 
   /// Overtime paid in cash at the gate, outside the app.
   final int cashCentavos;
+
+  /// Walk-in exits (drivers without the app) this entry stands for.
+  final int walkInCount;
+
+  /// Walk-in fees paid in cash at the gate: no commission.
+  final int walkInCentavos;
+
+  /// Gate cash (overtime and walk-in fees) staff handed to the owner. Not
+  /// a sale: it shows how much of the gate cash reached the owner.
+  final int handoverCentavos;
 }
 
 /// Totals for one day, one month, or a whole report.
@@ -244,12 +259,27 @@ class SalesRow {
   int processingCentavos = 0;
   int payoutCentavos = 0;
   int cashCentavos = 0;
+  int walkInCount = 0;
+  int walkInCentavos = 0;
+  int handoverCentavos = 0;
+
+  /// All cash taken at the gate: overtime and walk-in fees.
+  int get gateCashCentavos => cashCentavos + walkInCentavos;
+
+  /// Everything the facility took in: app sales and gate cash.
+  int get takingsCentavos => grossCentavos + gateCashCentavos;
+
+  /// What the owner keeps: the app payout and all gate cash.
+  int get takeHomeCentavos => payoutCentavos + gateCashCentavos;
 
   bool get isEmpty =>
       count == 0 &&
       grossCentavos == 0 &&
       commissionCentavos == 0 &&
-      cashCentavos == 0;
+      cashCentavos == 0 &&
+      walkInCount == 0 &&
+      walkInCentavos == 0 &&
+      handoverCentavos == 0;
 
   void add(SalesEntry e) {
     count += e.count;
@@ -258,6 +288,9 @@ class SalesRow {
     processingCentavos += e.processingCentavos;
     payoutCentavos += e.payoutCentavos;
     cashCentavos += e.cashCentavos;
+    walkInCount += e.walkInCount;
+    walkInCentavos += e.walkInCentavos;
+    handoverCentavos += e.handoverCentavos;
   }
 
   void addRow(SalesRow r) {
@@ -267,6 +300,9 @@ class SalesRow {
     processingCentavos += r.processingCentavos;
     payoutCentavos += r.payoutCentavos;
     cashCentavos += r.cashCentavos;
+    walkInCount += r.walkInCount;
+    walkInCentavos += r.walkInCentavos;
+    handoverCentavos += r.handoverCentavos;
   }
 }
 

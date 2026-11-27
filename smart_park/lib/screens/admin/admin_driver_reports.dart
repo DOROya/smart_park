@@ -479,7 +479,7 @@ class _ReportReviewSheetState extends State<_ReportReviewSheet> {
                           all.length <= 1
                               ? 'First report about this driver.'
                               : '${all.length} reports about this driver '
-                                    '· warned $warned time${warned == 1 ? '' : 's'} before.',
+                                    '· Warned $warned time${warned == 1 ? '' : 's'} before.',
                           style: TextStyle(
                             fontSize: 12,
                             fontWeight: FontWeight.w600,

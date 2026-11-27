@@ -397,10 +397,12 @@ extension _StaffHomePageFragments on _StaffHomePageState {
       Text(
         _gateMode == 'entry'
             ? restriction == null
-                  ? 'Entry mode: tickets are verified and checked in.'
-                  : 'Entry mode: every scan is denied while the facility '
-                        'is $restriction.'
-            : 'Exit mode: stay time is checked, overtime is billed.',
+                  ? 'Entry: scan a ticket to check it is paid and let the '
+                        'vehicle in.'
+                  : 'Entry: no vehicle can be let in while the facility is '
+                        '$restriction.'
+            : 'Exit: scan a ticket to see how long the vehicle stayed and '
+                  'any overtime to collect.',
         style: TextStyle(
           color: AppTheme.textMuted,
           fontSize: 12,

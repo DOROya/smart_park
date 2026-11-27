@@ -50,6 +50,8 @@ class _SpAdminAccessPanelState extends State<SpAdminAccessPanel> {
 
   bool get _isMe => FirebaseAuth.instance.currentUser?.uid == widget.uid;
 
+  bool get _isFounder => widget.uid == kFoundingSuperAdminUid;
+
   Future<void> _run(
     String done,
     Future<void> Function() change, {
@@ -156,8 +158,10 @@ class _SpAdminAccessPanelState extends State<SpAdminAccessPanel> {
           label: const Text('Remove admin access'),
         ),
       ],
-      // The last super admin keeps their level.
-      if (level == AccessLevel.superAdmin && widget.superAdminCount > 1)
+      // The last super admin keeps their level, and so does the first.
+      if (level == AccessLevel.superAdmin &&
+          widget.superAdminCount > 1 &&
+          !_isFounder)
         OutlinedButton.icon(
           onPressed: _busy
               ? null
@@ -197,11 +201,17 @@ class _SpAdminAccessPanelState extends State<SpAdminAccessPanel> {
               if (widget.promotedByName.isNotEmpty)
                 'promoted by ${widget.promotedByName}',
               if (former.isNotEmpty && former != 'admin') 'was a $former',
-            ].join(' · '),
+            ].joinDots(),
             style: muted,
           ),
         ],
-        if (canChange && actions.isNotEmpty) ...<Widget>[
+        if (_isFounder && canChange) ...<Widget>[
+          const SizedBox(height: 6),
+          Text(
+            'First super admin: their access can\'t be changed.',
+            style: muted,
+          ),
+        ] else if (canChange && actions.isNotEmpty) ...<Widget>[
           const SizedBox(height: 10),
           Wrap(spacing: 8, runSpacing: 8, children: actions),
         ] else if (!canChange &&

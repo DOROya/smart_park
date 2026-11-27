@@ -571,7 +571,7 @@ extension _AdminUserDirectory on _AdminHomePageState {
                 value: termsAt == null
                     ? 'No acceptance on record'
                     : 'Accepted ${spFormatDate(termsAt)}'
-                          '${termsVersion.isEmpty ? '' : ' · version $termsVersion'}',
+                          '${termsVersion.isEmpty ? '' : ' · Version $termsVersion'}',
               ),
               _detailTile(
                 icon: Icons.fingerprint_rounded,

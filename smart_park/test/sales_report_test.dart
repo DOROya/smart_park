@@ -395,7 +395,7 @@ void main() {
     // Only days with activity are listed.
     expect(find.text('Nov 7, Sat'), findsOneWidget);
     expect(find.text('Nov 3, Tue'), findsNothing);
-    expect(find.text('1 txn · + PHP 30.00 cash'), findsOneWidget);
+    expect(find.text('1 txn · Overtime PHP 30.00'), findsOneWidget);
     expect(find.text('Est. payout PHP 186.00'), findsOneWidget);
     // Can't step into the future.
     final IconButton next = tester.widget(

@@ -73,6 +73,27 @@ function isParked(ticket) {
   return entry === "checked_in" || entry === "inside";
 }
 
+/**
+ * How long past its paid time a vehicle still marked parked is taken to
+ * have left without an exit scan. Mirrors kMissedExitAfter in
+ * lib/widgets/sp_overtime.dart.
+ */
+const MISSED_EXIT_AFTER_HOURS = 24;
+
+/**
+ * A ticket still marked parked long after its paid time ran out: staff
+ * most likely forgot the exit scan. It no longer counts as parked for the
+ * driver's open-ticket limit or account deletion (the owner closes it with
+ * "Record missed exit").
+ */
+function isProbablyGone(ticket, nowMs = Date.now()) {
+  if (!isParked(ticket)) return false;
+  const entry = ticket.entryAt;
+  const entryMs = entry && typeof entry.toMillis === "function" ? entry.toMillis() : null;
+  if (entryMs === null) return false;
+  return nowMs > entryMs + (hoursLeft(ticket) + MISSED_EXIT_AFTER_HOURS) * 3600 * 1000;
+}
+
 /** Online-paid tickets only: walk-ins never went through PayMongo. */
 function isRefundable(ticket) {
   return ticket.status === "paid" && ticket.source !== "walk_in" && Boolean(ticket.paymongo);
@@ -565,7 +586,11 @@ async function requestRefund(request) {
     throw new HttpsError("failed-precondition", "This ticket has no unused hours to refund.");
   }
   if (isParked(ticket)) {
-    throw new HttpsError("failed-precondition", "Exit the facility first, then request the refund.");
+    throw new HttpsError(
+      "failed-precondition",
+      "Your vehicle is still marked as parked. Exit first, or if you already left, " +
+        "ask the facility to record your exit, then request the refund.",
+    );
   }
   const ref = db.collection(REFUNDS).doc(ticketId);
   const refund = buildRefund(ticketId, ticket, details, "driver_request", "requested");
@@ -842,6 +867,8 @@ async function releaseRecovery(db, ownerId, amount) {
 }
 
 module.exports = {
+  MISSED_EXIT_AFTER_HOURS,
+  isProbablyGone,
   selfCaseCheck,
   refundableBase,
   REFUNDS,

@@ -484,7 +484,21 @@ class SpParkedStay {
   /// Cash the gate would ask for at [now]; null when there is no rate.
   double? owedAt(DateTime now) =>
       rate == null ? null : overtimeHoursAt(now) * rate!;
+
+  /// Still marked parked more than [kMissedExitAfter] past its paid time:
+  /// most likely it left and staff forgot the exit scan.
+  bool probablyGoneAt(DateTime now) =>
+      now.isAfter(paidUntil.add(kMissedExitAfter));
+
+  /// When a missed exit is taken to have happened unless the owner says
+  /// otherwise: the end of the paid time and grace, so no overtime.
+  DateTime get assumedExit => overtimeFrom;
 }
+
+/// How long past its paid time a vehicle still marked parked is taken to
+/// have left without an exit scan. Mirrors MISSED_EXIT_AFTER_HOURS in
+/// functions/src/refunds.js.
+const Duration kMissedExitAfter = Duration(hours: 24);
 
 /// How far ahead the owner is warned that a vehicle's paid time runs out.
 const Duration spEndsSoonWindow = Duration(minutes: 15);
@@ -499,9 +513,14 @@ class SpOverstayCard extends StatefulWidget {
     this.rates,
     this.graceMinutes = kDefaultGraceMinutes,
     this.hours = const OperatingHours(),
+    this.onRecordMissedExit,
   });
 
   final String facilityId;
+
+  /// Closes a stay that most likely left without an exit scan; null hides
+  /// the button.
+  final Future<void> Function(SpParkedStay stay)? onRecordMissedExit;
 
   /// The facility's opening hours, so closed time is not shown as overtime.
   final OperatingHours hours;
@@ -580,7 +599,10 @@ class _SpOverstayCardState extends State<SpOverstayCard> {
             );
         double owed = 0;
         bool rateMissing = false;
-        for (final SpParkedStay stay in over) {
+        // Vehicles that most likely left aren't cash anyone will collect.
+        for (final SpParkedStay stay in over.where(
+          (SpParkedStay s) => !s.probablyGoneAt(now),
+        )) {
           final double? amount = stay.owedAt(now);
           if (amount == null) {
             rateMissing = true;
@@ -630,7 +652,11 @@ class _SpOverstayCardState extends State<SpOverstayCard> {
                 ),
               const SizedBox(height: 8),
               for (final SpParkedStay stay in preview)
-                SpParkedStayRow(stay: stay, now: now),
+                SpParkedStayRow(
+                  stay: stay,
+                  now: now,
+                  onRecordMissedExit: widget.onRecordMissedExit,
+                ),
               if (over.length + soon.length > preview.length)
                 Align(
                   alignment: Alignment.centerRight,
@@ -685,7 +711,11 @@ class _SpOverstayCardState extends State<SpOverstayCard> {
                   SpSectionLabel('Past paid time (${over.length})'),
                   const SizedBox(height: 8),
                   for (final SpParkedStay stay in over)
-                    SpParkedStayRow(stay: stay, now: _now),
+                    SpParkedStayRow(
+                      stay: stay,
+                      now: _now,
+                      onRecordMissedExit: widget.onRecordMissedExit,
+                    ),
                 ],
                 if (soon.isNotEmpty) ...<Widget>[
                   const SizedBox(height: 8),
@@ -708,25 +738,33 @@ class _SpOverstayCardState extends State<SpOverstayCard> {
 /// is not counted, so "+1h over" matches the amount shown beside it.
 String spParkedStayTiming(SpParkedStay stay, DateTime now) {
   final Duration left = stay.paidUntil.difference(now);
-  if (!left.isNegative) return 'ends in ${spFormatDuration(left)}';
+  if (!left.isNegative) return 'Ends in ${spFormatDuration(left)}';
   final Duration counted = stay.overAt(now);
   if (stay.isOverAt(now)) return '+${spFormatDuration(counted)} over';
-  if (counted == Duration.zero) return 'paid time ended while closed';
+  if (counted == Duration.zero) return 'Paid time ended while closed';
   // Past the paid time but not the grace period: no overtime yet.
   if (stay.closedAt(now) > Duration.zero && !stay.hours.isOpenAt(now)) {
-    return 'in grace · paused while closed';
+    return 'In grace · Paused while closed';
   }
   final Duration graceLeft = Duration(minutes: stay.graceMinutes + 1) - counted;
-  return 'in grace · overtime in ${spFormatDuration(graceLeft)}';
+  return 'In grace · Overtime in ${spFormatDuration(graceLeft)}';
 }
 
 /// One parked vehicle: plate, when it came in and what it paid for, and how
 /// far past (or close to) the end of its paid time it is.
 class SpParkedStayRow extends StatelessWidget {
-  const SpParkedStayRow({super.key, required this.stay, required this.now});
+  const SpParkedStayRow({
+    super.key,
+    required this.stay,
+    required this.now,
+    this.onRecordMissedExit,
+  });
 
   final SpParkedStay stay;
   final DateTime now;
+
+  /// Shown as "Record missed exit" once the stay most likely left.
+  final Future<void> Function(SpParkedStay stay)? onRecordMissedExit;
 
   @override
   Widget build(BuildContext context) {
@@ -763,8 +801,8 @@ class SpParkedStayRow extends StatelessWidget {
                 Text(
                   'In ${spFormatClockTime(stay.entryAt)}'
                   '${spSameDate(stay.entryAt, now) ? '' : ' (${spFormatDate(stay.entryAt)})'}'
-                  ' · paid ${formatParkingHours(stay.includedHours)}'
-                  ' · until ${spFormatClockTime(stay.paidUntil)}',
+                  ' · Paid ${formatParkingHours(stay.includedHours)}'
+                  ' · Until ${spFormatClockTime(stay.paidUntil)}',
                   style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
                 ),
                 if (left.isNegative && closed > Duration.zero)
@@ -775,6 +813,32 @@ class SpParkedStayRow extends StatelessWidget {
                               'counted.',
                     style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
                   ),
+                if (stay.probablyGoneAt(now)) ...<Widget>[
+                  const SizedBox(height: 4),
+                  Text(
+                    'Probably left without an exit scan. It still counts '
+                    'against the driver until its exit is recorded.',
+                    style: TextStyle(
+                      fontSize: 12,
+                      height: 1.35,
+                      color: AppTheme.warning,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  if (onRecordMissedExit != null)
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: TextButton.icon(
+                        onPressed: () => onRecordMissedExit!(stay),
+                        icon: const Icon(Icons.logout_rounded, size: 16),
+                        label: const Text('Record missed exit'),
+                        style: TextButton.styleFrom(
+                          padding: EdgeInsets.zero,
+                          visualDensity: VisualDensity.compact,
+                        ),
+                      ),
+                    ),
+                ],
               ],
             ),
           ),
@@ -792,7 +856,7 @@ class SpParkedStayRow extends StatelessWidget {
               ),
               if (over)
                 Text(
-                  owed == null ? 'rate missing' : '~${spPeso(owed)}',
+                  owed == null ? 'Rate missing' : '~${spPeso(owed)}',
                   style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w600,

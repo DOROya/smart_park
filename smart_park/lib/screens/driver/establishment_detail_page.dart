@@ -10,7 +10,8 @@ import '../../widgets/sp_facility_contact.dart';
 import '../../services/error_reporter.dart';
 import '../../services/operating_hours.dart';
 import '../../services/parking_checkout_service.dart';
-import '../../services/parking_pricing.dart' show facilityGraceMinutes;
+import '../../services/parking_pricing.dart'
+    show VehicleRates, cheapestStay, facilityCheapestStay, facilityGraceMinutes;
 import '../../theme/app_theme.dart';
 import '../../utils/friendly_error.dart';
 import '../../widgets/smartpark_ui.dart';
@@ -21,6 +22,7 @@ import 'driver_parking_pass_page.dart';
 import 'driver_payment_page.dart';
 import 'driver_vehicle_selection_page.dart';
 import 'services/driver_establishment_service.dart';
+import 'widgets/open_tickets_sheet.dart';
 import 'widgets/save_parking_button.dart';
 
 part 'establishment_detail/rate_display.dart';
@@ -144,23 +146,6 @@ class _EstablishmentDetailPageState extends State<EstablishmentDetailPage>
     if (!await DriverEstablishmentService.openDirections(data)) {
       _showSnackBar('Unable to open maps.');
     }
-  }
-
-  /// Lowest base rate across vehicle types, e.g. "P50", or null.
-  String? _lowestBaseRate(Map<String, dynamic> data, List<String> keys) {
-    double? lowest;
-    String? label;
-    for (final String key in keys) {
-      final String amount = _getQuickRateData(data, key).hourlyAmount;
-      final double? value = double.tryParse(
-        amount.replaceAll(RegExp(r'[^0-9.]'), ''),
-      );
-      if (value != null && value > 0 && (lowest == null || value < lowest)) {
-        lowest = value;
-        label = amount;
-      }
-    }
-    return label;
   }
 
   List<String> _rateVehicleKeys(Map<String, dynamic> data) {
@@ -557,19 +542,17 @@ class _EstablishmentDetailPageState extends State<EstablishmentDetailPage>
         .replaceFirst('+', '');
     String gridValue(String label) {
       final String amount = grid[label]?.amount ?? '';
-      return amount.isEmpty || amount == '₱0' ? '' : amount;
+      return amount.isEmpty || amount == 'PHP 0' ? '' : amount;
     }
 
     final List<Widget> rows = <Widget>[
       _rateRow(
-        'Base rate · first $spBaseStayLabel',
-        quick.hourlyAmount == 'N/A'
-            ? 'Not set'
-            : quick.hourlyAmount.replaceFirst('P', '₱'),
+        'Base rate · First $spBaseStayLabel',
+        quick.hourlyAmount == 'N/A' ? 'Not set' : quick.hourlyAmount,
         strong: true,
       ),
       if (succeedingHour.isNotEmpty)
-        _rateRow('Each succeeding hour', succeedingHour.replaceFirst('P', '₱')),
+        _rateRow('Each succeeding hour', succeedingHour),
       if (gridValue('DAILY').isNotEmpty) _rateRow('Daily', gridValue('DAILY')),
       if (gridValue('WEEKLY').isNotEmpty)
         _rateRow('Weekly', gridValue('WEEKLY')),
@@ -775,7 +758,7 @@ class _EstablishmentDetailPageState extends State<EstablishmentDetailPage>
   }
 
   Widget _buildBottomBar(Map<String, dynamic> data) {
-    final String? fromRate = _lowestBaseRate(data, _rateVehicleKeys(data));
+    final ({double price, int hours})? from = facilityCheapestStay(data);
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
       decoration: BoxDecoration(
@@ -786,17 +769,17 @@ class _EstablishmentDetailPageState extends State<EstablishmentDetailPage>
         top: false,
         child: Row(
           children: [
-            if (fromRate != null) ...[
+            if (from != null) ...[
               Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'From · first $spBaseStayLabel',
+                    'From · First ${from.hours} hrs',
                     style: TextStyle(fontSize: 11, color: AppTheme.textMuted),
                   ),
                   Text(
-                    fromRate.replaceFirst('P', '₱'),
+                    spRate(from.price),
                     style: TextStyle(
                       fontSize: 20,
                       fontWeight: FontWeight.w800,
@@ -858,6 +841,9 @@ class _EstablishmentDetailPageState extends State<EstablishmentDetailPage>
     );
     final List<DriverVehicleOption> vehicleOptions = _vehicleKeys(slotCounts)
         .map((String key) {
+          final ({double price, int hours})? stay = cheapestStay(
+            VehicleRates.from(ratesByType[key]),
+          );
           final _QuickRateData rateData = _getQuickRateData(establishment, key);
           return DriverVehicleOption(
             key: key,
@@ -865,7 +851,11 @@ class _EstablishmentDetailPageState extends State<EstablishmentDetailPage>
             icon: _vehicleIcon(key),
             activeCount: _vehicleCount(activeSlots, key),
             capacity: _vehicleCount(slotCounts, key),
-            rate: '${rateData.hourlyAmount}${rateData.hourlyUnit}',
+            // The cheapest stay this vehicle can pay for online, so a
+            // PHP 10 base reads "PHP 20 / 3 hrs".
+            rate: stay != null
+                ? '${spRate(stay.price)} / ${stay.hours} hrs'
+                : '${rateData.hourlyAmount}${rateData.hourlyUnit}',
           );
         })
         .toList();
@@ -978,6 +968,15 @@ class _EstablishmentDetailPageState extends State<EstablishmentDetailPage>
       // payment page would close the QR instead.
       return false;
     } on FirebaseFunctionsException catch (error) {
+      // Too many open tickets: offer to cancel an unused QR right here
+      // instead of a dead end.
+      if (error.code == 'resource-exhausted' && mounted) {
+        final bool freed = await showOpenTicketsSheet(context);
+        if (freed && mounted) {
+          _showSnackBar('Room made. You can try again now.');
+        }
+        return false;
+      }
       _showSnackBar(
         friendlyError(error, fallback: 'Unable to make the temporary QR.'),
       );

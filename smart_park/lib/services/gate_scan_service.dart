@@ -118,7 +118,7 @@ class GateScanResult {
 
   /// This result after the overtime cash was marked collected.
   GateScanResult markedCollected() => _copy(
-    reason: 'Overtime cash collected. Release.',
+    reason: 'Overtime cash collected. Let them out.',
     overtimeCollected: true,
   );
 }
@@ -173,6 +173,53 @@ String overtimeStatusOf(Map<String, dynamic> data) {
 /// Owner override of an exit's overtime status (e.g. cash handed over without
 /// staff confirming it, or a wrong confirmation). Updates the ticket and its
 /// exit log. Only exits that billed overtime cash can change.
+/// An exit billed overtime when the facility had no rate for the vehicle
+/// ("rate missing"): the owner or a supervisor sets the hourly rate, and
+/// the overtime becomes cash owed at hours x rate. Returns the amount.
+Future<double> setOvertimeRateAsOwner({
+  required String ownerId,
+  required String transactionId,
+  required double ratePerHour,
+  FirebaseFirestore? firestore,
+}) async {
+  if (!(ratePerHour > 0)) throw ArgumentError.value(ratePerHour, 'rate');
+  final FirebaseFirestore db = firestore ?? FirebaseFirestore.instance;
+  final DocumentReference<Map<String, dynamic>> ticketRef = db
+      .collection('transactions')
+      .doc(transactionId);
+  final Map<String, dynamic> ticket =
+      (await ticketRef.get()).data() ?? <String, dynamic>{};
+  if (overtimeStatusOf(ticket) != kOvertimeRateUnresolved) {
+    throw StateError('This exit already has its overtime amount.');
+  }
+  final int hours = ((ticket['overtimeHours'] as num?) ?? 0).toInt();
+  // Whole centavos, as the rules check it.
+  final double rate = (ratePerHour * 100).round() / 100;
+  final double amount = hours * rate;
+  final Map<String, dynamic> fields = <String, dynamic>{
+    'overtimeRate': rate,
+    'overtimeAmount': amount,
+    'overtimeStatus': kOvertimeCashDue,
+    'overtimeStatusBy': ownerId,
+    'overtimeStatusAt': FieldValue.serverTimestamp(),
+  };
+  final String logId = ((ticket['exitLogId'] as String?) ?? '').trim();
+  final WriteBatch batch = db.batch();
+  batch.set(ticketRef, <String, dynamic>{
+    ...fields,
+    'updatedAt': FieldValue.serverTimestamp(),
+  }, SetOptions(merge: true));
+  if (logId.isNotEmpty) {
+    batch.set(
+      db.collection('activity_logs').doc(logId),
+      fields,
+      SetOptions(merge: true),
+    );
+  }
+  await batch.commit();
+  return amount;
+}
+
 Future<void> setOvertimeStatusAsOwner({
   required String ownerId,
   required String transactionId,
@@ -982,6 +1029,39 @@ class GateScanService {
     );
   }
 
+  /// The owner or a supervisor closes a stay whose exit was never scanned:
+  /// the vehicle left at [leftAt], between its entry and now. It is recorded
+  /// like an exit scanned at that time, so overtime counts only up to then,
+  /// and marked `missedExit` so the records show it was entered later.
+  Future<GateScanResult> recordMissedExit({
+    required GateStaff recordedBy,
+    required String facilityId,
+    required String transactionId,
+    required DateTime leftAt,
+  }) async {
+    final DocumentSnapshot<Map<String, dynamic>> snap = await _db
+        .collection('transactions')
+        .doc(transactionId)
+        .get();
+    final Map<String, dynamic>? ticket = snap.data();
+    if (ticket == null) {
+      throw StateError('This ticket no longer exists.');
+    }
+    final DateTime now = _now();
+    final DateTime? entryAt = _parseTimestamp(ticket['entryAt']);
+    DateTime at = leftAt.isAfter(now) ? now : leftAt;
+    if (entryAt != null && at.isBefore(entryAt)) at = entryAt;
+    return _processExitScan(
+      staff: recordedBy,
+      facilityId: facilityId,
+      transactionId: transactionId,
+      plate: ((ticket['vehiclePlate'] as String?) ?? '').trim().toUpperCase(),
+      ticket: ticket,
+      scannedAt: at,
+      missedExit: true,
+    );
+  }
+
   Future<GateScanResult> _processExitScan({
     required GateStaff staff,
     required String facilityId,
@@ -990,6 +1070,7 @@ class GateScanService {
     required Map<String, dynamic> ticket,
     required DateTime scannedAt,
     String? qrPlate,
+    bool missedExit = false,
   }) async {
     final String entryStatus = _entryStatus(ticket);
     if (entryStatus == 'checked_out' || entryStatus == 'exited') {
@@ -1090,15 +1171,21 @@ class GateScanService {
       'createdAt': exitAt,
       ..._driverFields(ticket),
       'qrPlate': ?qrPlate,
+      if (missedExit) ...<String, dynamic>{
+        'missedExit': true,
+        'recordedAt': FieldValue.serverTimestamp(),
+      },
       'status': 'ALLOWED',
       'decision': 'ALLOWED',
-      'decisionReason': extraHours > 0
-          ? (cashDue ? 'Overtime: collect cash.' : 'Overtime: rate missing.')
-          : graced
-          ? 'Within the ${formatGracePeriod(grace)}.'
-          : deducted == 0 && paidHours > 0
-          ? 'Left within $kTurnaroundMinutes minutes: no hours used.'
-          : 'Within paid time.',
+      'decisionReason':
+          '${missedExit ? 'Missed exit, recorded later. ' : ''}'
+          '${extraHours > 0
+              ? (cashDue ? 'Overtime: collect cash.' : 'Overtime: rate missing.')
+              : graced
+              ? 'Within the ${formatGracePeriod(grace)}.'
+              : deducted == 0 && paidHours > 0
+              ? 'Left within $kTurnaroundMinutes minutes: no hours used.'
+              : 'Within paid time.'}',
       'isActive': false,
       'transactionId': transactionId,
       'elapsedSeconds': elapsed.inSeconds,
@@ -1136,13 +1223,16 @@ class GateScanService {
     );
     // An earlier try at this exit that the server refused is settled now.
     if (sent) unsent.resolve(transactionId);
-    await _logStaffAction(
-      staff: staff,
-      action: 'scan_exit',
-      transactionId: transactionId,
-      activityLogId: exitRef.id,
-      vehiclePlate: plate,
-    );
+    // A missed exit is the owner's or supervisor's record, not a gate scan.
+    if (!missedExit) {
+      await _logStaffAction(
+        staff: staff,
+        action: 'scan_exit',
+        transactionId: transactionId,
+        activityLogId: exitRef.id,
+        vehiclePlate: plate,
+      );
+    }
     return GateScanResult(
       decision: 'ALLOWED',
       vehiclePlate: plate,
@@ -1160,13 +1250,15 @@ class GateScanService {
       reason: extraHours > 0
           ? (cashDue ? 'Overtime: collect cash first.' : 'Overtime: confirm.')
           : graced
-          ? 'Within the ${formatGracePeriod(grace)}. No overtime. Release.'
+          ? 'Within the ${formatGracePeriod(grace)}, so no overtime. '
+                'Let them out.'
           : deducted == 0 && paidHours > 0
-          ? 'Left within $kTurnaroundMinutes minutes. No hours used. Release.'
+          ? 'Left within $kTurnaroundMinutes minutes, so no hours were '
+                'used. Let them out.'
           : hoursLeft > 0
-          ? 'Within paid time. ${_hoursText(hoursLeft)} left on ticket. '
-                'Release.'
-          : 'Within paid time. Ticket used up. Release.',
+          ? 'Within paid time. ${_hoursText(hoursLeft)} left on the '
+                'ticket. Let them out.'
+          : 'Within paid time. The ticket is used up. Let them out.',
     );
   }
 
@@ -1359,8 +1451,8 @@ class GateScanService {
       pass: pass,
       reason: pass.status == 'pending'
           ? "Payment in progress on the driver's phone."
-          : 'Temporary QR, not paid yet. If there is space, take payment. '
-                'If not, turn them away: nothing is charged.',
+          : 'Temporary QR, not paid yet. If there is a free slot, tap '
+                'Take payment. If not, tap Turn away; nothing is charged.',
     );
   }
 

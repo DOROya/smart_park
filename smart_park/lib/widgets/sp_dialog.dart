@@ -114,3 +114,56 @@ class SpDialogButton extends StatelessWidget {
     );
   }
 }
+
+/// A small "?" that opens a pop-up explaining a term or a figure, as a few
+/// short [points] (icon and line) under [title].
+class SpHelpButton extends StatelessWidget {
+  const SpHelpButton({
+    super.key,
+    required this.title,
+    required this.points,
+    this.size = 20,
+  });
+
+  final String title;
+  final List<SpDialogPoint> points;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton(
+      tooltip: 'What is this?',
+      visualDensity: VisualDensity.compact,
+      iconSize: size,
+      color: AppTheme.textMuted,
+      icon: const Icon(Icons.help_outline_rounded),
+      onPressed: () => showDialog<void>(
+        context: context,
+        builder: (BuildContext context) => AlertDialog(
+          icon: const SpDialogIcon(
+            Icons.help_outline_rounded,
+            tone: SpDialogTone.info,
+          ),
+          title: Text(title),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                for (int i = 0; i < points.length; i++) ...<Widget>[
+                  if (i > 0) const SizedBox(height: 12),
+                  points[i],
+                ],
+              ],
+            ),
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Got it'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}

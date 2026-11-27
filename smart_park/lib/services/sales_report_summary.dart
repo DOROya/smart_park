@@ -159,9 +159,22 @@ List<SalesMetric> salesMetrics(
     SalesMetric('Payout (est.)', t.payoutCentavos, p?.payoutCentavos),
     SalesMetric('Overtime cash', t.cashCentavos, p?.cashCentavos),
     SalesMetric(
-      'Take-home (payout + cash)',
-      t.payoutCentavos + t.cashCentavos,
-      p == null ? null : p.payoutCentavos + p.cashCentavos,
+      'Walk-in exits',
+      t.walkInCount,
+      p?.walkInCount,
+      unit: SalesUnit.count,
+    ),
+    SalesMetric('Walk-in cash', t.walkInCentavos, p?.walkInCentavos),
+    SalesMetric(
+      'Gate cash handed over by staff',
+      t.handoverCentavos,
+      p?.handoverCentavos,
+      neutral: true,
+    ),
+    SalesMetric(
+      'Take-home (payout + gate cash)',
+      t.takeHomeCentavos,
+      p?.takeHomeCentavos,
     ),
     SalesMetric(
       active,
@@ -196,7 +209,9 @@ String salesNarrative(
   final String what = salesHeadlineName(audience);
   final int total = salesHeadline(report.totals, audience);
   final StringBuffer out = StringBuffer();
-  if (total == 0 && report.totals.cashCentavos == 0) {
+  if (total == 0 &&
+      report.totals.cashCentavos == 0 &&
+      report.totals.walkInCentavos == 0) {
     out.write(
       'No ${what.toLowerCase()} were recorded for '
       '${report.coveredLabel}.',

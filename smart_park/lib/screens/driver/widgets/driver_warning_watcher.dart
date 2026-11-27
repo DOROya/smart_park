@@ -117,7 +117,7 @@ String _warningSource(Map<String, dynamic> warning) {
   return <String>[
     if (facility.isNotEmpty) facility,
     if (at != null) spFormatDate(at),
-  ].join(' · ');
+  ].joinDots();
 }
 
 class _WarningDialog extends StatelessWidget {

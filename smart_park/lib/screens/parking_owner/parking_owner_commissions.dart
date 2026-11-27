@@ -121,7 +121,59 @@ class _CommissionsListContentState extends State<_CommissionsListContent>
                     AsyncSnapshot<QuerySnapshot<Map<String, dynamic>>>
                     splitSnapshot,
                   ) {
-                    return _buildRecords(context, txSnapshot, splitSnapshot);
+                    // Walk-in fees and cash handovers, for the report.
+                    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                      stream: cachedStream(
+                        'walk_in_fees_$facilityId',
+                        () => gateCashQueries(facilityId)[1].snapshots(),
+                      ),
+                      builder: (context, walkInSnapshot) {
+                        return StreamBuilder<
+                          QuerySnapshot<Map<String, dynamic>>
+                        >(
+                          stream: cachedStream(
+                            'cash_handovers_$facilityId',
+                            () => FirebaseFirestore.instance
+                                .collection('cash_handovers')
+                                .where('establishmentId', isEqualTo: facilityId)
+                                .snapshots(),
+                          ),
+                          builder: (context, handoverSnapshot) {
+                            return _buildRecords(
+                              context,
+                              txSnapshot,
+                              splitSnapshot,
+                              walkInLogs: <Map<String, dynamic>>[
+                                for (final QueryDocumentSnapshot<
+                                      Map<String, dynamic>
+                                    >
+                                    d
+                                    in walkInSnapshot.data?.docs ??
+                                        <
+                                          QueryDocumentSnapshot<
+                                            Map<String, dynamic>
+                                          >
+                                        >[])
+                                  d.data(),
+                              ],
+                              handovers: <Map<String, dynamic>>[
+                                for (final QueryDocumentSnapshot<
+                                      Map<String, dynamic>
+                                    >
+                                    d
+                                    in handoverSnapshot.data?.docs ??
+                                        <
+                                          QueryDocumentSnapshot<
+                                            Map<String, dynamic>
+                                          >
+                                        >[])
+                                  d.data(),
+                              ],
+                            );
+                          },
+                        );
+                      },
+                    );
                   },
             );
           },
@@ -131,8 +183,10 @@ class _CommissionsListContentState extends State<_CommissionsListContent>
   Widget _buildRecords(
     BuildContext context,
     AsyncSnapshot<QuerySnapshot<Map<String, dynamic>>> txSnapshot,
-    AsyncSnapshot<QuerySnapshot<Map<String, dynamic>>> splitSnapshot,
-  ) {
+    AsyncSnapshot<QuerySnapshot<Map<String, dynamic>>> splitSnapshot, {
+    List<Map<String, dynamic>> walkInLogs = const <Map<String, dynamic>>[],
+    List<Map<String, dynamic>> handovers = const <Map<String, dynamic>>[],
+  }) {
     if (txSnapshot.hasError && splitSnapshot.hasError) {
       return const SpEmptyState(
         icon: Icons.error_outline_rounded,
@@ -316,7 +370,7 @@ class _CommissionsListContentState extends State<_CommissionsListContent>
         }
         if (data['kind'] == 'extra_hours' && extraHours > 0) {
           driverName =
-              '$driverName · extra $extraHours '
+              '$driverName · Extra $extraHours '
               'hr${extraHours == 1 ? '' : 's'}';
         }
 
@@ -341,7 +395,10 @@ class _CommissionsListContentState extends State<_CommissionsListContent>
       return bDate.compareTo(aDate);
     });
 
-    final List<SalesEntry> entries = _salesEntries(records, txDocs);
+    final List<SalesEntry> entries = <SalesEntry>[
+      ..._salesEntries(records, txDocs),
+      ...gateCashSalesEntries(walkInLogs, handovers),
+    ];
     DateTime? earliest;
     for (final SalesEntry e in entries) {
       if (earliest == null || e.at.isBefore(earliest)) earliest = e.at;
@@ -483,11 +540,27 @@ class _CommissionsListContentState extends State<_CommissionsListContent>
           ),
         ],
         // Walk-in fees staff took in cash, and the facility's whole takings.
-        OwnerWalkInCashRow(
-          facilityId: widget.facilityId,
-          range: range,
-          appCentavos: totals.grossCentavos + totals.cashCentavos,
-        ),
+        if (totals.walkInCount > 0) ...[
+          const SizedBox(height: 10),
+          SpStatRow(
+            left: SpStatTile(
+              icon: Icons.directions_walk_rounded,
+              color: spEntryColor,
+              label: 'Walk-in Cash',
+              caption:
+                  '${totals.walkInCount} walk-in'
+                  '${totals.walkInCount == 1 ? '' : 's'}, no commission',
+              value: formatSalesPeso(totals.walkInCentavos),
+            ),
+            right: SpStatTile(
+              icon: Icons.summarize_rounded,
+              color: spExitColor,
+              label: 'All Takings',
+              caption: 'App sales + all gate cash',
+              value: formatSalesPeso(totals.takingsCentavos),
+            ),
+          ),
+        ],
         const SizedBox(height: 12),
         _buildSalesReport(report, previous),
         const SizedBox(height: 12),

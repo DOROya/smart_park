@@ -164,9 +164,14 @@ class _SpRefundsSectionState extends State<SpRefundsSection> {
                     'suspended or deactivated a facility.'
               : 'If SmartPark suspends or deactivates your facility, drivers '
                     'get back the hours they paid for but could not use.',
-          trailing: toReview == 0 || !_admin
-              ? null
-              : SpChip(label: '$toReview to review', color: spInsideColor),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              if (_admin && toReview > 0)
+                SpChip(label: '$toReview to review', color: spInsideColor),
+              _help(),
+            ],
+          ),
           child: snapshot.hasError
               ? Text(
                   'Could not load refunds.',
@@ -217,6 +222,66 @@ class _SpRefundsSectionState extends State<SpRefundsSection> {
                 ),
         );
       },
+    );
+  }
+
+  /// How refunds work, step by step, for whoever is reading.
+  Widget _help() {
+    final String you = _admin ? 'the owner' : 'you';
+    final String yours = _admin ? 'the owner\'s' : 'your';
+    return SpHelpButton(
+      title: 'How refunds work',
+      points: <SpDialogPoint>[
+        SpDialogPoint(
+          icon: Icons.gpp_maybe_outlined,
+          text:
+              '1. When: only if SmartPark suspends or deactivates a '
+              'facility, so drivers can no longer park on tickets they '
+              'bought there. It happens by itself on deactivation or after '
+              '$kSuspensionRefundDays days of suspension; before that, a '
+              'driver can ask for it.',
+          tone: SpDialogTone.warning,
+        ),
+        const SpDialogPoint(
+          icon: Icons.timelapse_rounded,
+          text:
+              '2. How much: the hours the driver paid for but could not use. '
+              'Hours already parked are not refunded.',
+        ),
+        SpDialogPoint(
+          icon: Icons.account_balance_wallet_outlined,
+          text:
+              '3. Who covers it: $you, if the '
+              'facility was pulled for its own reasons (rates, complaints, '
+              'safety, not operating). SmartPark, if it was pulled over '
+              'permits or documents SmartPark had approved.',
+        ),
+        SpDialogPoint(
+          icon: Icons.replay_rounded,
+          text:
+              '4. Paying it back: ${_admin ? 'the owner does' : 'you do'} not '
+              'pay separately. Up to half of $yours '
+              'share of each online sale goes to it until it is paid off.',
+          tone: SpDialogTone.success,
+        ),
+        SpDialogPoint(
+          icon: Icons.gavel_rounded,
+          text: _admin
+              ? '5. Disputes: an owner can dispute a refund charged to them '
+                    'once. If you uphold it, SmartPark covers it instead.'
+              : '5. Disagree? Tap "Dispute this charge" once per refund. '
+                    'If SmartPark agrees, it covers the refund instead.',
+        ),
+        if (_admin)
+          SpDialogPoint(
+            icon: Icons.how_to_reg_outlined,
+            text:
+                '6. Driver requests: while a facility is suspended, a '
+                'driver can ask for their refund before the '
+                '$kSuspensionRefundDays days are up. You approve or reject '
+                'it here, and PayMongo sends approved money back.',
+          ),
+      ],
     );
   }
 
@@ -547,7 +612,7 @@ class _SpRefundsSectionState extends State<SpRefundsSection> {
           ),
           const Divider(height: 18),
           line(
-            _admin ? 'Paid by owners' : 'Paid by you',
+            _admin ? 'Covered by owners' : 'Covered by you',
             byOwner,
             _admin
                 ? 'Facility pulled for its own reasons (rates, complaints, '
@@ -558,7 +623,7 @@ class _SpRefundsSectionState extends State<SpRefundsSection> {
                       'PayMongo\'s fee are kept back from them.',
           ),
           line(
-            'Paid by SmartPark',
+            'Covered by SmartPark',
             byPlatform,
             'Pulled over permits or documents SmartPark had approved.',
           ),
@@ -680,7 +745,7 @@ class _SpRefundsSectionState extends State<SpRefundsSection> {
       _admin ? 'Failed' : 'Delayed · SmartPark retrying',
       spDeniedColor,
     ),
-    'rejected' => ('Not approved · no refund', AppTheme.textMuted),
+    'rejected' => ('Not approved · No refund', AppTheme.textMuted),
     _ => (r.statusLabel, AppTheme.textMuted),
   };
 
@@ -777,7 +842,7 @@ class _SpRefundsSectionState extends State<SpRefundsSection> {
                 const TextSpan(text: '\n'),
                 label('Unused', '${r.unusedHours} hours of the ticket'),
                 const TextSpan(text: '\n'),
-                label('Paid by', payer),
+                label('Covered by', payer),
                 if (when != null) ...<InlineSpan>[
                   const TextSpan(text: '\n'),
                   label(

@@ -2,6 +2,10 @@ import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 /// An account's access, as the admin Users tab shows it.
+/// The first super admin, who set SmartPark up. Other super admins can't
+/// demote them or remove their access (functions/src/admin_roles.js).
+const String kFoundingSuperAdminUid = 'GWBK5QsdMNMHdPDjiPgrd7g3u3C2';
+
 enum AccessLevel { superAdmin, admin, supervisor, staff, owner, driver, other }
 
 /// Reads `users/{uid}`: admins by `adminLevel` (admins from before levels

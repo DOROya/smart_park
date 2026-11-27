@@ -861,45 +861,116 @@ test("staff clock in and out; the owner can end a forgotten shift", async () => 
   await assertFails(deleteDoc(doc(owner(), "staff_shifts/s7")));
 });
 
-test("drivers rate a facility once per used ticket; owners can't set their score", async () => {
+test("drivers rate a facility once, backed by a used ticket; owners can't set their score", async () => {
   await env.withSecurityRulesDisabled(async (ctx) => {
     const d = ctx.firestore();
     await setDoc(doc(d, "transactions/used1"), {
+      driverId: "driver1", establishmentId: "est1", status: "paid", exitAt: new Date(),
+    });
+    await setDoc(doc(d, "transactions/used2"), {
       driverId: "driver1", establishmentId: "est1", status: "paid", exitAt: new Date(),
     });
     await setDoc(doc(d, "transactions/unused1"), {
       driverId: "driver1", establishmentId: "est1", status: "paid",
     });
   });
+  const id = "facility_ratings/driver1_est1";
   const rating = (extra = {}) => ({
-    establishmentId: "est1", driverId: "driver1", stars: 4, comment: "Easy in and out",
-    createdAt: serverTimestamp(), updatedAt: serverTimestamp(), ...extra,
+    establishmentId: "est1", driverId: "driver1", ticketId: "used1", stars: 4,
+    comment: "Easy in and out", createdAt: serverTimestamp(), updatedAt: serverTimestamp(), ...extra,
   });
   // Nothing to read yet: the ticket screen sees "not rated".
-  await assertSucceeds(getDoc(doc(driver(), "facility_ratings/used1")));
-  await assertSucceeds(setDoc(doc(driver(), "facility_ratings/used1"), rating()));
-  // Only a ticket of theirs that was used, for that ticket's facility.
-  await assertFails(setDoc(doc(driver(), "facility_ratings/unused1"), rating()));
-  await assertFails(setDoc(doc(otherDriver(), "facility_ratings/tx2"), rating({ driverId: "driver2" })));
-  await assertFails(setDoc(doc(driver(), "facility_ratings/tx2"), rating()));
+  await assertSucceeds(getDoc(doc(driver(), id)));
+  await assertSucceeds(setDoc(doc(driver(), id), rating()));
+  // Only under their own "{driverId}_{facility}" id, not a ticket's id.
+  await assertFails(setDoc(doc(driver(), "facility_ratings/used2"), rating()));
+  await assertFails(setDoc(doc(driver(), "facility_ratings/driver1_est2"), rating()));
+  // Only backed by a ticket of theirs that was used, for that facility.
+  await assertFails(setDoc(doc(driver(), id), rating({ ticketId: "unused1" })));
+  await assertFails(setDoc(doc(driver(), id), rating({ ticketId: "tx2" })));
+  await assertFails(setDoc(doc(otherDriver(), "facility_ratings/driver2_est1"), rating({ driverId: "driver2" })));
   // 1-5 whole stars, a short comment, nothing else.
   for (const bad of [{ stars: 0 }, { stars: 6 }, { stars: 4.5 }, { comment: "x".repeat(301) }, { extra: 1 }]) {
-    await assertFails(setDoc(doc(driver(), "facility_ratings/used1"), rating(bad)));
+    await assertFails(setDoc(doc(driver(), id), rating(bad)));
   }
-  // They can change it, keeping when they first rated.
-  await assertSucceeds(updateDoc(doc(driver(), "facility_ratings/used1"), {
-    stars: 5, updatedAt: serverTimestamp(),
+  // They can change it from another used ticket there, keeping when they first rated.
+  await assertSucceeds(updateDoc(doc(driver(), id), {
+    stars: 5, ticketId: "used2", updatedAt: serverTimestamp(),
   }));
-  await assertFails(updateDoc(doc(driver(), "facility_ratings/used1"), {
+  await assertFails(updateDoc(doc(driver(), id), {
     createdAt: new Date(0), updatedAt: serverTimestamp(),
   }));
-  await assertFails(deleteDoc(doc(driver(), "facility_ratings/used1")));
+  await assertFails(deleteDoc(doc(driver(), id)));
   // The owner reads their ratings; another driver doesn't.
-  await assertSucceeds(getDoc(doc(owner(), "facility_ratings/used1")));
-  await assertFails(getDoc(doc(otherDriver(), "facility_ratings/used1")));
+  await assertSucceeds(getDoc(doc(owner(), id)));
+  await assertFails(getDoc(doc(otherDriver(), id)));
   // An owner can't write a score onto their own facility.
   await assertFails(updateDoc(doc(owner(), "establishments/est1"), { rating: 5 }));
   await assertFails(setDoc(doc(owner(), "establishment_details/est1"), { rating: 5, ratingCount: 99 }, { merge: true }));
+});
+
+test("the owner sets a missing overtime rate once, at exactly hours x rate", async () => {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), "transactions/ot1"), {
+      driverId: "driver1", establishmentId: "est1", status: "paid",
+      entryStatus: "checked_out", overtimeHours: 3, overtimeStatus: "rate_unresolved",
+    });
+  });
+  const set = (over = {}) => ({
+    overtimeRate: 25, overtimeAmount: 75, overtimeStatus: "cash_due",
+    overtimeStatusBy: "owner1", overtimeStatusAt: serverTimestamp(), updatedAt: serverTimestamp(),
+    ...over,
+  });
+  await assertFails(updateDoc(doc(owner(), "transactions/ot1"), set({ overtimeAmount: 10 })));
+  await assertFails(updateDoc(doc(owner(), "transactions/ot1"), set({ overtimeStatus: "collected" })));
+  await assertFails(updateDoc(doc(owner(), "transactions/ot1"), set({ overtimeStatusBy: "staff1" })));
+  await assertFails(updateDoc(doc(otherOwner(), "transactions/ot1"), set({ overtimeStatusBy: "owner2" })));
+  await assertFails(updateDoc(doc(driver(), "transactions/ot1"), set({ overtimeStatusBy: "driver1" })));
+  await assertSucceeds(updateDoc(doc(owner(), "transactions/ot1"), set()));
+  // Once set, the rate can't be changed this way again.
+  await assertFails(updateDoc(doc(owner(), "transactions/ot1"), set({ overtimeRate: 30, overtimeAmount: 90 })));
+});
+
+test("the owner records a missed exit, dated between the entry and now", async () => {
+  const entryAt = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const d = ctx.firestore();
+    await setDoc(doc(d, "transactions/stuck1"), {
+      driverId: "driver1", establishmentId: "est1", status: "paid",
+      entryStatus: "checked_in", entryAt, vehiclePlate: "ABC 1234",
+    });
+    await setDoc(doc(d, "activity_logs/entry1"), {
+      establishmentID: "est1", scanType: "entry", isActive: true, staffId: "staff1",
+    });
+  });
+  const leftAt = new Date(entryAt.getTime() + 2 * 60 * 60 * 1000);
+  const exit = (over = {}) => ({
+    entryStatus: "checked_out", exitAt: leftAt, exitStaffId: "owner1", exitLogId: "exit1",
+    staySeconds: 7200, closedSeconds: 0, remainingHours: 0, overtimeHours: 0,
+    overtimeRate: 20, overtimeAmount: 0, overtimeStatus: "none", updatedAt: serverTimestamp(),
+    ...over,
+  });
+  // Not before the entry, not in the future, not under someone else's name.
+  await assertFails(updateDoc(doc(owner(), "transactions/stuck1"), exit({ exitAt: new Date(entryAt.getTime() - 1000) })));
+  await assertFails(updateDoc(doc(owner(), "transactions/stuck1"), exit({ exitAt: new Date(Date.now() + 60 * 60 * 1000) })));
+  await assertFails(updateDoc(doc(owner(), "transactions/stuck1"), exit({ exitStaffId: "staff1" })));
+  // Nor by another owner, nor the driver.
+  await assertFails(updateDoc(doc(otherOwner(), "transactions/stuck1"), exit({ exitStaffId: "owner2" })));
+  await assertFails(updateDoc(doc(driver(), "transactions/stuck1"), exit({ exitStaffId: "driver1" })));
+  await assertSucceeds(updateDoc(doc(owner(), "transactions/stuck1"), exit()));
+  // Its exit log must say it is a missed exit; it closes the entry log.
+  const log = {
+    establishmentID: "est1", staffId: "owner1", scanType: "exit", vehiclePlate: "ABC 1234",
+    timestamp: leftAt, status: "ALLOWED",
+  };
+  await assertFails(setDoc(doc(owner(), "activity_logs/exit0"), log));
+  await assertSucceeds(setDoc(doc(owner(), "activity_logs/exit1"), { ...log, missedExit: true }));
+  await assertFails(setDoc(doc(owner(), "activity_logs/entry2"), { ...log, scanType: "entry", missedExit: true }));
+  await assertSucceeds(updateDoc(doc(owner(), "activity_logs/entry1"), {
+    isActive: false, exitAt: leftAt, exitLogId: "exit1", updatedAt: serverTimestamp(),
+  }));
+  // A ticket that isn't parked can't be "exited" again.
+  await assertFails(updateDoc(doc(owner(), "transactions/stuck1"), exit()));
 });
 
 // ---------- audit log and data exports ----------

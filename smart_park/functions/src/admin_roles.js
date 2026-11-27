@@ -16,6 +16,13 @@ const { HttpsError } = require("firebase-functions/v2/https");
 const { notifyUser } = require("./notify");
 
 const LEVELS = ["admin", "super"];
+/**
+ * The first super admin, who set SmartPark up. Super admins they promote
+ * can't demote them or take their access away; only this account's own
+ * profile in the Firestore console can change it.
+ */
+const FOUNDING_SUPER_ADMIN = "GWBK5QsdMNMHdPDjiPgrd7g3u3C2";
+const FOUNDER_LOCKED = "The first super admin's access can't be changed.";
 /** How recent the caller's password sign-in must be, in seconds. */
 const FRESH_SIGN_IN_SECONDS = 5 * 60;
 
@@ -61,6 +68,7 @@ function levelDenial(callerUid, targetUid, target, level, superCount) {
   if (!LEVELS.includes(level)) return ["invalid-argument", "Pick Admin or Super admin."];
   if (!target || roleOf(target) !== "admin") return ["not-found", "This account is not an admin."];
   if (targetUid === callerUid) return ["failed-precondition", "You can't change your own access."];
+  if (targetUid === FOUNDING_SUPER_ADMIN) return ["permission-denied", FOUNDER_LOCKED];
   if (adminLevelOf(target) === level) return ["failed-precondition", "Nothing to change."];
   if (level === "admin" && superCount <= 1) {
     return ["failed-precondition", "SmartPark needs at least one super admin."];
@@ -72,6 +80,7 @@ function levelDenial(callerUid, targetUid, target, level, superCount) {
 function removeDenial(callerUid, targetUid, target) {
   if (!target || roleOf(target) !== "admin") return ["not-found", "This account is not an admin."];
   if (targetUid === callerUid) return ["failed-precondition", "You can't remove your own access."];
+  if (targetUid === FOUNDING_SUPER_ADMIN) return ["permission-denied", FOUNDER_LOCKED];
   if (isSuperAdmin(target)) {
     return ["failed-precondition", "Make this super admin a normal admin first, then remove access."];
   }
@@ -271,6 +280,7 @@ async function auditEntry(db, action, request, result) {
 module.exports = {
   withArticle,
   LEVELS,
+  FOUNDING_SUPER_ADMIN,
   FRESH_SIGN_IN_SECONDS,
   adminLevelOf,
   isSuperAdmin,

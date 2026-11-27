@@ -2,6 +2,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../widgets/smartpark_ui.dart' show spRate;
 import '../../services/saved_payment.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/sp_vehicle_type.dart';
@@ -95,11 +96,7 @@ class _DriverCheckoutPaymentPageState extends State<DriverCheckoutPaymentPage> {
     super.dispose();
   }
 
-  String _amountText(double amount) {
-    return amount % 1 == 0
-        ? 'P${amount.toStringAsFixed(0)}'
-        : 'P${amount.toStringAsFixed(2)}';
-  }
+  String _amountText(double amount) => spRate(amount);
 
   bool get _savesCard =>
       _selectedMethod == DriverPaymentMethod.card && canSaveCards;
@@ -215,8 +212,9 @@ class _DriverCheckoutPaymentPageState extends State<DriverCheckoutPaymentPage> {
           hint: '4343 4343 4343 4345',
           keyboard: TextInputType.number,
           formatters: <TextInputFormatter>[
-            FilteringTextInputFormatter.allow(RegExp(r'[0-9 ]')),
-            LengthLimitingTextInputFormatter(23),
+            FilteringTextInputFormatter.digitsOnly,
+            LengthLimitingTextInputFormatter(19),
+            const _CardNumberFormatter(),
           ],
           autofill: const <String>[AutofillHints.creditCardNumber],
         ),
@@ -229,8 +227,9 @@ class _DriverCheckoutPaymentPageState extends State<DriverCheckoutPaymentPage> {
                 hint: 'MM/YY',
                 keyboard: TextInputType.datetime,
                 formatters: <TextInputFormatter>[
-                  FilteringTextInputFormatter.allow(RegExp(r'[0-9/]')),
-                  LengthLimitingTextInputFormatter(7),
+                  FilteringTextInputFormatter.digitsOnly,
+                  LengthLimitingTextInputFormatter(4),
+                  const _ExpiryFormatter(),
                 ],
                 autofill: const <String>[
                   AutofillHints.creditCardExpirationDate,
@@ -720,6 +719,62 @@ class _StepLine extends StatelessWidget {
         padding: EdgeInsets.symmetric(horizontal: 8),
         child: Divider(color: AppTheme.accent, thickness: 2),
       ),
+    );
+  }
+}
+
+/// "4343434343434345" as "4343 4343 4343 4345" while it is typed. Runs
+/// after the digits-only filter; [cardDigits] strips the spaces again.
+class _CardNumberFormatter extends TextInputFormatter {
+  const _CardNumberFormatter();
+
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    String digits = newValue.text.replaceAll(' ', '');
+    // Backspace on a space removes the digit before it, or it would come
+    // straight back.
+    if (newValue.text.length < oldValue.text.length &&
+        digits == oldValue.text.replaceAll(' ', '') &&
+        digits.isNotEmpty) {
+      digits = digits.substring(0, digits.length - 1);
+    }
+    final StringBuffer out = StringBuffer();
+    for (int i = 0; i < digits.length; i++) {
+      if (i > 0 && i % 4 == 0) out.write(' ');
+      out.write(digits[i]);
+    }
+    final String text = out.toString();
+    return TextEditingValue(
+      text: text,
+      selection: TextSelection.collapsed(offset: text.length),
+    );
+  }
+}
+
+/// "1230" as "12/30" while it is typed.
+class _ExpiryFormatter extends TextInputFormatter {
+  const _ExpiryFormatter();
+
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    String digits = newValue.text.replaceAll('/', '');
+    if (newValue.text.length < oldValue.text.length &&
+        digits == oldValue.text.replaceAll('/', '') &&
+        digits.isNotEmpty) {
+      digits = digits.substring(0, digits.length - 1);
+    }
+    final String text = digits.length <= 2
+        ? digits
+        : '${digits.substring(0, 2)}/${digits.substring(2)}';
+    return TextEditingValue(
+      text: text,
+      selection: TextSelection.collapsed(offset: text.length),
     );
   }
 }

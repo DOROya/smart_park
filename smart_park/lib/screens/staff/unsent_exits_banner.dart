@@ -43,7 +43,7 @@ class UnsentExitsBanner extends StatelessWidget {
     final String day = spSameDate(exit.leftAt, DateTime.now())
         ? ''
         : ', ${spFormatDate(exit.leftAt)}';
-    return '$plate${exit.walkIn ? ' (walk-in)' : ''} · left '
+    return '$plate${exit.walkIn ? ' (walk-in)' : ''} · Left '
         '${spFormatClockTime(exit.leftAt)}$day';
   }
 

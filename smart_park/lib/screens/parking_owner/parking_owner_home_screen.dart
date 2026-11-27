@@ -24,9 +24,12 @@ import '../../services/facility_status.dart'
     show ComplianceNotice, facilityRestrictionReasons;
 import '../../services/gate_scan_service.dart'
     show
+        GateScanService,
+        GateStaff,
         isStaffRecordActive,
         kOvertimeCashDue,
         kOvertimeCollected,
+        setOvertimeRateAsOwner,
         setOvertimeStatusAsOwner;
 import '../../services/establishment_repository.dart';
 import '../../services/driver_reports.dart' show driverReportsSummary;
@@ -35,6 +38,7 @@ import '../../services/parking_pricing.dart'
         facilityGraceMinutes,
         formatGracePeriod,
         formatParkingHours,
+        resolveOvertimeRate,
         graceOptionLabel;
 import '../../services/platform_fees.dart';
 import '../../services/sales_report.dart';
@@ -64,7 +68,7 @@ import 'widgets/owner_closure_card.dart';
 import 'widgets/owner_daily_summary_card.dart';
 import 'widgets/owner_duty_log_card.dart';
 import 'widgets/owner_ratings_card.dart';
-import 'widgets/owner_walk_in_cash_row.dart';
+import '../../services/gate_cash.dart';
 import 'widgets/facility_registration_dialog.dart';
 import 'widgets/facility_review_status_banner.dart';
 import '../staff/staff_home_page.dart';

@@ -62,6 +62,106 @@ void main() {
     service = GateScanService(firestore: db, clock: () => now);
   });
 
+  test('the owner sets a missing overtime rate: hours x rate, owed', () async {
+    await seedTicket('t9', <String, dynamic>{
+      'entryStatus': 'checked_out',
+      'overtimeHours': 3,
+      'overtimeStatus': 'rate_unresolved',
+      'exitLogId': 'log9',
+    });
+    await db.collection('activity_logs').doc('log9').set(<String, dynamic>{
+      'overtimeHours': 3,
+      'overtimeStatus': 'rate_unresolved',
+    });
+    final double amount = await setOvertimeRateAsOwner(
+      ownerId: 'owner-1',
+      transactionId: 't9',
+      ratePerHour: 25,
+      firestore: db,
+    );
+    expect(amount, 75);
+    final Map<String, dynamic> t = await ticket('t9');
+    expect(t['overtimeStatus'], kOvertimeCashDue);
+    expect(t['overtimeAmount'], 75);
+    expect(
+      (await db.collection('activity_logs').doc('log9').get())
+          .data()!['overtimeAmount'],
+      75,
+    );
+    // Only once: it now has an amount.
+    expect(
+      () => setOvertimeRateAsOwner(
+        ownerId: 'owner-1',
+        transactionId: 't9',
+        ratePerHour: 30,
+        firestore: db,
+      ),
+      throwsStateError,
+    );
+  });
+
+  group('recordMissedExit', () {
+    const GateStaff ownerActor = GateStaff(
+      staffId: 'owner-1',
+      email: 'owner@example.com',
+      facilityId: facilityId,
+      ownerId: 'owner-1',
+    );
+
+    test('closes a forgotten stay at the time it left, no overtime by '
+        'default', () async {
+      await db.collection('establishment_details').doc(facilityId).set(
+        <String, dynamic>{
+          'rates': <String, dynamic>{
+            'car': <String, dynamic>{'initial': 40, 'succeedingHour': 20},
+          },
+        },
+      );
+      // Parked three days ago on a 2-hour ticket; nobody scanned it out.
+      final DateTime entry = now.subtract(const Duration(days: 3));
+      await seedTicket('t1', <String, dynamic>{
+        'entryStatus': 'checked_in',
+        'entryAt': Timestamp.fromDate(entry),
+        'remainingHours': 2,
+      });
+      final GateScanResult r = await service.recordMissedExit(
+        recordedBy: ownerActor,
+        facilityId: facilityId,
+        transactionId: 't1',
+        leftAt: entry.add(const Duration(hours: 2)),
+      );
+      expect(r.isAllowed, isTrue);
+      final Map<String, dynamic> t = await ticket('t1');
+      expect(t['entryStatus'], 'checked_out');
+      expect(t['overtimeHours'], 0);
+      expect(t['exitStaffId'], 'owner-1');
+      final Map<String, dynamic> log = (await activityLogs()).single;
+      expect(log['missedExit'], isTrue);
+      expect(
+        (log['decisionReason'] as String).startsWith('Missed exit'),
+        isTrue,
+      );
+    });
+
+    test('never dates the exit before the entry or after now', () async {
+      final DateTime entry = now.subtract(const Duration(days: 2));
+      await seedTicket('t2', <String, dynamic>{
+        'entryStatus': 'checked_in',
+        'entryAt': Timestamp.fromDate(entry),
+        'remainingHours': 2,
+      });
+      await service.recordMissedExit(
+        recordedBy: ownerActor,
+        facilityId: facilityId,
+        transactionId: 't2',
+        leftAt: now.add(const Duration(days: 1)),
+      );
+      final DateTime? exitAt = ((await ticket('t2'))['exitAt'] as Timestamp?)
+          ?.toDate();
+      expect(exitAt, now);
+    });
+  });
+
   group('resolveAssignment', () {
     test('prefers the staff record linked to the uid', () async {
       await db.collection('staff_accounts').add(<String, dynamic>{
@@ -569,7 +669,10 @@ void main() {
       final GateScanResult? r = await scan(qr('t1'), mode: 'exit');
       expect(r!.isAllowed, isTrue);
       expect(r.billableHours, 2);
-      expect(r.reason, 'Within paid time. 22 hours left on ticket. Release.');
+      expect(
+        r.reason,
+        'Within paid time. 22 hours left on the ticket. Let them out.',
+      );
       final Map<String, dynamic> t = await ticket('t1');
       expect(t['entryStatus'], 'checked_out');
       expect(t['remainingHours'], 22);
@@ -653,7 +756,7 @@ void main() {
         expect(r.graceMinutes, kDefaultGraceMinutes);
         expect(
           r.reason,
-          'Within the 20-minute grace period. No overtime. Release.',
+          'Within the 20-minute grace period, so no overtime. Let them out.',
         );
         final Map<String, dynamic> t = await ticket('t1');
         expect(t['overtimeStatus'], kOvertimeNone);
@@ -700,7 +803,10 @@ void main() {
         await withRate();
         await seedInside(const Duration(hours: 1), <String, dynamic>{});
         final GateScanResult? r = await scan(qr('t1'), mode: 'exit');
-        expect(r!.reason, 'Within paid time. Ticket used up. Release.');
+        expect(
+          r!.reason,
+          'Within paid time. The ticket is used up. Let them out.',
+        );
       });
     });
 
@@ -711,7 +817,10 @@ void main() {
       });
       final GateScanResult? r = await scan(qr('t1'), mode: 'exit');
       expect(r!.hasOvertime, isFalse);
-      expect(r.reason, 'Within paid time. Ticket used up. Release.');
+      expect(
+        r.reason,
+        'Within paid time. The ticket is used up. Let them out.',
+      );
       expect((await ticket('t1'))['remainingHours'], 0);
     });
 

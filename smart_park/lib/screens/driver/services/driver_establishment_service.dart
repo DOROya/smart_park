@@ -1,3 +1,4 @@
+import '../../../services/parking_pricing.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
@@ -25,9 +26,21 @@ enum DriverSortOption {
 class DriverEstablishmentService {
   const DriverEstablishmentService._();
 
-  /// Lowest base rate (the first hours) across the facility's vehicle types,
-  /// or null if it has none on record.
-  static double? startingPrice(Map<String, dynamic> data) {
+  /// The cheapest stay a driver can pay for here (see
+  /// [facilityCheapestStay]), or the old base rate for facilities whose
+  /// rates aren't stored per vehicle.
+  static ({double price, int hours})? startingStay(Map<String, dynamic> data) {
+    final ({double price, int hours})? stay = facilityCheapestStay(data);
+    if (stay != null) return stay;
+    final double? price = _oldStartingPrice(data);
+    return price == null ? null : (price: price, hours: kBaseStayHours);
+  }
+
+  /// Price of [startingStay], for sorting by price.
+  static double? startingPrice(Map<String, dynamic> data) =>
+      startingStay(data)?.price;
+
+  static double? _oldStartingPrice(Map<String, dynamic> data) {
     final Object? rawRates = data['rates'] ?? data['ratesByType'];
     final Map<dynamic, dynamic> rates = rawRates is Map
         ? rawRates

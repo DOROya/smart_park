@@ -332,12 +332,38 @@ service cloud.firestore {
         request.resource.data.get('overtimeStatusBy', null) == uid();
     }
 
+    // Overtime billed while the facility had no rate for the vehicle: the
+    // owner (or supervisor) sets the hourly rate once, and it becomes cash
+    // owed at exactly the recorded hours times that rate.
+    function ownerOvertimeRateOk() {
+      let after = request.resource.data;
+      return resource.data.get('overtimeStatus', '') == 'rate_unresolved' &&
+        after.get('overtimeStatus', '') == 'cash_due' &&
+        after.diff(resource.data).affectedKeys().hasOnly([
+          'overtimeRate', 'overtimeAmount', 'overtimeStatus',
+          'overtimeStatusBy', 'overtimeStatusAt', 'updatedAt'
+        ]) &&
+        after.overtimeRate is number && after.overtimeRate > 0 &&
+        after.overtimeRate <= 100000 &&
+        after.overtimeAmount ==
+          after.overtimeRate * resource.data.get('overtimeHours', 0) &&
+        after.get('overtimeStatusBy', null) == uid();
+    }
+
     // A gate log is a record, so staff change one only in the three ways
     // the gate itself does. What a scan wrote down (plate, time, decision,
     // hours, amounts, who scanned) can't be rewritten afterwards.
     //  - an exit closes the entry log it belongs to;
     //  - an entry just admitted is refused as the wrong vehicle type;
     //  - overtime cash owed on an exit is marked collected, by themselves.
+    // An exit closes the entry log it belongs to.
+    function entryLogCloseOk() {
+      return resource.data.get('scanType', '') == 'entry' &&
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['isActive', 'exitAt', 'exitLogId', 'updatedAt']) &&
+        request.resource.data.get('isActive', false) == false;
+    }
+
     function staffLogUpdateOk() {
       let changed = request.resource.data.diff(resource.data).affectedKeys();
       let after = request.resource.data;
@@ -387,14 +413,19 @@ service cloud.firestore {
 
     match /activity_logs/{logId} {
       allow read: if canSeeEstablishment(resource.data.establishmentID);
-      allow create: if isStaffOf(request.resource.data.establishmentID) &&
+      allow create: if (isStaffOf(request.resource.data.establishmentID) ||
+          (isOwnerOf(request.resource.data.establishmentID) &&
+            request.resource.data.get('missedExit', false) == true &&
+            request.resource.data.get('scanType', '') == 'exit')) &&
         request.resource.data.staffId == uid() &&
         !('cashHandoverId' in request.resource.data) &&
         walkInFeeOk(request.resource.data);
       allow update: if (isStaffOf(resource.data.establishmentID) &&
           staffLogUpdateOk()) ||
+        (isOwnerOf(resource.data.establishmentID) && entryLogCloseOk()) ||
         (canOperate(resource.data.establishmentID) &&
-          (ownerOvertimeUpdateOk() || ownerHandoverUpdateOk()));
+          (ownerOvertimeUpdateOk() || ownerHandoverUpdateOk() ||
+            ownerOvertimeRateOk()));
       allow delete: if false;
     }
 
@@ -493,6 +524,21 @@ service cloud.firestore {
       ]) && overtimeCollectorOk();
     }
 
+    // The owner closes a stay whose exit was never scanned (a supervisor,
+    // being staff, already can): the same fields an exit scan writes, with
+    // the exit dated between the entry and now, recorded under their uid.
+    function missedExitTicketOk() {
+      let after = request.resource.data;
+      return resource.data.get('entryStatus', '') in ['checked_in', 'inside'] &&
+        after.get('entryStatus', '') == 'checked_out' &&
+        after.get('exitStaffId', '') == uid() &&
+        after.exitAt is timestamp &&
+        after.exitAt <= request.time &&
+        (resource.data.get('entryAt', null) == null ||
+          after.exitAt >= resource.data.entryAt) &&
+        staffTicketUpdateOk();
+    }
+
     // Staff log drive-up customers as walk-ins: already checked in, no
     // driver, no money. They only count toward slot occupancy.
     function walkInCreateOk() {
@@ -565,7 +611,9 @@ service cloud.firestore {
       allow delete: if false;
       allow update: if (isStaffOf(resource.data.establishmentId) &&
           staffTicketUpdateOk()) ||
-        (canOperate(resource.data.establishmentId) && ownerOvertimeUpdateOk()) ||
+        (canOperate(resource.data.establishmentId) &&
+          (ownerOvertimeUpdateOk() || ownerOvertimeRateOk())) ||
+        (isOwnerOf(resource.data.establishmentId) && missedExitTicketOk()) ||
         driverPlateUpdateOk();
     }
 
@@ -722,22 +770,27 @@ service cloud.firestore {
     // (its id), only on their own ticket once it has been used (an exit is
     // on record), 1-5 stars and an optional comment. They may change it;
     // the facility's owner reads it; the server keeps the average.
-    function ratingFieldsOk(ticketId) {
+    // One rating per driver per facility, id "{driverId}_{establishmentId}",
+    // backed by a used ticket of theirs there (ticketId). Older ratings were
+    // saved per ticket under the ticket's id; they stay readable.
+    function ratingFieldsOk(ratingId) {
       let d = request.resource.data;
-      let t = get(/databases/$(database)/documents/transactions/$(ticketId)).data;
+      let t = get(/databases/$(database)/documents/transactions/$(d.ticketId)).data;
       return signedIn() &&
         d.driverId == uid() &&
+        ratingId == uid() + '_' + d.establishmentId &&
+        d.ticketId is string &&
         t.get('driverId', '') == uid() &&
         d.establishmentId == t.get('establishmentId', '') &&
         t.get('exitAt', null) != null &&
-        d.keys().hasOnly(['establishmentId', 'driverId', 'stars', 'comment',
-          'createdAt', 'updatedAt']) &&
+        d.keys().hasOnly(['establishmentId', 'driverId', 'ticketId', 'stars',
+          'comment', 'createdAt', 'updatedAt']) &&
         d.stars is int && d.stars >= 1 && d.stars <= 5 &&
         d.get('comment', '') is string && d.get('comment', '').size() <= 300 &&
         d.updatedAt == request.time;
     }
 
-    match /facility_ratings/{ticketId} {
+    match /facility_ratings/{ratingId} {
       // A missing rating reads as missing (nothing to hide), so the ticket
       // screen can tell whether to ask for one.
       allow get: if signedIn() && (resource == null ||
@@ -745,9 +798,9 @@ service cloud.firestore {
         canOperate(resource.data.establishmentId) || isAdmin());
       allow list: if isAdmin() || canOperate(resource.data.establishmentId) ||
         (signedIn() && resource.data.driverId == uid());
-      allow create: if ratingFieldsOk(ticketId) &&
+      allow create: if ratingFieldsOk(ratingId) &&
         request.resource.data.createdAt == request.time;
-      allow update: if ratingFieldsOk(ticketId) &&
+      allow update: if ratingFieldsOk(ratingId) &&
         resource.data.driverId == uid() &&
         request.resource.data.createdAt == resource.data.createdAt;
       allow delete: if false;

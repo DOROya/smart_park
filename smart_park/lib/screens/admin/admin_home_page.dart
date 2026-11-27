@@ -317,9 +317,7 @@ class _AdminHomePageState extends State<AdminHomePage>
     }).toList();
   }
 
-  String _rateAmount(double amount) => amount % 1 == 0
-      ? '₱${amount.toStringAsFixed(0)}'
-      : '₱${amount.toStringAsFixed(2)}';
+  String _rateAmount(double amount) => spRate(amount);
 
   /// One card per vehicle type: its slot count and each rate on its own
   /// line ("First 2 hrs  ₱30", "Each extra hour  ₱10"), so admins can read
@@ -950,8 +948,8 @@ class _AdminHomePageState extends State<AdminHomePage>
           ),
           title: const Text('Approve without documents?'),
           content: const Text(
-            'This establishment has no business documents on file. '
-            'Approve it anyway?',
+            'This facility has no business documents on file. Approve it '
+            'anyway?',
           ),
           actions: [
             TextButton(

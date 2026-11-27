@@ -126,6 +126,10 @@ class _StaffHomePageState extends State<StaffHomePage>
   late final MobileScannerController _scannerController;
   bool _isProcessingScan = false;
   GateScanResult? _lastScanResult;
+
+  /// Clears a finished scan so the tab returns to its ready state.
+  Timer? _resultReset;
+  static const Duration _resultShownFor = Duration(seconds: 12);
   bool _markingOvertime = false;
   bool _refusingEntry = false;
 
@@ -182,6 +186,7 @@ class _StaffHomePageState extends State<StaffHomePage>
   @override
   void dispose() {
     pendingShortcut.removeListener(_onShortcut);
+    _resultReset?.cancel();
     unawaited(_staffRecordSub?.cancel());
     _gateService.dispose();
     _unsentExits.dispose();
@@ -250,6 +255,28 @@ class _StaffHomePageState extends State<StaffHomePage>
     );
   }
 
+  /// A card that still needs staff: a temporary QR waiting for payment or a
+  /// turn-away, or overtime cash not yet marked collected.
+  bool _resultNeedsAction(GateScanResult result) =>
+      result.isTemporary || (result.hasOvertime && !result.overtimeCollected);
+
+  /// Starts the countdown that clears the card on screen, unless it still
+  /// needs staff (then it stays until they act, which restarts this).
+  void _armResultReset() {
+    _resultReset?.cancel();
+    final GateScanResult? shown = _lastScanResult;
+    if (shown == null || _resultNeedsAction(shown)) return;
+    _resultReset = Timer(_resultShownFor, () {
+      if (!mounted || !identical(_lastScanResult, shown)) return;
+      // Mid-tap on "Wrong vehicle": let that finish first.
+      if (_refusingEntry || _markingOvertime) {
+        _armResultReset();
+        return;
+      }
+      setState(() => _lastScanResult = null);
+    });
+  }
+
   /// Shows [result]; null means the scan was ignored as a duplicate.
   void _presentGateResult(GateScanResult? result) {
     _isProcessingScan = false;
@@ -272,6 +299,7 @@ class _StaffHomePageState extends State<StaffHomePage>
     setState(() {
       _lastScanResult = result;
     });
+    _armResultReset();
   }
 
   void _onBarcodeDetect(BarcodeCapture capture) {
@@ -340,6 +368,7 @@ class _StaffHomePageState extends State<StaffHomePage>
       );
       if (mounted && identical(_lastScanResult, result)) {
         setState(() => _lastScanResult = refused);
+        _armResultReset();
       }
     } catch (error) {
       if (!mounted) return;
@@ -371,6 +400,7 @@ class _StaffHomePageState extends State<StaffHomePage>
         _lastScanResult = result.markedCollected();
       }
     });
+    _armResultReset();
   }
 
   /// Turns away the vehicle on the entry just admitted because it isn't the
@@ -389,6 +419,7 @@ class _StaffHomePageState extends State<StaffHomePage>
         _refusingEntry = false;
         if (identical(_lastScanResult, result)) _lastScanResult = refused;
       });
+      _armResultReset();
       // Walk-ins have no driver to flag.
       if (((ticket['driverId'] as String?) ?? '').trim().isEmpty) return;
       await showFlagIncidentDialog(

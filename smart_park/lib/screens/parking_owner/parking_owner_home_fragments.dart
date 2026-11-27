@@ -154,7 +154,9 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
               if (resolving)
                 const SpSkeletonList()
               else
-                const SpEmptyState(
+                _noFacilityState(
+                  ownerId: ownerId,
+                  ownerData: ownerData,
                   icon: Icons.add_business_rounded,
                   message:
                       'Register your facility to start onboarding staff and '
@@ -221,6 +223,14 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
                         : ((facility['availability'] as num?) ?? 0).toInt();
                     final Widget overstayCard = SpOverstayCard(
                       facilityId: establishmentId,
+                      onRecordMissedExit: (SpParkedStay stay) =>
+                          _recordMissedExit(
+                            stay,
+                            facilityId: establishmentId,
+                            ownerId:
+                                ((facility['ownerId'] as String?) ?? ownerId)
+                                    .trim(),
+                          ),
                       rates: _ratesOf(details),
                       graceMinutes: facilityGraceMinutes(details),
                       // A temporary closure is closed time too.
@@ -494,6 +504,8 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
         log: data,
         onSetOvertimeStatus: (Map<String, dynamic> log, String status) =>
             _ownerSetOvertimeStatus(context, log, status),
+        onSetOvertimeRate: (Map<String, dynamic> log) =>
+            _ownerSetOvertimeRate(context, log),
       ),
     );
   }
@@ -519,7 +531,7 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
       final String perMonth = (value['monthly'] ?? '').toString().trim();
       if (perWeek.isNotEmpty) parts.add('PHP $perWeek/week');
       if (perMonth.isNotEmpty) parts.add('PHP $perMonth/month');
-      return parts.join(' · ');
+      return parts.joinDots();
     }
     final String text = (value ?? '').toString().trim();
     return text.isEmpty ? 'Not set' : text;
@@ -588,7 +600,7 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
       summary: <String>[
         if (hours.isNotEmpty) hours,
         '${grace[0].toUpperCase()}${grace.substring(1)}',
-      ].join(' · '),
+      ].joinDots(),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -677,6 +689,156 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
     );
   }
 
+  /// Closes a stay whose exit was never scanned. The owner (or supervisor)
+  /// says when the vehicle left; by default the end of its paid time and
+  /// grace, so no overtime is charged for time nobody saw.
+  Future<void> _recordMissedExit(
+    SpParkedStay stay, {
+    required String facilityId,
+    required String ownerId,
+  }) async {
+    final DateTime now = DateTime.now();
+    DateTime leftAt = stay.assumedExit.isAfter(now) ? now : stay.assumedExit;
+    final bool? ok = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) => StatefulBuilder(
+        builder: (BuildContext context, StateSetter setLocal) {
+          Future<void> pick() async {
+            final DateTime? day = await showDatePicker(
+              context: context,
+              initialDate: leftAt,
+              firstDate: DateTime(
+                stay.entryAt.year,
+                stay.entryAt.month,
+                stay.entryAt.day,
+              ),
+              lastDate: now,
+            );
+            if (day == null || !context.mounted) return;
+            final TimeOfDay? time = await showTimePicker(
+              context: context,
+              initialTime: TimeOfDay.fromDateTime(leftAt),
+            );
+            if (time == null) return;
+            DateTime picked = DateTime(
+              day.year,
+              day.month,
+              day.day,
+              time.hour,
+              time.minute,
+            );
+            if (picked.isBefore(stay.entryAt)) picked = stay.entryAt;
+            if (picked.isAfter(now)) picked = now;
+            setLocal(() => leftAt = picked);
+          }
+
+          final bool overtime = leftAt.isAfter(stay.assumedExit);
+          return AlertDialog(
+            icon: const SpDialogIcon(
+              Icons.logout_rounded,
+              tone: SpDialogTone.warning,
+            ),
+            title: Text('Record a missed exit for ${stay.plate}?'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  'It came in ${spFormatDate(stay.entryAt)}, '
+                  '${spFormatClockTime(stay.entryAt)}, and its exit was never '
+                  'scanned. Recording the exit frees the driver to use '
+                  'SmartPark again.',
+                  style: const TextStyle(height: 1.4),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: <Widget>[
+                    Expanded(
+                      child: Text(
+                        'Left ${spFormatDate(leftAt)}, '
+                        '${spFormatClockTime(leftAt)}',
+                        style: const TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                    TextButton(onPressed: pick, child: const Text('Change')),
+                  ],
+                ),
+                Text(
+                  overtime
+                      ? 'Overtime is counted up to this time and shows as '
+                            'cash owed.'
+                      : 'If you don\'t know when it left, keep this time: '
+                            'it is the end of its paid time, so no overtime '
+                            'is charged.',
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    height: 1.35,
+                    color: AppTheme.textMuted,
+                  ),
+                ),
+              ],
+            ),
+            actions: <Widget>[
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(context).pop(true),
+                child: const Text('Record exit'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+    if (ok != true || !mounted) return;
+    final User? user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+    try {
+      await GateScanService().recordMissedExit(
+        recordedBy: GateStaff(
+          staffId: user.uid,
+          email: user.email ?? '',
+          facilityId: facilityId,
+          ownerId: ownerId,
+          name: (user.displayName ?? '').replaceAll('|', ' ').trim(),
+        ),
+        facilityId: facilityId,
+        transactionId: stay.transactionId,
+        leftAt: leftAt,
+      );
+      _showSnackBar('Exit recorded for ${stay.plate}.');
+    } catch (error, stack) {
+      reportError(error, stack, reason: 'Record missed exit');
+      _showSnackBar(
+        friendlyError(error, fallback: 'Could not record the exit.'),
+      );
+    }
+  }
+
+  /// What an owner tab shows before there is a facility: why it is empty,
+  /// and a shortcut to register one. Supervisors always have a facility.
+  Widget _noFacilityState({
+    required String ownerId,
+    required Map<String, dynamic> ownerData,
+    required String message,
+    IconData icon = Icons.storefront_outlined,
+  }) {
+    return SpEmptyState(
+      icon: icon,
+      message: message,
+      action: _supervisor
+          ? null
+          : FilledButton.icon(
+              onPressed: () =>
+                  _openFacilityDialog(ownerId: ownerId, ownerData: ownerData),
+              icon: const Icon(Icons.add_business_rounded, size: 18),
+              label: const Text('Register Facility'),
+            ),
+    );
+  }
+
   Widget _buildGateActivityTab({
     required String ownerId,
     required Map<String, dynamic> ownerData,
@@ -697,8 +859,9 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
               if (resolving)
                 const SpSkeletonList()
               else
-                const SpEmptyState(
-                  icon: Icons.storefront_outlined,
+                _noFacilityState(
+                  ownerId: ownerId,
+                  ownerData: ownerData,
                   message: 'Register a facility to see gate activity.',
                 ),
             ],
@@ -735,6 +898,34 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
       ownerData: ownerData,
       builder: (String facilityId, bool resolving) {
         final bool hasFacilityId = facilityId.isNotEmpty;
+
+        // Like the other tabs: a header and one card that leads to
+        // registering, instead of a form that can't be used yet.
+        if (!hasFacilityId) {
+          return ListView(
+            padding: const EdgeInsets.only(top: 8),
+            children: [
+              const SpPageHeader(
+                title: 'Staff',
+                subtitle:
+                    'Manage staff accounts, the cash they hand over and '
+                    'their duty log.',
+              ),
+              const SizedBox(height: 16),
+              if (resolving)
+                const SpSkeletonList()
+              else
+                _noFacilityState(
+                  ownerId: ownerId,
+                  ownerData: ownerData,
+                  icon: Icons.groups_outlined,
+                  message:
+                      'Register your facility first, then add gate staff and '
+                      'supervisors here.',
+                ),
+            ],
+          );
+        }
 
         final Widget addStaffCard = SpSectionCard(
           icon: Icons.person_add_alt_1_rounded,
@@ -1021,7 +1212,7 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
         : stats == null
         ? 'No scans today'
         : '${stats.scans} scan${stats.scans == 1 ? '' : 's'} today'
-              '${stats.last == null ? '' : ' · last ${spFormatClockTime(stats.last!)}'}';
+              '${stats.last == null ? '' : ' · Last ${spFormatClockTime(stats.last!)}'}';
     final String cashLine =
         deactivated ||
             stats == null ||
@@ -1032,7 +1223,7 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
               '${spPeso(stats.overtimeCollected)} overtime cash to hand over',
             if (stats.overtimeOwed > 0)
               '${spPeso(stats.overtimeOwed)} not confirmed',
-          ].join(' · ');
+          ].joinDots();
     final bool cashOwed = (stats?.overtimeOwed ?? 0) > 0;
 
     return Container(
@@ -1556,8 +1747,9 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
             if (resolving)
               const SpSkeletonList()
             else if (facilityId.isEmpty)
-              const SpEmptyState(
-                icon: Icons.storefront_outlined,
+              _noFacilityState(
+                ownerId: ownerId,
+                ownerData: ownerData,
                 message:
                     'Register your facility first so transactions can be '
                     'tracked here.',

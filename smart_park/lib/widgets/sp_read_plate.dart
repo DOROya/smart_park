@@ -241,7 +241,13 @@ class _ReadPlateSheetState extends State<ReadPlateSheet> {
                     child: OutlinedButton.icon(
                       onPressed: _take,
                       icon: const Icon(Icons.photo_camera_outlined),
-                      label: Text(_cancelled ? 'Take photo' : 'Try again'),
+                      label: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text(
+                          _cancelled ? 'Take photo' : 'Try again',
+                          maxLines: 1,
+                        ),
+                      ),
                     ),
                   ),
                   const SizedBox(width: 10),
@@ -252,7 +258,10 @@ class _ReadPlateSheetState extends State<ReadPlateSheet> {
                           : () => Navigator.of(
                               context,
                             ).pop(normalizePlate(_plate.text)),
-                      child: const Text('Use this plate'),
+                      child: const FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text('Use this plate', maxLines: 1),
+                      ),
                     ),
                   ),
                 ],

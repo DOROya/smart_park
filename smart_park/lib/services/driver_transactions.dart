@@ -1,6 +1,6 @@
 import 'parking_receipt.dart';
 import 'parking_refunds.dart';
-import '../widgets/smartpark_ui.dart' show spParseDateTime;
+import '../widgets/smartpark_ui.dart' show SpJoinDots, spParseDateTime;
 
 /// What a line in the driver's Transaction History is.
 enum DriverTransactionKind { ticket, extraHours, overtime, refund }
@@ -88,7 +88,7 @@ List<DriverTransaction> driverTransactions({
           detail: <String>[
             _plan(t),
             plate.toUpperCase(),
-          ].where((String s) => s.isNotEmpty).join(' · '),
+          ].where((String s) => s.isNotEmpty).joinDots(),
           ticketId: id,
         ),
       );

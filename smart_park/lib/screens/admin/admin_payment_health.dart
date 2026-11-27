@@ -7,6 +7,7 @@ import '../../services/error_reporter.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/friendly_error.dart';
 import '../../widgets/smartpark_ui.dart';
+import '../../widgets/sp_dialog.dart';
 
 /// One day on the payment health chart.
 class PaymentHealthDay {
@@ -225,19 +226,64 @@ class _AdminPaymentHealthCardState extends State<AdminPaymentHealthCard> {
       icon: Icons.monitor_heart_outlined,
       title: 'Payment Health',
       subtitle:
-          'Whether every payment became a ticket. "Rescued" payments were '
-          'paid while the phone lost connection, and finished by the '
-          '15-minute check.',
-      trailing: IconButton(
-        tooltip: 'Refresh',
-        onPressed: _loading ? null : _refresh,
-        icon: _loading
-            ? const SizedBox(
-                width: 18,
-                height: 18,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              )
-            : const Icon(Icons.refresh_rounded),
+          'Whether every payment a driver made became a ticket. Tap ? to '
+          'see what each number means.',
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          const SpHelpButton(
+            title: 'Payment Health',
+            points: <SpDialogPoint>[
+              SpDialogPoint(
+                icon: Icons.payments_outlined,
+                text:
+                    'Paid: payments that became tickets. Most are confirmed '
+                    'right away in the driver\'s app.',
+              ),
+              SpDialogPoint(
+                icon: Icons.healing_rounded,
+                text:
+                    'Auto-recovered: the driver paid, but their phone lost '
+                    'signal or the app closed before the ticket was '
+                    'confirmed. Every 15 minutes SmartPark asks PayMongo '
+                    'about such payments and finishes them, so the driver '
+                    'still gets their ticket. A few are normal; many mean '
+                    'drivers are having connection problems.',
+                tone: SpDialogTone.success,
+              ),
+              SpDialogPoint(
+                icon: Icons.hourglass_top_rounded,
+                text:
+                    'In progress now: payments still open. "Stuck" ones '
+                    'have been open too long and need a look.',
+                tone: SpDialogTone.warning,
+              ),
+              SpDialogPoint(
+                icon: Icons.currency_exchange_rounded,
+                text:
+                    'Refunds pending: approved refunds PayMongo is still '
+                    'sending back to the driver.',
+              ),
+              SpDialogPoint(
+                icon: Icons.block_rounded,
+                text:
+                    'Ended without payment: the driver or staff stopped '
+                    'before paying. No money was taken.',
+              ),
+            ],
+          ),
+          IconButton(
+            tooltip: 'Refresh',
+            onPressed: _loading ? null : _refresh,
+            icon: _loading
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.refresh_rounded),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -333,7 +379,7 @@ class _AdminPaymentHealthCardState extends State<AdminPaymentHealthCard> {
               AppTheme.info,
             ),
             _figure(
-              'Rescued',
+              'Auto-recovered',
               '${h.rescued}',
               h.paid == 0
                   ? 'None needed'
@@ -380,7 +426,7 @@ class _AdminPaymentHealthCardState extends State<AdminPaymentHealthCard> {
         if (h.rescuedRecent.isNotEmpty) ...<Widget>[
           const SizedBox(height: 12),
           Text(
-            'Latest rescued payments',
+            'Latest auto-recovered payments',
             style: TextStyle(
               fontSize: 13,
               fontWeight: FontWeight.w700,
@@ -461,18 +507,20 @@ class _AdminPaymentHealthCardState extends State<AdminPaymentHealthCard> {
     );
   }
 
-  /// Paid per day: confirmed in the app, with the rescued part on top.
+  /// Paid per day: confirmed in the app, with the auto-recovered part on
+  /// top, and the day's total above each bar.
   Widget _chart(List<PaymentHealthDay> series) {
     final int peak = series.fold<int>(
       0,
       (int best, PaymentHealthDay d) => d.paid > best ? d.paid : best,
     );
     final bool many = series.length > 10;
+    const double labelSpace = 16;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
         SizedBox(
-          height: 90,
+          height: 110,
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: <Widget>[
@@ -481,16 +529,41 @@ class _AdminPaymentHealthCardState extends State<AdminPaymentHealthCard> {
                   child: Tooltip(
                     message:
                         '${d.date}: ${d.confirmedInApp} in app, '
-                        '${d.rescued} rescued, ${d.unfinished} unfinished',
+                        '${d.rescued} auto-recovered, ${d.unfinished} '
+                        'unfinished',
                     child: Padding(
                       padding: EdgeInsets.symmetric(horizontal: many ? 1 : 4),
                       child: LayoutBuilder(
                         builder: (BuildContext context, BoxConstraints box) {
-                          double h(int n) =>
-                              peak == 0 ? 0 : box.maxHeight * n / peak;
+                          double h(int n) => peak == 0
+                              ? 0
+                              : (box.maxHeight - labelSpace) * n / peak;
                           return Column(
                             mainAxisAlignment: MainAxisAlignment.end,
                             children: <Widget>[
+                              if (d.paid > 0)
+                                SizedBox(
+                                  height: labelSpace,
+                                  child: OverflowBox(
+                                    minWidth: 0,
+                                    maxWidth: 40,
+                                    alignment: Alignment.bottomCenter,
+                                    child: Text(
+                                      '${d.paid}',
+                                      maxLines: 1,
+                                      softWrap: false,
+                                      style: TextStyle(
+                                        fontSize: many ? 8.5 : 11,
+                                        fontWeight: d.paid == peak
+                                            ? FontWeight.w800
+                                            : FontWeight.w600,
+                                        color: d.paid == peak
+                                            ? AppTheme.info
+                                            : AppTheme.textSecondary,
+                                      ),
+                                    ),
+                                  ),
+                                ),
                               Container(
                                 height: h(d.rescued),
                                 color: AppTheme.accent,
@@ -521,7 +594,7 @@ class _AdminPaymentHealthCardState extends State<AdminPaymentHealthCard> {
           spacing: 14,
           children: <Widget>[
             _legend(AppTheme.info.withValues(alpha: 0.75), 'Confirmed in app'),
-            _legend(AppTheme.accent, 'Rescued'),
+            _legend(AppTheme.accent, 'Auto-recovered'),
           ],
         ),
       ],
