@@ -177,6 +177,11 @@ class _StaffHomePageState extends State<StaffHomePage>
               setState(() => _deactivated = deactivated);
               if (deactivated) unawaited(_scannerController.stop());
             }
+            // A renamed record shows on the banner without reopening.
+            final String name = ((data?['name'] as String?) ?? '').trim();
+            if (name.isNotEmpty && name != _staffName && mounted) {
+              setState(() => _staffName = name);
+            }
           },
           // Missing or unreadable record: resolveAssignment already covers it.
           onError: (Object _) {},
@@ -603,11 +608,18 @@ class _StaffHomePageState extends State<StaffHomePage>
                   children: [
                     const SmartParkLogo(size: 28),
                     SizedBox(width: 8),
-                    Text(
-                      'SmartPark',
-                      style: TextStyle(
-                        color: AppTheme.textDark,
-                        fontWeight: FontWeight.w700,
+                    // The back arrow (supervisor) leaves less room on small
+                    // phones, so the name shrinks instead of overflowing.
+                    Flexible(
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text(
+                          'SmartPark',
+                          style: TextStyle(
+                            color: AppTheme.textDark,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
                       ),
                     ),
                   ],

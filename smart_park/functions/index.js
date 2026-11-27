@@ -428,6 +428,29 @@ exports.resetStaffPassword = callable(
   ),
 );
 
+// A supervisor's Profile name change: their profile and staff record, logged
+// for their owner (see src/staff.js).
+exports.renameSupervisor = callable(
+  {},
+  audit.audited(
+    (request) => staff.renameSupervisor(request),
+    (request, result) =>
+      result.oldName === result.newName
+        ? null
+        : {
+            action: "staff.renamed",
+            summary: result.oldName
+              ? `Changed their name from ${result.oldName} to ${result.newName}`
+              : `Set their name to ${result.newName}`,
+            targetType: "staff",
+            targetId: request.auth?.uid || "",
+            establishmentId: result.facilityId,
+            ownerId: result.ownerId,
+            changes: { name: { from: result.oldName || null, to: result.newName } },
+          },
+  ),
+);
+
 /**
  * Admin-only: rebuilds `stats_daily` and `stats/platform` from every paid
  * payment, and recounts every establishment's slot occupancy. Run once after deploying (Settings > Rebuild statistics), and

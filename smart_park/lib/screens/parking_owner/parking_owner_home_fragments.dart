@@ -1781,6 +1781,18 @@ extension _ParkingOwnerHomeFragments on _ParkingOwnerHomePageState {
     return SpProfileView(
       roleLabel: _supervisor ? 'Supervisor' : 'Parking Owner',
       allowDeleteAccount: !_supervisor,
+      // The dashboard greeting reads the name from the user profile.
+      onSaved: () => setState(() => _userFuture = _fetchUserDocument()),
+      // Also renames their staff record, and logs it for the owner.
+      saveName: _supervisor
+          ? (String firstName, String lastName) =>
+                FirebaseFunctions.instanceFor(region: 'asia-southeast1')
+                    .httpsCallable('renameSupervisor')
+                    .call<dynamic>(<String, String>{
+                      'firstName': firstName,
+                      'lastName': lastName,
+                    })
+          : null,
       firstNameController: _profileFirstNameController,
       lastNameController: _profileLastNameController,
       email: _profileEmailController.text.isNotEmpty

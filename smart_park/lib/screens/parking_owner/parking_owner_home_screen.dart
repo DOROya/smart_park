@@ -896,7 +896,9 @@ class _ParkingOwnerHomePageState extends State<ParkingOwnerHomePage>
     return FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
       future: _userFuture,
       builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
+        // A re-read keeps showing the old profile until the new one lands.
+        if (snapshot.connectionState == ConnectionState.waiting &&
+            !snapshot.hasData) {
           return const SpLoadingScreen();
         }
         if (snapshot.hasError || !snapshot.hasData || !snapshot.data!.exists) {
