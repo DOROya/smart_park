@@ -130,7 +130,7 @@ void main() {
       expect(find.textContaining('1 exit waiting to be sent'), findsOneWidget);
       expect(find.text('1 exit was not saved'), findsOneWidget);
       expect(
-        find.textContaining('ABC 2 (walk-in) · left 3:42 PM'),
+        find.textContaining('ABC 2 (walk-in) · Left 3:42 PM'),
         findsOneWidget,
       );
 

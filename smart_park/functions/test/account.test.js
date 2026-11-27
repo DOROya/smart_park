@@ -3,7 +3,7 @@ const assert = require("node:assert/strict");
 
 const { driverDeletionDenial, ownerDeletionDenial } = require("../src/account");
 const { permitNotice } = require("../src/permits");
-const { ownerOwesCentavos, disputeDenial, paidByFor } = require("../src/refunds");
+const { ownerOwesCentavos, disputeDenial, paidByFor, isProbablyGone } = require("../src/refunds");
 const { overtimeRateFor } = require("../src/pricing");
 const { peso, stringData } = require("../src/notify");
 
@@ -23,6 +23,22 @@ test("a driver can delete their account unless something is in progress", () => 
   assert.match(driverDeletionDenial({ ...none, tickets: [{ entryStatus: "checked_in" }] }), /parked/);
   assert.match(driverDeletionDenial({ ...none, refunds: [{ status: "processing" }] }), /refund/);
   assert.match(driverDeletionDenial({ ...none, passes: [{ status: "pending" }] }), /payment/);
+});
+
+test("a stay long past its paid time counts as gone, not parked", () => {
+  const HOUR = 60 * 60 * 1000;
+  const entry = { toMillis: () => 0 };
+  // 2 paid hours: gone once 2 + 24 hours have passed.
+  const parked = { entryStatus: "checked_in", entryAt: entry, remainingHours: 2 };
+  assert.equal(isProbablyGone(parked, 25 * HOUR), false);
+  assert.equal(isProbablyGone(parked, 27 * HOUR), true);
+  // Not parked, or no entry time: never.
+  assert.equal(isProbablyGone({ ...parked, entryStatus: "checked_out" }, 99 * HOUR), false);
+  assert.equal(isProbablyGone({ entryStatus: "checked_in", remainingHours: 2 }, 99 * HOUR), false);
+  // So it no longer keeps the driver from deleting their account.
+  const none = { tickets: [], refunds: [], passes: [] };
+  assert.match(driverDeletionDenial({ ...none, tickets: [parked] }, 25 * HOUR), /parked/);
+  assert.equal(driverDeletionDenial({ ...none, tickets: [parked] }, 27 * HOUR), null);
 });
 
 test("an owner can delete their account only with nothing left hanging", () => {

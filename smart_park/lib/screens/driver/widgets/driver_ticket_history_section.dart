@@ -500,7 +500,7 @@ class _TemporaryQrRow extends StatelessWidget {
                       paying
                           ? 'Paying now at the gate'
                           : expiresAt is Timestamp
-                          ? 'Due at the gate · valid until '
+                          ? 'Due at the gate · Valid until '
                                 '${spFormatDate(expiresAt.toDate())}'
                           : 'Due at the gate',
                       style: muted,
@@ -642,6 +642,16 @@ class _ActiveTicketCard extends StatelessWidget {
     final String name = ((data['establishmentName'] as String?) ?? '').trim();
     final double amount = ((data['amount'] as num?) ?? 0).toDouble();
     final DateTime? enteredAt = spParseDateTime(data['entryAt']);
+    // Still shown as parked long after the paid time: most likely staff
+    // forgot the exit scan, and only the facility can record it.
+    final bool exitMissed =
+        state == _TicketState.parked &&
+        enteredAt != null &&
+        DateTime.now().isAfter(
+          enteredAt
+              .add(Duration(hours: ticketHoursLeft(data)))
+              .add(kMissedExitAfter),
+        );
     final String plan = _planLabel(data);
 
     return Container(
@@ -683,12 +693,17 @@ class _ActiveTicketCard extends StatelessWidget {
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        state == _TicketState.parked
+                        exitMissed
+                            ? 'Still shown as parked since '
+                                  '${spFormatDate(enteredAt)}. If you already '
+                                  'left, ask the facility to record your '
+                                  'exit.'
+                            : state == _TicketState.parked
                             ? enteredAt == null
                                   ? 'Show this QR at the exit'
                                   : 'Parked since '
                                         '${spFormatClockTime(enteredAt)} · '
-                                        'show this QR at the exit'
+                                        'Show this QR at the exit'
                             : 'Show this QR at the entrance',
                         style: TextStyle(
                           fontSize: 12,
@@ -1069,13 +1084,13 @@ class _TimeLeftPanel extends StatelessWidget {
         ? 'Parking time left'
         : 'Paid time from your entry';
     final String validUntil = paidUntil == null
-        ? 'Until the hours run out · no expiry date'
+        ? 'No expiry date'
         : '${spFormatClockTime(paidUntil)}'
               '${spSameDate(paidUntil, DateTime.now()) ? ' today' : ', ${spFormatDate(paidUntil)}'}';
     final String note = paidUntil == null
-        ? 'Counts down only while you\'re parked, at least '
-              '$spBaseStayHours hours per visit. Reuse this ticket on later '
-              'visits until the time runs out.'
+        ? 'Your hours only count down while you are parked, and each '
+              'visit uses at least $spBaseStayHours hours. Use what is left '
+              'on later visits.'
         : graceMinutes <= 0
         ? 'Staying longer adds overtime, paid in cash at the exit.'
         : 'With the ${formatGracePeriod(graceMinutes)}, leave by '
@@ -1945,7 +1960,7 @@ class _PastTicketRow extends StatelessWidget {
                 if (details.isNotEmpty) ...[
                   const SizedBox(height: 4),
                   Text(
-                    details.join(' · '),
+                    details.joinDots(),
                     style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
                   ),
                 ],

@@ -2,20 +2,13 @@ part of '../establishment_detail_page.dart';
 
 // Rate grid / quick-rate formatting for the establishment detail page.
 
+/// A stored rate ("30", "PHP 30", "P30/hr", "₱30") as "PHP 30"; "" when
+/// there is none.
 String _formatGridAmount(dynamic val) {
   if (val == null) return '';
-  String text = val.toString().trim();
+  final String text = val.toString().trim();
   if (text.isEmpty || text.toLowerCase() == 'not provided') return '';
-
-  final num? n = num.tryParse(text);
-  if (n != null) {
-    final String numStr = (n % 1 == 0)
-        ? n.toInt().toString()
-        : n.toStringAsFixed(0);
-    return '₱$numStr';
-  }
-
-  text = text
+  final String bare = text
       .replaceAll(
         RegExp(
           r'/hr|/hour|per hour|/day|per day|/week|per week|/month|per month',
@@ -23,17 +16,11 @@ String _formatGridAmount(dynamic val) {
         ),
         '',
       )
+      .replaceFirst(RegExp(r'^(php|p|₱)\s*', caseSensitive: false), '')
+      .replaceAll(',', '')
       .trim();
-
-  if (text.toUpperCase().startsWith('PHP')) {
-    text = '₱${text.substring(3).trim()}';
-  } else if (text.toUpperCase().startsWith('P')) {
-    text = '₱${text.substring(1).trim()}';
-  } else if (!text.startsWith('₱')) {
-    text = '₱$text';
-  }
-
-  return text;
+  final num? n = num.tryParse(bare);
+  return n == null ? text : spRate(n);
 }
 
 class _RateDetailCell {
@@ -142,7 +129,7 @@ List<_RateDetailCell> _getRateGridCells(
   cells.add(
     _RateDetailCell(
       label: 'HOURLY',
-      amount: hourlyAmt.isNotEmpty ? hourlyAmt : '₱0',
+      amount: hourlyAmt.isNotEmpty ? hourlyAmt : 'PHP 0',
       unit: 'per hour',
     ),
   );
@@ -152,14 +139,14 @@ List<_RateDetailCell> _getRateGridCells(
   cells.add(
     _RateDetailCell(
       label: 'DAILY',
-      amount: dailyAmt.isNotEmpty ? dailyAmt : '₱0',
+      amount: dailyAmt.isNotEmpty ? dailyAmt : 'PHP 0',
       unit: 'per day',
     ),
   );
 
   // 3. WEEKLY (Only displayed if explicitly provided by establishment)
   final String weeklyAmt = _formatGridAmount(rawWeekly);
-  if (weeklyAmt.isNotEmpty && weeklyAmt != '₱0') {
+  if (weeklyAmt.isNotEmpty && weeklyAmt != 'PHP 0') {
     cells.add(
       _RateDetailCell(label: 'WEEKLY', amount: weeklyAmt, unit: 'per week'),
     );
@@ -167,7 +154,7 @@ List<_RateDetailCell> _getRateGridCells(
 
   // 4. MONTHLY (Only displayed if explicitly provided by establishment)
   final String monthlyAmt = _formatGridAmount(rawMonthly);
-  if (monthlyAmt.isNotEmpty && monthlyAmt != '₱0') {
+  if (monthlyAmt.isNotEmpty && monthlyAmt != 'PHP 0') {
     cells.add(
       _RateDetailCell(label: 'MONTHLY', amount: monthlyAmt, unit: 'per month'),
     );
@@ -258,31 +245,4 @@ Map<String, dynamic> _asStringMap(dynamic value) {
   return <String, dynamic>{};
 }
 
-String _formatQuickAmount(dynamic val) {
-  if (val == null) return '';
-  String text = val.toString().trim();
-  if (text.isEmpty || text.toLowerCase() == 'not provided') return '';
-
-  final num? n = num.tryParse(text);
-  if (n != null) {
-    final String numStr = (n % 1 == 0)
-        ? n.toInt().toString()
-        : n.toStringAsFixed(2);
-    return 'P$numStr';
-  }
-
-  text = text
-      .replaceAll(RegExp(r'/hr|/hour|per hour', caseSensitive: false), '')
-      .trim();
-
-  if (text.toUpperCase().startsWith('PHP')) {
-    text = 'P${text.substring(3).trim()}';
-  } else if (text.startsWith('₱')) {
-    text = 'P${text.substring(1).trim()}';
-  } else if (!text.toUpperCase().startsWith('P') &&
-      RegExp(r'^\d').hasMatch(text)) {
-    text = 'P$text';
-  }
-
-  return text;
-}
+String _formatQuickAmount(dynamic val) => _formatGridAmount(val);

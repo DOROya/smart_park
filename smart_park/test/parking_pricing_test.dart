@@ -320,4 +320,35 @@ void main() {
       expect(minPackageDuration(plan: 'extended', rates: rates), isNull);
     });
   });
+
+  group('cheapest stay a driver can pay online', () {
+    test('a base of PHP 20 or more is the base stay', () {
+      final ({double price, int hours})? stay = cheapestStay(
+        const VehicleRates(initial: 30, succeedingHour: 10, succeedingDaily: 0),
+      );
+      expect(stay?.price, 30);
+      expect(stay?.hours, 2);
+    });
+
+    test('a PHP 10 base adds an hour to reach PHP 20', () {
+      final ({double price, int hours})? stay = cheapestStay(
+        const VehicleRates(initial: 10, succeedingHour: 10, succeedingDaily: 0),
+      );
+      expect(stay?.price, 20);
+      expect(stay?.hours, 3);
+    });
+
+    test('the facility shows its cheapest vehicle', () {
+      final ({double price, int hours})? stay = facilityCheapestStay(
+        <String, dynamic>{
+          'ratesByType': <String, dynamic>{
+            'car': <String, dynamic>{'initial': 100, 'succeedingHour': 20},
+            'motorcycle': <String, dynamic>{'initial': 10, 'succeedingHour': 5},
+          },
+        },
+      );
+      expect(stay?.price, 20);
+      expect(stay?.hours, 4);
+    });
+  });
 }

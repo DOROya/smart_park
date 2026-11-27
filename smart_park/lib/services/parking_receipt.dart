@@ -649,14 +649,14 @@ Future<Uint8List> buildParkingReceiptPdf(
           section('Charges'),
           charge(
             'Parking fee',
-            '${r.packageLabel} · paid in the app',
+            '${r.packageLabel} · Paid in the app',
             r.amountCentavos,
           ),
           if (r.hasOvertime)
             charge(
               'Overtime',
               '${r.overtimeHours} hr${r.overtimeHours == 1 ? '' : 's'} past '
-                  'the paid time · cash at the gate'
+                  'the paid time · Cash at the gate'
                   '${r.overtimeCollected && r.overtimeCollectedAt != null ? ', ${_stamp(r.overtimeCollectedAt!)}' : ''}',
               r.overtimeCentavos,
               tag: r.overtimeCollected

@@ -155,6 +155,45 @@ int? minPackageDuration({required String plan, required VehicleRates rates}) {
   };
 }
 
+/// The cheapest stay a driver can pay for online with [rates]: its price
+/// and the hours it covers. The base stay when it costs at least
+/// [kMinOnlinePayment]; otherwise the base plus the fewest extra hours
+/// that reach it (2 hours at PHP 10 plus 1 hour at PHP 10 is PHP 20 for
+/// 3 hours). Null when no short stay can be paid online.
+({double price, int hours})? cheapestStay(VehicleRates rates) {
+  if (rates.initial <= 0) return null;
+  if (rates.initial >= kMinOnlinePayment) {
+    return (price: rates.initial, hours: kBaseStayHours);
+  }
+  final int? extra = minPackageDuration(plan: 'extended', rates: rates);
+  if (extra == null) return null;
+  return (
+    price: rates.initial + rates.succeedingHour * extra,
+    hours: kBaseStayHours + extra,
+  );
+}
+
+/// The cheapest [cheapestStay] across a facility's vehicle types, from its
+/// `ratesByType` (or older `rates`) map.
+({double price, int hours})? facilityCheapestStay(Map<String, dynamic> data) {
+  final Object? byType = data['ratesByType'];
+  final Object? raw = byType is Map && byType.isNotEmpty
+      ? byType
+      : data['rates'];
+  if (raw is! Map) return null;
+  ({double price, int hours})? best;
+  for (final MapEntry<dynamic, dynamic> e in raw.entries) {
+    if (e.key == 'motor') continue; // legacy copy of motorcycle
+    final ({double price, int hours})? stay = cheapestStay(
+      VehicleRates.from(e.value),
+    );
+    if (stay != null && (best == null || stay.price < best.price)) {
+      best = stay;
+    }
+  }
+  return best;
+}
+
 /// Hours of parking a ticket already paid for.
 int includedStayHours({required String plan, required int duration}) {
   final int count = duration < 1 ? 1 : duration;

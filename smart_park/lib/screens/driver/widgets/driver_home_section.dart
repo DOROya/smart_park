@@ -915,7 +915,8 @@ class _DriverParkingCard extends StatelessWidget {
 
   /// Lowest base rate (first [spBaseStayHours] hours) across vehicle types,
   /// or null if unknown.
-  double? _startingPrice() => DriverEstablishmentService.startingPrice(data);
+  ({double price, int hours})? _startingStay() =>
+      DriverEstablishmentService.startingStay(data);
 
   String _formatDistance(double meters) => meters < 1000
       ? '${meters.round()} m'
@@ -997,7 +998,7 @@ class _DriverParkingCard extends StatelessWidget {
             .toList();
     final String? thumbnailUrl = photoUrls.isEmpty ? null : photoUrls.first;
     final bool openNow = DriverEstablishmentService.isOpenNow(data);
-    final double? price = _startingPrice();
+    final ({double price, int hours})? price = _startingStay();
     final double rating = ((data['rating'] as num?) ?? 0).toDouble();
 
     return Padding(
@@ -1233,16 +1234,15 @@ class _DriverParkingCard extends StatelessWidget {
                                     children: [
                                       const TextSpan(text: 'From '),
                                       TextSpan(
-                                        text:
-                                            'PHP ${price.toStringAsFixed(price % 1 == 0 ? 0 : 2)}',
+                                        text: spRate(price.price),
                                         style: TextStyle(
                                           fontSize: 15,
                                           fontWeight: FontWeight.w800,
                                           color: AppTheme.textDark,
                                         ),
                                       ),
-                                      const TextSpan(
-                                        text: ' / first $spBaseStayLabel',
+                                      TextSpan(
+                                        text: ' / first ${price.hours} hrs',
                                       ),
                                     ],
                                   ),

@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 import '../../services/parking_pricing.dart';
 import '../../services/saved_payment.dart';
 import '../../theme/app_theme.dart';
-import '../../widgets/smartpark_ui.dart' show SpOccupancy;
+import '../../widgets/smartpark_ui.dart' show SpOccupancy, spRate;
 import 'driver_checkout_payment_page.dart';
 import 'driver_package_selection_page.dart';
 import 'driver_payment_page.dart';
@@ -232,9 +232,7 @@ class _DriverVehicleSelectionPageState
       }
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
-            'Plate number is required. Please enter your plate number.',
-          ),
+          content: Text('Enter your vehicle\'s plate number to continue.'),
           backgroundColor: AppTheme.danger,
         ),
       );
@@ -325,10 +323,11 @@ class _DriverVehicleSelectionPageState
         SnackBar(
           content: Text(
             rates.offersBase || rates.offersDaily
-                ? 'This vehicle type has no package of at least '
-                      '₱${kMinOnlinePayment.toStringAsFixed(0)}, the online '
-                      'payment minimum. Please pay at the gate.'
-                : 'No parking packages are configured for this vehicle type.',
+                ? 'Online payments start at '
+                      '${spRate(kMinOnlinePayment)}, and every package for '
+                      'this vehicle costs less. You can still park here and '
+                      'pay the staff in cash.'
+                : 'This facility has not set rates for this vehicle yet.',
           ),
         ),
       );
@@ -640,7 +639,7 @@ class _DriverVehicleSelectionPageState
                       controller: _plateNumberController,
                       textCapitalization: TextCapitalization.characters,
                       decoration: InputDecoration(
-                        hintText: 'E.G. ABC 1234',
+                        hintText: 'e.g. ABC 1234',
                         filled: true,
                         fillColor: AppTheme.surface,
                         border: OutlineInputBorder(

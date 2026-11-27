@@ -9,7 +9,7 @@ const { getStorage } = require("firebase-admin/storage");
 const { HttpsError } = require("firebase-functions/v2/https");
 const { logger } = require("firebase-functions");
 
-const { hoursLeft } = require("./refunds");
+const { hoursLeft, isProbablyGone } = require("./refunds");
 
 const DELETED_NAME = "Deleted user";
 const REFUNDS_IN_FLIGHT = ["approved", "processing", "sent", "awaiting_exit"];
@@ -23,8 +23,10 @@ function isParked(ticket) {
  * Why a driver's account can't be deleted yet, or null when it can.
  * [tickets], [refunds] and [passes] are the driver's own records.
  */
-function driverDeletionDenial({ tickets, refunds, passes }) {
-  if (tickets.some(isParked)) {
+function driverDeletionDenial({ tickets, refunds, passes }, nowMs = Date.now()) {
+  // A stay long past its paid time whose exit was never scanned doesn't
+  // keep the driver from leaving SmartPark.
+  if (tickets.some((t) => isParked(t) && !isProbablyGone(t, nowMs))) {
     return "Your vehicle is still parked. Exit the facility first.";
   }
   if (refunds.some((r) => REFUNDS_IN_FLIGHT.includes(r.status))) {
@@ -43,7 +45,11 @@ function driverDeletionDenial({ tickets, refunds, passes }) {
  */
 function ownerDeletionDenial({ tickets, balance }) {
   if (tickets.some(isParked)) {
-    return "Vehicles are still parked at your facility. Wait until they have all exited.";
+    return (
+      "Vehicles are still marked as parked at your facility. Wait until they " +
+      "have exited. If one already left without an exit scan, record it with " +
+      "Record missed exit on the Overtime card."
+    );
   }
   const stranded = tickets.some(
     (t) => t.status === "paid" && t.source !== "walk_in" && hoursLeft(t) > 0,

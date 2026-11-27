@@ -70,7 +70,8 @@ void main() {
           firestore: db,
         );
         final Map<String, dynamic> first =
-            (await db.collection('facility_ratings').doc('t1').get()).data()!;
+            (await db.collection('facility_ratings').doc('d1_f1').get())
+                .data()!;
         expect(first['stars'], 3);
         expect(first['comment'], 'ok');
         expect(first['driverId'], 'd1');
@@ -83,7 +84,8 @@ void main() {
           firestore: db,
         );
         final Map<String, dynamic> second =
-            (await db.collection('facility_ratings').doc('t1').get()).data()!;
+            (await db.collection('facility_ratings').doc('d1_f1').get())
+                .data()!;
         expect(second['stars'], 5);
         expect(second['createdAt'], first['createdAt']);
         expect(
@@ -99,6 +101,30 @@ void main() {
         );
       },
     );
+
+    test('each driver counts once, with their newest rating', () {
+      final List<Map<String, dynamic>> kept = latestRatingPerDriver(
+        <Map<String, dynamic>>[
+          <String, dynamic>{
+            'driverId': 'd1',
+            'stars': 2,
+            'updatedAt': DateTime(2026, 1, 1),
+          },
+          <String, dynamic>{
+            'driverId': 'd1',
+            'stars': 5,
+            'updatedAt': DateTime(2026, 3, 1),
+          },
+          <String, dynamic>{
+            'driverId': 'd2',
+            'stars': 4,
+            'updatedAt': DateTime(2026, 2, 1),
+          },
+        ],
+      );
+      expect(kept.map((r) => r['stars']).toList()..sort(), <int>[4, 5]);
+      expect(facilityRatingId('d1', 'f1'), 'd1_f1');
+    });
 
     test('the owner sees the average of whole stars', () {
       final ({double average, int count}) r = ratingAverage(

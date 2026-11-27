@@ -5,11 +5,15 @@ import 'package:flutter/material.dart';
 import '../../../services/error_reporter.dart';
 import '../../../theme/app_theme.dart';
 import '../../../utils/friendly_error.dart';
+import '../../../widgets/smartpark_ui.dart';
 import '../../../widgets/sp_dialog.dart';
 
 /// After parking, a driver rates the facility 1-5 stars with an optional
-/// comment: one rating per ticket (`facility_ratings/{ticketId}`), which
-/// they can change. The server keeps each facility's average.
+/// comment: one rating per driver per facility
+/// (`facility_ratings/{driverId}_{establishmentId}`), which they can change
+/// from any of their used tickets there. The server keeps each facility's
+/// average. Older ratings were saved per ticket; the newest one a driver
+/// gave a facility is the one that counts and is shown.
 
 const int kMaxRatingComment = 300;
 
@@ -19,8 +23,34 @@ bool canRateTicket(Map<String, dynamic> ticket) =>
     ticket['exitAt'] != null &&
     ((ticket['establishmentId'] as String?) ?? '').isNotEmpty;
 
-/// Saves a rating: creates it, or changes stars and comment keeping when
-/// it was first given.
+/// The id of [driverId]'s one rating of [establishmentId].
+String facilityRatingId(String driverId, String establishmentId) =>
+    '${driverId}_$establishmentId';
+
+/// Each driver's newest rating among [ratings]: older ratings were saved
+/// once per ticket, so a driver may have several of one facility.
+List<Map<String, dynamic>> latestRatingPerDriver(
+  Iterable<Map<String, dynamic>> ratings,
+) {
+  final Map<String, Map<String, dynamic>> byDriver =
+      <String, Map<String, dynamic>>{};
+  int anonymous = 0;
+  DateTime at(Map<String, dynamic> r) =>
+      spParseDateTime(r['updatedAt']) ??
+      spParseDateTime(r['createdAt']) ??
+      DateTime(0);
+  for (final Map<String, dynamic> r in ratings) {
+    final String driver = (r['driverId'] as String?) ?? '';
+    final String key = driver.isEmpty ? '#${anonymous++}' : driver;
+    final Map<String, dynamic>? kept = byDriver[key];
+    if (kept == null || at(r).isAfter(at(kept))) byDriver[key] = r;
+  }
+  return byDriver.values.toList();
+}
+
+/// Saves the driver's rating of the facility: creates it, or changes stars
+/// and comment keeping when it was first given. [ticketId] is a used ticket
+/// of theirs there, which the security rules check.
 Future<void> saveFacilityRating({
   required String ticketId,
   required String establishmentId,
@@ -34,8 +64,9 @@ Future<void> saveFacilityRating({
   final DocumentReference<Map<String, dynamic>> ref =
       (firestore ?? FirebaseFirestore.instance)
           .collection('facility_ratings')
-          .doc(ticketId);
+          .doc(facilityRatingId(driverId, establishmentId));
   final Map<String, dynamic> fields = <String, dynamic>{
+    'ticketId': ticketId,
     'stars': stars,
     'comment': comment.trim(),
     'updatedAt': FieldValue.serverTimestamp(),
@@ -66,13 +97,22 @@ class RateFacilityRow extends StatefulWidget {
 }
 
 class _RateFacilityRowState extends State<RateFacilityRow> {
-  late final Stream<DocumentSnapshot<Map<String, dynamic>>> _rating =
+  // Every rating this driver gave the facility: the current one, and any
+  // older per-ticket ones from before ratings were one per facility.
+  late final Stream<QuerySnapshot<Map<String, dynamic>>> _ratings =
       FirebaseFirestore.instance
           .collection('facility_ratings')
-          .doc(widget.ticketId)
+          .where(
+            'driverId',
+            isEqualTo: FirebaseAuth.instance.currentUser?.uid ?? '',
+          )
+          .where(
+            'establishmentId',
+            isEqualTo: widget.ticket['establishmentId'] as String,
+          )
           .snapshots();
 
-  Future<void> _rate(Map<String, dynamic>? current) async {
+  Future<void> _rate(Map<String, dynamic>? current, bool exists) async {
     final String facility =
         ((widget.ticket['establishmentName'] as String?) ?? '').trim();
     final ({int stars, String comment})? picked =
@@ -94,7 +134,7 @@ class _RateFacilityRowState extends State<RateFacilityRow> {
         driverId: uid,
         stars: picked.stars,
         comment: picked.comment,
-        exists: current != null,
+        exists: exists,
       );
       if (mounted) {
         ScaffoldMessenger.of(
@@ -117,32 +157,87 @@ class _RateFacilityRowState extends State<RateFacilityRow> {
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-      stream: _rating,
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: _ratings,
       builder: (context, snapshot) {
         if (snapshot.hasError || !snapshot.hasData) {
           return const SizedBox.shrink();
         }
-        final Map<String, dynamic>? current = snapshot.data!.data();
+        final List<QueryDocumentSnapshot<Map<String, dynamic>>> docs =
+            snapshot.data!.docs;
+        final List<Map<String, dynamic>> latest = latestRatingPerDriver(
+          docs.map((d) => d.data()),
+        );
+        final Map<String, dynamic>? current = latest.isEmpty
+            ? null
+            : latest.first;
+        final String id = facilityRatingId(
+          FirebaseAuth.instance.currentUser?.uid ?? '',
+          widget.ticket['establishmentId'] as String,
+        );
+        final bool exists = docs.any((d) => d.id == id);
         final int stars = ((current?['stars'] as num?) ?? 0).toInt();
+        if (stars == 0) {
+          return Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              onPressed: () => _rate(null, false),
+              icon: Icon(
+                Icons.star_outline_rounded,
+                size: 16,
+                color: AppTheme.accentText,
+              ),
+              // Same look as Add hours and Change plate beside it.
+              label: const Text(
+                'Rate this facility',
+                style: TextStyle(fontWeight: FontWeight.w700),
+              ),
+              style: TextButton.styleFrom(
+                foregroundColor: AppTheme.accentText,
+                padding: EdgeInsets.zero,
+                visualDensity: VisualDensity.compact,
+              ),
+            ),
+          );
+        }
+        // Already rated: their stars, which they tap to change.
         return Align(
           alignment: Alignment.centerLeft,
-          child: TextButton.icon(
-            onPressed: () => _rate(current),
-            icon: Icon(
-              stars > 0 ? Icons.star_rounded : Icons.star_outline_rounded,
-              size: 16,
-              color: AppTheme.accentText,
-            ),
-            // Same look as Add hours and Change plate beside it.
-            label: Text(
-              stars > 0 ? 'You rated it $stars/5 · Edit' : 'Rate this facility',
-              style: const TextStyle(fontWeight: FontWeight.w700),
-            ),
-            style: TextButton.styleFrom(
-              foregroundColor: AppTheme.accentText,
-              padding: EdgeInsets.zero,
-              visualDensity: VisualDensity.compact,
+          child: Tooltip(
+            message: 'Change your rating',
+            child: InkWell(
+              borderRadius: BorderRadius.circular(8),
+              onTap: () => _rate(current, exists),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    Text(
+                      'Your rating ',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: AppTheme.textSecondary,
+                      ),
+                    ),
+                    for (int i = 1; i <= 5; i++)
+                      Icon(
+                        i <= stars
+                            ? Icons.star_rounded
+                            : Icons.star_outline_rounded,
+                        size: 18,
+                        color: AppTheme.accent,
+                      ),
+                    const SizedBox(width: 6),
+                    Icon(
+                      Icons.edit_rounded,
+                      size: 14,
+                      color: AppTheme.accentText,
+                    ),
+                  ],
+                ),
+              ),
             ),
           ),
         );

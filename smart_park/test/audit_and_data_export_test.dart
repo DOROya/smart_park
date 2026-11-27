@@ -43,7 +43,7 @@ void main() {
           'actorName': 'Ana Cruz',
           'actorRole': 'admin',
         }),
-        'Ana Cruz (admin)',
+        'Ana Cruz (Admin)',
       );
       expect(spAuditActorLabel(<String, dynamic>{'actorName': 'Ben'}), 'Ben');
       expect(spAuditActorLabel(<String, dynamic>{}), 'Unknown');

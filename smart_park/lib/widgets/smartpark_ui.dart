@@ -1425,15 +1425,20 @@ class SpEmptyState extends StatelessWidget {
     required this.message,
     this.icon = Icons.receipt_long_rounded,
     this.boxed = true,
+    this.action,
   });
 
   final String message;
   final IconData icon;
   final bool boxed;
 
+  /// A button under the message that fixes the emptiness, e.g. "Register
+  /// Facility".
+  final Widget? action;
+
   @override
   Widget build(BuildContext context) {
-    final Widget content = Row(
+    final Widget row = Row(
       children: [
         Icon(icon, color: AppTheme.borderStrong),
         const SizedBox(width: 10),
@@ -1442,6 +1447,12 @@ class SpEmptyState extends StatelessWidget {
         ),
       ],
     );
+    final Widget content = action == null
+        ? row
+        : Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[row, const SizedBox(height: 12), action!],
+          );
     if (!boxed) {
       return content;
     }
@@ -1976,7 +1987,7 @@ class SpActivityCard extends StatelessWidget {
                 <String>[
                   '$typeLabel$timeText',
                   if (driverName.isNotEmpty) driverName,
-                ].join(' · '),
+                ].joinDots(),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
@@ -1988,7 +1999,7 @@ class SpActivityCard extends StatelessWidget {
               if (details.isNotEmpty) ...<Widget>[
                 const SizedBox(height: 2),
                 Text(
-                  details.join(' · '),
+                  details.joinDots(),
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
@@ -2009,10 +2020,10 @@ class SpActivityCard extends StatelessWidget {
                   ),
                   child: Text(
                     overtimeAmount <= 0
-                        ? 'Overtime ${overtimeHours}h · rate missing'
+                        ? 'Overtime ${overtimeHours}h · Rate missing'
                         : overtimeCollected
                         ? 'Overtime ${overtimeHours}h · ${spPeso(overtimeAmount)} cash collected'
-                        : 'Overtime ${overtimeHours}h · collect ${spPeso(overtimeAmount)} cash',
+                        : 'Overtime ${overtimeHours}h · Collect ${spPeso(overtimeAmount)} cash',
                     style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w700,
@@ -2107,8 +2118,10 @@ class SpDateButton extends StatelessWidget {
 }
 
 /// Simple vertical bar chart. [labels] sit under the bars; with many bars
-/// only every [labelEvery]-th label is drawn so they don't collide. The
-/// highest bar is marked with its value.
+/// only every [labelEvery]-th label is drawn so they don't collide. Bars
+/// above zero show their value on top, upright, the highest one in bold.
+/// When the bars are too narrow for every value, the highest bars keep
+/// theirs and a neighbour that would overlap one is left without.
 class SpBarChart extends StatelessWidget {
   const SpBarChart({
     super.key,
@@ -2136,109 +2149,161 @@ class SpBarChart extends StatelessWidget {
     );
     final int peakIndex = maxValue <= 0 ? -1 : values.indexOf(maxValue);
     final double gap = values.length > 20 ? 2 : (values.length > 10 ? 4 : 8);
+    final bool dense = values.length > 12;
+    final double valueFont = dense ? 9 : 11;
+    const double labelSpace = 16;
 
-    return SizedBox(
-      height: height,
-      child: Column(
-        children: [
-          Expanded(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                for (int i = 0; i < values.length; i++)
-                  Expanded(
-                    child: Padding(
-                      padding: EdgeInsets.symmetric(horizontal: gap / 2),
-                      child: LayoutBuilder(
-                        builder: (BuildContext context, BoxConstraints box) {
-                          // Every bar leaves room for the peak's label, so
-                          // equal values draw at equal heights.
-                          const double labelSpace = 18;
-                          final double usable = (box.maxHeight - labelSpace)
-                              .clamp(0, double.infinity);
-                          final double barHeight = maxValue <= 0
-                              ? 3
-                              : (values[i] / maxValue * usable).clamp(
-                                  3,
-                                  usable,
-                                );
-                          return Column(
-                            mainAxisAlignment: MainAxisAlignment.end,
-                            children: [
-                              if (i == peakIndex)
-                                SizedBox(
-                                  height: labelSpace,
-                                  child: OverflowBox(
-                                    minWidth: 0,
-                                    maxWidth: 80,
-                                    child: Text(
-                                      formatValue(values[i]),
-                                      maxLines: 1,
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.w800,
-                                        color: color,
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints outer) {
+        final Set<int> labelled = _labelledBars(
+          outer.maxWidth / (values.isEmpty ? 1 : values.length),
+          valueFont,
+        );
+        return SizedBox(
+          height: height,
+          child: Column(
+            children: [
+              Expanded(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    for (int i = 0; i < values.length; i++)
+                      Expanded(
+                        child: Padding(
+                          padding: EdgeInsets.symmetric(horizontal: gap / 2),
+                          child: LayoutBuilder(
+                            builder:
+                                (BuildContext context, BoxConstraints box) {
+                                  // Every bar leaves room for a label, so equal
+                                  // values draw at equal heights.
+                                  final double usable =
+                                      (box.maxHeight - labelSpace).clamp(
+                                        0,
+                                        double.infinity,
+                                      );
+                                  final double barHeight = maxValue <= 0
+                                      ? 3
+                                      : (values[i] / maxValue * usable).clamp(
+                                          3,
+                                          usable,
+                                        );
+                                  return Column(
+                                    mainAxisAlignment: MainAxisAlignment.end,
+                                    children: [
+                                      SizedBox(
+                                        height: labelSpace,
+                                        child: !labelled.contains(i)
+                                            ? null
+                                            : OverflowBox(
+                                                minWidth: 0,
+                                                maxWidth: 80,
+                                                alignment:
+                                                    Alignment.bottomCenter,
+                                                child: Text(
+                                                  formatValue(values[i]),
+                                                  maxLines: 1,
+                                                  softWrap: false,
+                                                  style: TextStyle(
+                                                    fontSize: valueFont,
+                                                    fontWeight: i == peakIndex
+                                                        ? FontWeight.w800
+                                                        : FontWeight.w600,
+                                                    color: i == peakIndex
+                                                        ? color
+                                                        : AppTheme
+                                                              .textSecondary,
+                                                  ),
+                                                ),
+                                              ),
                                       ),
-                                    ),
-                                  ),
-                                ),
-                              Container(
-                                height: barHeight,
-                                decoration: BoxDecoration(
-                                  color: values[i] <= 0
-                                      ? AppTheme.border
-                                      : (i == peakIndex
-                                            ? color
-                                            : color.withValues(alpha: 0.55)),
-                                  borderRadius: BorderRadius.vertical(
-                                    top: Radius.circular(
-                                      values.length > 20 ? 3 : 6,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          );
-                        },
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-          Divider(height: 1, color: AppTheme.border),
-          const SizedBox(height: 6),
-          // Fixed height: an unbounded label row makes the overflow boxes
-          // below infinitely tall and breaks layout on every frame.
-          SizedBox(
-            height: 14,
-            child: Row(
-              children: [
-                for (int i = 0; i < labels.length; i++)
-                  Expanded(
-                    child: OverflowBox(
-                      minWidth: 0,
-                      maxWidth: 60,
-                      child: Text(
-                        i % labelEvery == 0 ? labels[i] : '',
-                        maxLines: 1,
-                        softWrap: false,
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: AppTheme.textMuted,
-                          fontWeight: FontWeight.w600,
+                                      Container(
+                                        height: barHeight,
+                                        decoration: BoxDecoration(
+                                          color: values[i] <= 0
+                                              ? AppTheme.border
+                                              : (i == peakIndex
+                                                    ? color
+                                                    : color.withValues(
+                                                        alpha: 0.55,
+                                                      )),
+                                          borderRadius: BorderRadius.vertical(
+                                            top: Radius.circular(
+                                              values.length > 20 ? 3 : 6,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  );
+                                },
+                          ),
                         ),
                       ),
-                    ),
-                  ),
-              ],
-            ),
+                  ],
+                ),
+              ),
+              Divider(height: 1, color: AppTheme.border),
+              const SizedBox(height: 6),
+              // Fixed height: an unbounded label row makes the overflow boxes
+              // below infinitely tall and breaks layout on every frame.
+              SizedBox(
+                height: 14,
+                child: Row(
+                  children: [
+                    for (int i = 0; i < labels.length; i++)
+                      Expanded(
+                        child: OverflowBox(
+                          minWidth: 0,
+                          maxWidth: 60,
+                          child: Text(
+                            i % labelEvery == 0 ? labels[i] : '',
+                            maxLines: 1,
+                            softWrap: false,
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: AppTheme.textMuted,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
+
+  /// The bars that show their value, given each bar's [slot] width. All of
+  /// them when the values fit; otherwise the highest first, skipping any
+  /// bar whose value would run into one already shown.
+  Set<int> _labelledBars(double slot, double fontSize) {
+    final List<int> order = <int>[
+      for (int i = 0; i < values.length; i++)
+        if (values[i] > 0) i,
+    ]..sort((int a, int b) => values[b].compareTo(values[a]));
+    // Rough width of a digit at this size, plus a little air.
+    double width(int i) => formatValue(values[i]).length * fontSize * 0.62 + 2;
+    final Set<int> shown = <int>{};
+    for (final int i in order) {
+      final bool clear = shown.every(
+        (int j) => (i - j).abs() * slot >= (width(i) + width(j)) / 2,
+      );
+      if (clear) shown.add(i);
+    }
+    return shown;
+  }
+}
+
+/// A rate or price as drivers read it: "PHP 30", "PHP 3,200",
+/// "PHP 12.50" (no ".00" on whole pesos).
+String spRate(num value) {
+  final String text = formatSalesPeso((value * 100).round());
+  return text.endsWith('.00') ? text.substring(0, text.length - 3) : text;
 }
 
 /// Money as shown everywhere in the app, e.g. "PHP 1,234.50".
@@ -2497,4 +2562,16 @@ class SpSegmentedControl<T> extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Detail lines like "Due at the gate · Valid until Nov 28": each part
+/// starts with a capital letter, so the line reads as a list of labels.
+String spCapitalizeFirst(String text) =>
+    text.isEmpty ? text : '${text[0].toUpperCase()}${text.substring(1)}';
+
+extension SpJoinDots on Iterable<String> {
+  /// The non-empty parts, each capitalized, joined with " · ".
+  String joinDots() => where(
+    (String s) => s.trim().isNotEmpty,
+  ).map((String s) => spCapitalizeFirst(s.trim())).join(' · ');
 }

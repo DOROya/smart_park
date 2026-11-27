@@ -22,7 +22,7 @@ const { HttpsError } = require("firebase-functions/v2/https");
 const { logger } = require("firebase-functions");
 
 const paymongo = require("./paymongo");
-const { reserveRecovery, releaseRecovery } = require("./refunds");
+const { reserveRecovery, releaseRecovery, isProbablyGone } = require("./refunds");
 const { notifyUser, peso } = require("./notify");
 const paymentHealth = require("./payment_health");
 const {
@@ -279,13 +279,17 @@ async function createParkingPass(request, secretKey) {
     .where("driverId", "==", driverId)
     .where("entryStatus", "==", "checked_in")
     .get();
-  const active =
-    mine.docs.filter((d) => isActivePass(d.data(), nowMs)).length + parked.size;
+  // A vehicle long past its paid time is most likely gone and its exit
+  // simply never scanned: it doesn't hold the driver to the limit.
+  const stillParked = parked.docs.filter((d) => !isProbablyGone(d.data(), nowMs)).length;
+  const active = mine.docs.filter((d) => isActivePass(d.data(), nowMs)).length + stillParked;
   if (active >= MAX_ACTIVE_PASSES) {
     throw new HttpsError(
       "resource-exhausted",
       `You can have up to ${MAX_ACTIVE_PASSES} open tickets at a time ` +
-        "(unused QRs and parked vehicles). Use, cancel or finish one first.",
+        "(unused QRs and parked vehicles). Cancel a QR you no longer need, " +
+        "then try again.",
+      { openTickets: true },
     );
   }
 

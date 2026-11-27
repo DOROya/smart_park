@@ -178,8 +178,8 @@ class _OwnerDutyLogCardState extends State<OwnerDutyLogCard> {
     final String endedNote = endedBy.isEmpty
         ? ''
         : endedBy == s['ownerId']
-        ? ' · ended by owner'
-        : ' · ended by supervisor';
+        ? ' · Ended by owner'
+        : ' · Ended by supervisor';
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(

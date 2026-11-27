@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import 'gate_scan_service.dart' show kOvertimeCollected, overtimeStatusOf;
+import 'sales_report.dart' show SalesEntry;
 
 /// Cash staff take at the gate and hand to the owner: overtime marked
 /// collected on an exit, and walk-in parking fees (`walkInFee` on a walk-in
@@ -26,6 +27,40 @@ double walkInFeeOf(Map<String, dynamic> log) =>
     log['source'] == 'walk_in' && log['scanType'] == 'exit'
     ? ((log['walkInFee'] as num?) ?? 0).toDouble()
     : 0;
+
+DateTime? _gateCashTime(Object? value) => switch (value) {
+  final Timestamp t => t.toDate(),
+  final DateTime d => d,
+  final String s => DateTime.tryParse(s),
+  _ => null,
+};
+
+/// Sales report entries for the gate's own cash: one per walk-in exit (its
+/// fee, dated by the exit), and one per handover from staff (dated when the
+/// owner received it). Overtime cash is counted from the tickets instead.
+List<SalesEntry> gateCashSalesEntries(
+  Iterable<Map<String, dynamic>> walkInLogs,
+  Iterable<Map<String, dynamic>> handovers,
+) {
+  return <SalesEntry>[
+    for (final Map<String, dynamic> log in walkInLogs)
+      if (walkInFeeOf(log) > 0)
+        if (_gateCashTime(log['timestamp']) case final DateTime at)
+          SalesEntry(
+            at: at,
+            count: 0,
+            walkInCount: 1,
+            walkInCentavos: (walkInFeeOf(log) * 100).round(),
+          ),
+    for (final Map<String, dynamic> h in handovers)
+      if (_gateCashTime(h['receivedAt']) case final DateTime at)
+        SalesEntry(
+          at: at,
+          count: 0,
+          handoverCentavos: (((h['amount'] as num?) ?? 0) * 100).round(),
+        ),
+  ];
+}
 
 /// Who holds [log]'s cash: whoever marked the overtime collected, or the
 /// staff member who let the walk-in out.

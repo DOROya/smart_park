@@ -174,7 +174,7 @@ exports.refundLongSuspensions = onSchedule(
 );
 
 // Keeps each facility's average rating (src/ratings.js).
-exports.updateFacilityRating = onDocumentWritten("facility_ratings/{ticketId}", (event) =>
+exports.updateFacilityRating = onDocumentWritten("facility_ratings/{ratingId}", (event) =>
   ratings.onRatingWritten(event.data?.before?.data(), event.data?.after?.data()),
 );
 

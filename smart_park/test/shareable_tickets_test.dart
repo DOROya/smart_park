@@ -147,9 +147,9 @@ void main() {
     test('the sharing rule names the vehicle type', () {
       expect(
         spTicketSharingRule('Motorcycle'),
-        'This ticket is for a MOTORCYCLE. It can be shared, but only for the '
-        'same vehicle type. The account that bought it is responsible for its '
-        'use.',
+        'This ticket is for a motorcycle. You can share it, but only with '
+        'another motorcycle. The account that bought it is responsible for '
+        'how it is used.',
       );
     });
 
@@ -269,7 +269,7 @@ void main() {
         result(decision: 'DENIED', vehicleType: null),
         onWrongVehicle: () {},
       );
-      expect(find.text('Plate MC 123 - ENTRY'), findsOneWidget);
+      expect(find.text('Plate MC 123 · Entry'), findsOneWidget);
       expect(find.text('Wrong vehicle'), findsNothing);
     });
   });

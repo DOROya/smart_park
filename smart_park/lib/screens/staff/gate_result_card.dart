@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../services/gate_scan_service.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/smartpark_ui.dart' show SpJoinDots, spCapitalizeFirst;
 import '../../widgets/sp_overtime.dart';
 import '../../widgets/sp_vehicle_type.dart';
 
@@ -84,7 +85,8 @@ class GateResultCard extends StatelessWidget {
           if (result.vehicleType == null) ...<Widget>[
             const SizedBox(height: 8),
             Text(
-              'Plate ${result.vehiclePlate} - ${result.scanType.toUpperCase()}',
+              'Plate ${result.vehiclePlate} · '
+              '${spCapitalizeFirst(result.scanType.toLowerCase())}',
               style: const TextStyle(fontWeight: FontWeight.w700),
             ),
           ] else ...<Widget>[
@@ -176,8 +178,15 @@ class GateResultCard extends StatelessWidget {
           if (result.scanType == 'exit' && result.elapsed != null) ...<Widget>[
             const SizedBox(height: 6),
             Text(
-              'Stay ${_formatStay(result.elapsed!)}'
-              '${result.billableHours == null ? '' : ' - billed ${result.billableHours}h'}.',
+              <String>[
+                'Parked ${_formatStay(result.elapsed!)}',
+                if (result.billableHours != null)
+                  result.billableHours == 0
+                      ? 'No hours used'
+                      : result.billableHours == 1
+                      ? '1 hour used'
+                      : '${result.billableHours} hours used',
+              ].joinDots(),
               style: const TextStyle(fontWeight: FontWeight.w600),
             ),
           ],
@@ -207,14 +216,6 @@ class GateResultCard extends StatelessWidget {
                 ),
               ),
             ],
-          ],
-          if (result.transactionId != null &&
-              result.transactionId!.isNotEmpty) ...<Widget>[
-            const SizedBox(height: 6),
-            Text(
-              'Ticket ${result.transactionId}',
-              style: TextStyle(fontSize: 11, color: AppTheme.textMuted),
-            ),
           ],
         ],
       ),

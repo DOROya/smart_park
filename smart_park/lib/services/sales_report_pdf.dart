@@ -972,6 +972,45 @@ pw.Widget _moneyPanel(SalesRow t) {
           ],
         ),
       ),
+      pw.Padding(
+        padding: const pw.EdgeInsets.only(top: 2),
+        child: pw.Row(
+          children: <pw.Widget>[
+            pw.Expanded(
+              child: pw.Text(
+                'Plus walk-in fees (${t.walkInCount} walk-in'
+                '${t.walkInCount == 1 ? '' : 's'})',
+                style: const pw.TextStyle(fontSize: 7.5, color: _text),
+              ),
+            ),
+            pw.Text(
+              formatSalesPeso(t.walkInCentavos).replaceFirst('PHP ', ''),
+              style: pw.TextStyle(
+                fontSize: 7.5,
+                fontWeight: pw.FontWeight.bold,
+                color: _text,
+              ),
+            ),
+          ],
+        ),
+      ),
+      pw.Padding(
+        padding: const pw.EdgeInsets.only(top: 2),
+        child: pw.Row(
+          children: <pw.Widget>[
+            pw.Expanded(
+              child: pw.Text(
+                'Gate cash staff handed over to you',
+                style: const pw.TextStyle(fontSize: 7.5, color: _muted),
+              ),
+            ),
+            pw.Text(
+              formatSalesPeso(t.handoverCentavos).replaceFirst('PHP ', ''),
+              style: const pw.TextStyle(fontSize: 7.5, color: _muted),
+            ),
+          ],
+        ),
+      ),
     ],
   );
 }
@@ -1104,6 +1143,9 @@ pw.Widget _breakdownTable(
       'Processing',
       'Payout (est.)',
       'OT cash',
+      'Walk-ins',
+      'Walk-in cash',
+      'Handed over',
     ] else ...<String>[
       'Commission',
       'Share',
@@ -1124,6 +1166,9 @@ pw.Widget _breakdownTable(
         amount(r.processingCentavos),
         amount(r.payoutCentavos),
         amount(r.cashCentavos),
+        '${r.walkInCount}',
+        amount(r.walkInCentavos),
+        amount(r.handoverCentavos),
       ] else ...<String>[
         amount(r.commissionCentavos),
         share(r.commissionCentavos),
@@ -1162,7 +1207,10 @@ pw.Widget _breakdownTable(
       ..commissionCentavos = (report.totals.commissionCentavos / n).round()
       ..processingCentavos = (report.totals.processingCentavos / n).round()
       ..payoutCentavos = (report.totals.payoutCentavos / n).round()
-      ..cashCentavos = (report.totals.cashCentavos / n).round();
+      ..cashCentavos = (report.totals.cashCentavos / n).round()
+      ..walkInCount = (report.totals.walkInCount / n).round()
+      ..walkInCentavos = (report.totals.walkInCentavos / n).round()
+      ..handoverCentavos = (report.totals.handoverCentavos / n).round();
   }
   final List<String> averageCells = cells(
     'Average per ${salesRowNoun(report, plural: false)}',
@@ -1267,6 +1315,10 @@ pw.Widget _notes(bool owner) {
           "estimate too; PayMongo's settlement report has the exact amounts.",
       'Overtime cash is collected at the gate, outside the app, and counted '
           'on the day it was collected.',
+      'Walk-ins are drivers without the app; staff take their fee in cash at '
+          'the exit, with no commission. Handed over is gate cash (overtime '
+          'and walk-in fees) staff gave you, on the day you received it; it '
+          'is not extra sales.',
     ] else
       "Commission is SmartPark's platform fee on in-app parking payments, "
           'across all facilities.',

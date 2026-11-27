@@ -174,7 +174,8 @@ class _DriverInAppCheckoutPageState extends State<DriverInAppCheckoutPage> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text(
-              'Payment is still being processed or pending. Please finish on screen or try again.',
+              'Your payment is still processing. Finish it on the payment '
+              'screen, or try again in a moment.',
             ),
           ),
         );

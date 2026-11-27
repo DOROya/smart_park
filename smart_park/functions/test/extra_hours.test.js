@@ -8,7 +8,7 @@ const {
   priceExtraHours,
   extraHoursRecord,
 } = require("../src/extra_hours");
-const { ratingSummary } = require("../src/ratings");
+const { ratingSummary, latestPerDriver } = require("../src/ratings");
 const { noticeText } = require("../src/reminders");
 
 const rates = { car: { initial: 50, succeedingHour: 30 } };
@@ -81,4 +81,15 @@ test("a facility's rating is the average of whole stars, to one decimal", () => 
   assert.deepEqual(ratingSummary([5, 4, 4]), { rating: 4.3, ratingCount: 3 });
   assert.deepEqual(ratingSummary([5, 0, 6, "x", 3]), { rating: 4, ratingCount: 2 });
   assert.deepEqual(ratingSummary([]), { rating: 0, ratingCount: 0 });
+});
+
+test("a driver's older per-ticket ratings count once, as their newest", () => {
+  const at = (ms) => ({ toMillis: () => ms });
+  const kept = latestPerDriver([
+    { driverId: "d1", stars: 2, updatedAt: at(1) },
+    { driverId: "d1", stars: 5, updatedAt: at(3) },
+    { driverId: "d1", stars: 3, updatedAt: at(2) },
+    { driverId: "d2", stars: 4, updatedAt: at(1) },
+  ]);
+  assert.deepEqual(kept.map((r) => r.stars).sort(), [4, 5]);
 });

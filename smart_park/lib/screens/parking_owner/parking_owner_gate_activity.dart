@@ -46,6 +46,127 @@ Future<void> _ownerSetOvertimeStatus(
   }
 }
 
+/// Owner sets the hourly rate on an exit whose overtime had no rate. The
+/// field starts at the facility's current succeeding-hour rate for the
+/// vehicle (the rate overtime normally uses), when there is one.
+Future<bool> _ownerSetOvertimeRate(
+  BuildContext context,
+  Map<String, dynamic> log,
+) async {
+  final String transactionId = ((log['transactionId'] as String?) ?? '').trim();
+  final String facilityId = ((log['establishmentID'] as String?) ?? '').trim();
+  final int hours = ((log['overtimeHours'] as num?) ?? 0).toInt();
+  final String vehicle = ((log['vehicleType'] as String?) ?? 'car')
+      .trim()
+      .toLowerCase();
+  double? suggested;
+  try {
+    final Map<String, dynamic>? details =
+        (await FirebaseFirestore.instance
+                .collection('establishment_details')
+                .doc(facilityId)
+                .get())
+            .data();
+    final Object? rates = details?['ratesByType'] ?? details?['rates'];
+    if (rates is Map<String, dynamic>) {
+      suggested = resolveOvertimeRate(rates, vehicle);
+    }
+  } catch (_) {}
+  if (!context.mounted) return false;
+  final TextEditingController controller = TextEditingController(
+    text: suggested == null
+        ? ''
+        : suggested.toStringAsFixed(suggested % 1 == 0 ? 0 : 2),
+  );
+  final double? rate = await showDialog<double>(
+    context: context,
+    builder: (BuildContext context) => StatefulBuilder(
+      builder: (BuildContext context, StateSetter setLocal) {
+        final double? typed = double.tryParse(controller.text.trim());
+        final bool valid = typed != null && typed > 0 && typed <= 100000;
+        return AlertDialog(
+          icon: const SpDialogIcon(
+            Icons.price_change_outlined,
+            tone: SpDialogTone.info,
+          ),
+          title: const Text('Set the overtime rate'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Text(
+                'This exit had $hours overtime hour'
+                '${hours == 1 ? '' : 's'}, but no rate was set for this '
+                'vehicle then. '
+                '${suggested == null ? 'Enter the rate per hour.' : 'It starts at your rate per extra hour; change it if needed.'}',
+                style: const TextStyle(height: 1.4),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: controller,
+                autofocus: true,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                onChanged: (_) => setLocal(() {}),
+                decoration: const InputDecoration(
+                  labelText: 'Rate per hour (PHP)',
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                valid
+                    ? 'Overtime owed: ${spPeso(hours * typed)}'
+                    : 'Enter an amount above zero.',
+                style: TextStyle(
+                  fontWeight: FontWeight.w700,
+                  color: valid ? AppTheme.textDark : AppTheme.textMuted,
+                ),
+              ),
+            ],
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: valid ? () => Navigator.of(context).pop(typed) : null,
+              child: const Text('Save'),
+            ),
+          ],
+        );
+      },
+    ),
+  );
+  controller.dispose();
+  if (rate == null || !context.mounted) return false;
+  try {
+    final double amount = await setOvertimeRateAsOwner(
+      ownerId: FirebaseAuth.instance.currentUser?.uid ?? '',
+      transactionId: transactionId,
+      ratePerHour: rate,
+    );
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Overtime set: ${spPeso(amount)} owed.')),
+      );
+    }
+    return true;
+  } catch (error) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            friendlyError(error, fallback: 'Could not set the overtime.'),
+          ),
+        ),
+      );
+    }
+    return false;
+  }
+}
+
 class _GateActivityContent extends StatefulWidget {
   const _GateActivityContent({
     required this.facilityId,
@@ -276,6 +397,8 @@ class _GateActivityContentState extends State<_GateActivityContent>
             staffNames: staffNames,
             onSetOvertimeStatus: (Map<String, dynamic> log, String status) =>
                 _ownerSetOvertimeStatus(context, log, status),
+            onSetOvertimeRate: (Map<String, dynamic> log) =>
+                _ownerSetOvertimeRate(context, log),
           ),
         );
 

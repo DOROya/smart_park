@@ -94,10 +94,13 @@ Map<String, int> spOtherVehicleSlots(Object? slotCounts) => <String, int>{
 
 /// The sharing rule as drivers read it at purchase and on the ticket, for a
 /// vehicle label such as "Motorcycle".
-String spTicketSharingRule(String vehicleLabel) =>
-    'This ticket is for a ${vehicleLabel.toUpperCase()}. It can be shared, '
-    'but only for the same vehicle type. The account that bought it is '
-    'responsible for its use.';
+String spTicketSharingRule(String vehicleLabel) {
+  final String vehicle = vehicleLabel.trim().toLowerCase();
+  final String article = RegExp(r'^[aeiou]').hasMatch(vehicle) ? 'an' : 'a';
+  return 'This ticket is for $article $vehicle. You can share it, but only '
+      'with another $vehicle. The account that bought it is responsible for '
+      'how it is used.';
+}
 
 /// The vehicle type as a solid block: icon and upper-case label.
 class SpVehicleTypeBadge extends StatelessWidget {

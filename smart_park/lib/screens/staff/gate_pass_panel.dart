@@ -233,19 +233,24 @@ class _GatePassPanelState extends State<GatePassPanel> {
             _step(
               Icons.check_circle_outline_rounded,
               AppTheme.success,
-              'Free ${spVehicleTypeLabel(spVehicleTypeKey(_pass.vehicleType)).toLowerCase()} slot?',
+              'There is a free '
+              '${spVehicleTypeLabel(spVehicleTypeKey(_pass.vehicleType)).toLowerCase()} '
+              'slot',
               _pass.directPay
-                  ? 'Tap Take payment. The driver just taps Confirm on their '
-                        'phone; their payment details are already saved.'
-                  : 'Tap Take payment. The driver pays on their phone.',
+                  ? 'Tap Take payment. The driver gets a prompt and only '
+                        'taps Confirm, since their payment details are saved. '
+                        'They are let in as soon as it goes through.'
+                  : 'Tap Take payment. The driver pays on their phone, and '
+                        'they are let in as soon as it goes through.',
             ),
             const SizedBox(height: 8),
             _step(
               Icons.do_not_disturb_on_outlined,
               AppTheme.danger,
-              'No free slot, or no mobile data?',
-              'Tap Turn away. Nothing is charged. A driver without data '
-                  'can still park as a walk-in.',
+              'The lot is full, or the driver has no mobile data',
+              'Tap Turn away. Nothing is charged, and their temporary QR '
+                  'still works for a later visit. A driver without data can '
+                  'park as a walk-in and pay you in cash instead.',
             ),
           ],
           if (_note != null) ...<Widget>[
@@ -285,7 +290,11 @@ class _GatePassPanelState extends State<GatePassPanel> {
                       foregroundColor: AppTheme.danger,
                       minimumSize: const Size.fromHeight(46),
                     ),
-                    child: const Text('Turn away'),
+                    // One line on narrow phones (the Y9 and STK-L22).
+                    child: const FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text('Turn away', maxLines: 1),
+                    ),
                   ),
                 ),
                 const SizedBox(width: 10),
@@ -297,9 +306,13 @@ class _GatePassPanelState extends State<GatePassPanel> {
                       foregroundColor: AppTheme.onAccent,
                       minimumSize: const Size.fromHeight(46),
                     ),
-                    child: Text(
-                      _busy ? 'Opening...' : 'Take payment',
-                      style: const TextStyle(fontWeight: FontWeight.w800),
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        _busy ? 'Opening...' : 'Take payment',
+                        maxLines: 1,
+                        style: const TextStyle(fontWeight: FontWeight.w800),
+                      ),
                     ),
                   ),
                 ),

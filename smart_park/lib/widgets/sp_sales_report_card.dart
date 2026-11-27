@@ -603,8 +603,13 @@ class _SpSalesReportCardState extends State<SpSalesReportCard> {
     final Color main = empty ? AppTheme.textMuted : AppTheme.textDark;
     final List<String> details = <String>[
       '${row.count} txn${row.count == 1 ? '' : 's'}',
+      if (_owner && row.walkInCount > 0)
+        '${row.walkInCount} walk-in${row.walkInCount == 1 ? '' : 's'} '
+            '${formatSalesPeso(row.walkInCentavos)}',
       if (_owner && row.cashCentavos > 0)
-        '+ ${formatSalesPeso(row.cashCentavos)} cash',
+        'overtime ${formatSalesPeso(row.cashCentavos)}',
+      if (_owner && row.handoverCentavos > 0)
+        'handed over ${formatSalesPeso(row.handoverCentavos)}',
     ];
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 10),
@@ -624,7 +629,7 @@ class _SpSalesReportCardState extends State<SpSalesReportCard> {
                   style: TextStyle(fontWeight: FontWeight.w700, color: main),
                 ),
                 Text(
-                  details.join(' · '),
+                  details.joinDots(),
                   style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
                 ),
               ],

@@ -420,6 +420,9 @@ class _Breakdown {
         'processing',
         'payout',
         'cash',
+        'walkIns',
+        'walkIn',
+        'handover',
       ] else ...<String>['commission', 'share', 'perTxn'],
       if (previous != null) ...<String>['prior', 'change'],
     ];
@@ -458,6 +461,9 @@ class _Breakdown {
     'processing' => 'Processing (est.)',
     'payout' => 'Payout (est.)',
     'cash' => 'Overtime cash',
+    'walkIns' => 'Walk-ins',
+    'walkIn' => 'Walk-in cash',
+    'handover' => 'Handed over',
     'perTxn' => 'Per transaction',
     'prior' => 'Prior ${owner ? 'gross' : 'commission'}',
     'change' => 'Change',
@@ -469,7 +475,8 @@ class _Breakdown {
     'day' => 7,
     'share' => 9,
     'change' => 10,
-    'processing' || 'cash' => 17,
+    'processing' || 'cash' || 'handover' => 17,
+    'walkIns' => 10,
     _ => 15,
   };
 
@@ -535,6 +542,11 @@ class _Breakdown {
         'date' => const _Cell.text('Total', _S.totalText),
         'day' => const _Cell.blank(_S.totalText),
         'count' => _Cell.formula(sum, _S.totalInt, number: report.totals.count),
+        'walkIns' => _Cell.formula(
+          sum,
+          _S.totalInt,
+          number: report.totals.walkInCount,
+        ),
         'share' => _Cell.formula(
           'IF($head$t=0,"",1)',
           _S.totalShare,
@@ -589,6 +601,11 @@ class _Breakdown {
           avg,
           _S.avgDecimal,
           number: n == 0 ? 0 : report.totals.count / n,
+        ),
+        'walkIns' => _Cell.formula(
+          avg,
+          _S.avgDecimal,
+          number: n == 0 ? 0 : report.totals.walkInCount / n,
         ),
         'prior' => _Cell.formula(
           avg,
@@ -647,6 +664,8 @@ class _Breakdown {
     'processing' => r.processingCentavos,
     'payout' => r.payoutCentavos,
     'cash' => r.cashCentavos,
+    'walkIn' => r.walkInCentavos,
+    'handover' => r.handoverCentavos,
     _ => 0,
   };
 
@@ -666,6 +685,7 @@ class _Breakdown {
         empty ? _S.textMutedRow : _S.text,
       ),
       'count' => _Cell.number(row.count, _S.integer),
+      'walkIns' => _Cell.number(row.walkInCount, _S.integer),
       'share' => _Cell.formula(
         'IF($head\$$totalRow=0,"",$head$r/$head\$$totalRow)',
         _S.share,
@@ -963,6 +983,9 @@ class _Summary {
             "estimate too; PayMongo's settlement report has the exact amounts.",
         'Overtime cash is collected at the gate and counted on the day it '
             'was collected.',
+        'Walk-ins are drivers without the app; staff take their fee in cash '
+            'at the exit, with no commission. Handed over is gate cash staff '
+            'gave you, on the day you received it; it is not extra sales.',
       ] else
         "Commission is SmartPark's platform fee on in-app parking payments, "
             'across all facilities.',

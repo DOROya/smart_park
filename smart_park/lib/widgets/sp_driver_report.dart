@@ -84,16 +84,16 @@ class SpDriverReportChip extends StatelessWidget {
       report,
     )) {
       kReportWarned => (
-        'Reported · driver warned',
+        'Reported · Driver warned',
         spEntryColor,
         Icons.verified_rounded,
       ),
       kReportDismissed => (
-        'Reported · closed, no action',
+        'Reported · Closed, no action',
         AppTheme.textMuted,
         Icons.do_not_disturb_on_outlined,
       ),
-      _ => ('Reported · under review', spInsideColor, Icons.flag_rounded),
+      _ => ('Reported · Under review', spInsideColor, Icons.flag_rounded),
     };
     final String note = ((report['adminNote'] as String?) ?? '').trim();
     return Tooltip(
@@ -148,7 +148,7 @@ class _ReportStatusStrip extends StatelessWidget {
         Icons.do_not_disturb_on_outlined,
       ),
       _ => (
-        'Reported · under review',
+        'Reported · Under review',
         'SmartPark will review: ${(report['reason'] as String?) ?? ''}.',
         spInsideColor,
         Icons.flag_rounded,
@@ -306,17 +306,17 @@ class SpIncidentFlagButton extends StatelessWidget {
             IconData icon,
           ) = switch (incidentStatus(flags.first.data())) {
             kIncidentReported => (
-              'Flagged · owner reported it to SmartPark',
+              'Flagged · Owner reported it to SmartPark',
               spEntryColor,
               Icons.verified_rounded,
             ),
             kIncidentDismissed => (
-              'Flagged · owner closed it',
+              'Flagged · Owner closed it',
               AppTheme.textMuted,
               Icons.do_not_disturb_on_outlined,
             ),
             _ => (
-              'Flagged · waiting for your owner',
+              'Flagged · Waiting for your owner',
               spInsideColor,
               Icons.outlined_flag_rounded,
             ),

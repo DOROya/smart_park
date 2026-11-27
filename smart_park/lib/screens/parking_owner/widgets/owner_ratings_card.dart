@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../../../theme/app_theme.dart';
 import '../../../widgets/smartpark_ui.dart';
+import '../../driver/widgets/rate_facility.dart';
 
 /// Driver ratings of the owner's facility: the average drivers see, how
 /// many, and the latest comments (without names).
@@ -46,15 +47,17 @@ class _OwnerRatingsCardState extends State<OwnerRatingsCard> {
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
       stream: _ratings,
       builder: (context, snapshot) {
-        final List<Map<String, dynamic>> ratings =
+        final List<Map<String, dynamic>> all =
             (snapshot.data?.docs ??
                     <QueryDocumentSnapshot<Map<String, dynamic>>>[])
                 .map((d) => d.data())
-                .toList()
-              ..sort(
-                (a, b) => (spParseDateTime(b['updatedAt']) ?? DateTime(0))
-                    .compareTo(spParseDateTime(a['updatedAt']) ?? DateTime(0)),
-              );
+                .toList();
+        // Older ratings were one per ticket: count each driver once.
+        final List<Map<String, dynamic>> ratings = latestRatingPerDriver(all)
+          ..sort(
+            (a, b) => (spParseDateTime(b['updatedAt']) ?? DateTime(0))
+                .compareTo(spParseDateTime(a['updatedAt']) ?? DateTime(0)),
+          );
         final ({double average, int count}) avg = ratingAverage(ratings);
         final List<Map<String, dynamic>> comments = ratings
             .where((r) => ((r['comment'] as String?) ?? '').trim().isNotEmpty)

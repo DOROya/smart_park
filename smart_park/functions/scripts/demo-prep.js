@@ -2,6 +2,7 @@
 //
 //   cd functions && node scripts/demo-prep.js            # full cleanup + setup
 //   cd functions && node scripts/demo-prep.js overtime   # only refresh the overtime ticket
+//   cd functions && node scripts/demo-prep.js policies   # only rewrite the posted policies
 //
 // Uses the Firebase CLI login (firebase login), through the Firestore REST
 // API, since this PC has no gcloud Application Default Credentials.
@@ -19,7 +20,7 @@ const OVERTIME_MINUTES = 75; // how far past the paid time it is when run
 const NAME = "Juliville Parking";
 const POLICIES = [
   "1. Present your SmartPark QR or ticket to the gate staff on entry and exit.",
-  "2. Base stay covers the first 3 hours. Overtime is charged per hour at the posted rate and paid at the exit gate.",
+  "2. The base stay covers the first 2 hours. Overtime is charged per hour at the posted rate and paid in cash at the exit gate.",
   "3. A ticket pays for parking time; it does not reserve a slot. Parking is first come, first served.",
   "4. Park only within marked slots. Motorcycles use the motorcycle area.",
   "5. Lock your vehicle and do not leave valuables inside. The management is not liable for loss or damage.",
@@ -107,6 +108,12 @@ async function refreshOvertime() {
 async function main() {
   H = { Authorization: `Bearer ${await token()}`, "Content-Type": "application/json" };
   if (process.argv[2] === "overtime") return refreshOvertime();
+  // Only rewrite the facility's posted policies.
+  if (process.argv[2] === "policies") {
+    await patch(`establishments/${FACILITY}`, { policies: POLICIES });
+    console.log("Policies updated.");
+    return;
+  }
 
   // 1. Facility name and policy.
   await patch(`establishments/${FACILITY}`, {
