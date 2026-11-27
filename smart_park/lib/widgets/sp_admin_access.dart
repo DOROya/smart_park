@@ -300,7 +300,6 @@ class _PasswordField extends StatelessWidget {
     decoration: const InputDecoration(
       labelText: 'Your password',
       helperText: 'Needed for every access change.',
-      border: OutlineInputBorder(),
     ),
   );
 }

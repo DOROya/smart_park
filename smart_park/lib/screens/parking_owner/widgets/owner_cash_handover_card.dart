@@ -169,7 +169,6 @@ class _OwnerCashHandoverCardState extends State<OwnerCashHandoverCard> {
               decoration: const InputDecoration(
                 labelText: 'Note (optional)',
                 hintText: 'e.g. short by PHP 20, will settle tomorrow',
-                border: OutlineInputBorder(),
               ),
             ),
             Text(

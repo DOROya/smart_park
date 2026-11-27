@@ -37,42 +37,27 @@ Future<void> _run(
 /// Asks for an optional note; null when cancelled.
 Future<String?> _askNote(
   BuildContext context, {
+  required IconData icon,
+  required SpDialogTone tone,
   required String title,
+  String? body,
+  List<(String, String)> facts = const <(String, String)>[],
   required String label,
+  required String hint,
+  required String audience,
   required String confirm,
-}) async {
-  final TextEditingController controller = TextEditingController();
-  final bool? ok = await showDialog<bool>(
-    context: context,
-    builder: (BuildContext context) => AlertDialog(
-      scrollable: true,
-      icon: const SpDialogIcon(
-        Icons.edit_note_rounded,
-        tone: SpDialogTone.info,
-      ),
-      title: Text(title),
-      content: TextField(
-        controller: controller,
-        maxLength: 300,
-        maxLines: 3,
-        decoration: InputDecoration(labelText: label),
-      ),
-      actions: <Widget>[
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(false),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(
-          onPressed: () => Navigator.of(context).pop(true),
-          child: Text(confirm),
-        ),
-      ],
-    ),
-  );
-  final String note = controller.text.trim();
-  spDisposeAfterClose(controller);
-  return ok == true ? note : null;
-}
+}) => spAskNote(
+  context,
+  icon: icon,
+  tone: tone,
+  title: title,
+  body: body,
+  facts: facts,
+  label: label,
+  hint: hint,
+  audience: audience,
+  confirm: confirm,
+);
 
 Widget _box({required Widget child}) => Container(
   width: double.infinity,
@@ -116,12 +101,36 @@ class _AdminFacilityReportsCardState extends State<AdminFacilityReportsCard> {
       .snapshots();
   bool _showClosed = false;
 
-  Future<void> _close(String id, {required bool resolved}) async {
+  Future<void> _close(
+    String id,
+    Map<String, dynamic> data, {
+    required bool resolved,
+  }) async {
+    final String facility = ((data['establishmentName'] as String?) ?? '')
+        .trim();
+    final String driver = ((data['driverName'] as String?) ?? '').trim();
     final String? note = await _askNote(
       context,
+      icon: resolved
+          ? Icons.task_alt_rounded
+          : Icons.do_not_disturb_on_outlined,
+      tone: resolved ? SpDialogTone.success : SpDialogTone.warning,
       title: resolved ? 'Mark as resolved?' : 'Dismiss this report?',
+      body: resolved
+          ? 'Use this once you have acted on the report, for example by '
+                'warning or suspending the facility.'
+          : 'Use this when the report needs no action.',
+      facts: <(String, String)>[
+        ('Facility', facility.isEmpty ? 'Facility' : facility),
+        ('Reported', reportReasons(data).join(', ')),
+        if (driver.isNotEmpty) ('By', driver),
+      ],
       label: 'Note for the record (optional)',
-      confirm: resolved ? 'Resolved' : 'Dismiss',
+      hint: resolved
+          ? 'e.g. Owner warned about overcharging'
+          : 'e.g. Duplicate of an earlier report',
+      audience: 'Only admins see this note.',
+      confirm: resolved ? 'Mark resolved' : 'Dismiss',
     );
     if (note == null || !mounted) return;
     await _run(
@@ -258,12 +267,12 @@ class _AdminFacilityReportsCardState extends State<AdminFacilityReportsCard> {
               mainAxisAlignment: MainAxisAlignment.end,
               children: <Widget>[
                 TextButton(
-                  onPressed: () => _close(doc.id, resolved: false),
+                  onPressed: () => _close(doc.id, data, resolved: false),
                   child: const Text('Dismiss'),
                 ),
                 const SizedBox(width: 6),
                 FilledButton(
-                  onPressed: () => _close(doc.id, resolved: true),
+                  onPressed: () => _close(doc.id, data, resolved: true),
                   child: const Text('Mark resolved'),
                 ),
               ],
@@ -321,11 +330,24 @@ class _AdminWarningContestsCardState extends State<AdminWarningContestsCard> {
     await _run(context, () => withdrawDriverWarning(id), 'Warning withdrawn.');
   }
 
-  Future<void> _keep(String id) async {
+  Future<void> _keep(String id, Map<String, dynamic> data) async {
+    final String facility = ((data['establishmentName'] as String?) ?? '')
+        .trim();
+    final String says = ((data['contestMessage'] as String?) ?? '').trim();
     final String? note = await _askNote(
       context,
+      icon: Icons.gavel_rounded,
+      tone: SpDialogTone.warning,
       title: 'Keep this warning?',
-      label: 'Reason shown to the driver (optional)',
+      body: 'The warning stays on the driver\'s account.',
+      facts: <(String, String)>[
+        ('Warning', reportReasons(data).join(', ')),
+        if (facility.isNotEmpty) ('Facility', facility),
+        if (says.isNotEmpty) ('Driver says', says),
+      ],
+      label: 'Your reason (optional)',
+      hint: 'e.g. The gate camera shows the vehicle stayed past its time',
+      audience: 'The driver sees this reason.',
       confirm: 'Keep warning',
     );
     if (note == null || !mounted) return;
@@ -406,7 +428,7 @@ class _AdminWarningContestsCardState extends State<AdminWarningContestsCard> {
             mainAxisAlignment: MainAxisAlignment.end,
             children: <Widget>[
               TextButton(
-                onPressed: () => _keep(doc.id),
+                onPressed: () => _keep(doc.id, data),
                 child: const Text('Keep warning'),
               ),
               const SizedBox(width: 6),

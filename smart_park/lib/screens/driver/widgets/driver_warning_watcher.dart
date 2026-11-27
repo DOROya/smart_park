@@ -287,7 +287,6 @@ class _NoticeRowState extends State<_NoticeRow> {
               autofocus: true,
               decoration: const InputDecoration(
                 labelText: 'What really happened',
-                border: OutlineInputBorder(),
               ),
             ),
           ],

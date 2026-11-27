@@ -975,7 +975,7 @@ class _AdminHomePageState extends State<AdminHomePage>
               onPressed: () => Navigator.of(confirmContext).pop(false),
               child: const Text('Cancel'),
             ),
-            TextButton(
+            FilledButton(
               onPressed: () => Navigator.of(confirmContext).pop(true),
               child: const Text('Approve'),
             ),

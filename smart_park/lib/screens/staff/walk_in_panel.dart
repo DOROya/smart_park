@@ -568,7 +568,6 @@ class _WalkInFeeDialogState extends State<_WalkInFeeDialog> {
               labelText: 'Fee collected',
               prefixText: 'PHP ',
               errorText: _error,
-              border: const OutlineInputBorder(),
             ),
             onSubmitted: (_) => _save(),
           ),
