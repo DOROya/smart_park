@@ -66,12 +66,16 @@ class DriverPackageSelectionPage extends StatefulWidget {
     required this.establishmentName,
     required this.vehicleLabel,
     required this.options,
+    this.overtimeRate,
     this.onContinue,
   });
 
   final String establishmentName;
   final String vehicleLabel;
   final List<DriverPackageOption> options;
+
+  /// Hourly overtime rate, paid in cash at the exit; null when not set.
+  final double? overtimeRate;
 
   /// Opens the next step on top of this page, so Back returns here. This
   /// page closes with the next step's result once it gives one. Without it,
@@ -543,6 +547,10 @@ class _DriverPackageSelectionPageState
 
   Widget _buildSummary(DriverPackageOption option, int duration, double total) {
     final String unit = _durationUnit(option.key, duration);
+    final double? rate = widget.overtimeRate;
+    final String overtimeNote = rate != null && rate > 0
+        ? 'Overtime is ${spPeso(rate)} per hour, paid in cash at the exit.'
+        : 'Extra time is billed per hour at the exit gate.';
     final List<Widget> lines = switch (option.key) {
       'extended' => <Widget>[
         _summaryLine(
@@ -603,8 +611,7 @@ class _DriverPackageSelectionPageState
               Expanded(
                 child: Text(
                   'If you park now, you are covered until '
-                  '${_paidUntil(option.key, duration)}. Extra time is billed '
-                  'per hour at the exit gate.',
+                  '${_paidUntil(option.key, duration)}. $overtimeNote',
                   style: TextStyle(
                     color: AppTheme.textMuted,
                     fontSize: 11,

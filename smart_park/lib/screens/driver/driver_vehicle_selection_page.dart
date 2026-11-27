@@ -346,6 +346,10 @@ class _DriverVehicleSelectionPageState
           establishmentName: widget.establishmentName,
           vehicleLabel: vehicle.label,
           options: options,
+          overtimeRate: resolveOvertimeRate(
+            widget.ratesByType,
+            _selectedVehicleType,
+          ),
           onContinue: (DriverPackageSelection selection) {
             packageSelection = selection;
             return Navigator.of(context).push<Object?>(
