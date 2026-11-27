@@ -228,10 +228,7 @@ class _ReadPlateSheetState extends State<ReadPlateSheet> {
                     fontWeight: FontWeight.w800,
                     letterSpacing: 1.5,
                   ),
-                  decoration: const InputDecoration(
-                    hintText: 'ABC 1234',
-                    border: OutlineInputBorder(),
-                  ),
+                  decoration: const InputDecoration(hintText: 'ABC 1234'),
                 ),
               ],
               const SizedBox(height: 16),

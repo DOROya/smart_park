@@ -5,6 +5,7 @@ const {
   staffSignInChange,
   staffResetDenial,
   generateStaffPassword,
+  supervisorRename,
 } = require("../src/staff");
 
 test("deactivating a staff record disables their sign-in", () => {
@@ -83,4 +84,18 @@ test("a supervisor resets gate staff of their own facility only", () => {
   assert.equal(staffResetDenial("s2", gate, { ...gate, userId: "s2" })[0], "permission-denied");
   // The owner still resets supervisors.
   assert.equal(staffResetDenial("owner1", sup), null);
+});
+
+test("only an active supervisor renames themselves, with a first and last name", () => {
+  const sup = { role: "supervisor", ownerId: "o1", facilityId: "f1" };
+  assert.deepEqual(supervisorRename(sup, { firstName: "  Ana ", lastName: "de  la Cruz" }), {
+    firstName: "Ana",
+    lastName: "de la Cruz",
+    name: "Ana de la Cruz",
+  });
+  assert.equal(supervisorRename({ ...sup, role: "staff" }, { firstName: "A", lastName: "B" })[0], "permission-denied");
+  assert.equal(supervisorRename({ ...sup, active: false }, { firstName: "A", lastName: "B" })[0], "permission-denied");
+  assert.equal(supervisorRename(undefined, { firstName: "A", lastName: "B" })[0], "permission-denied");
+  assert.equal(supervisorRename(sup, { firstName: "A", lastName: " " })[0], "invalid-argument");
+  assert.equal(supervisorRename(sup, { firstName: "A".repeat(51), lastName: "B" })[0], "invalid-argument");
 });

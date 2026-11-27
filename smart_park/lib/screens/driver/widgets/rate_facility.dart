@@ -307,7 +307,6 @@ class _RatingDialogState extends State<_RatingDialog> {
             decoration: const InputDecoration(
               labelText: 'Comment (optional)',
               hintText: 'Easy to find? Staff helpful? Safe?',
-              border: OutlineInputBorder(),
             ),
           ),
           Text(

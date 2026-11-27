@@ -203,6 +203,32 @@ class AppTheme {
         surfaceTintColor: Colors.transparent,
       ),
       cardTheme: CardThemeData(color: surface, surfaceTintColor: surface),
+      // Text boxes that don't style themselves get SmartPark's filled,
+      // rounded look (soft grey outline, accent when focused) instead of
+      // Material's bare underline. A field that wants no outline must set
+      // enabledBorder and focusedBorder to InputBorder.none, not just
+      // `border`, because these defaults fill in the state borders.
+      inputDecorationTheme: InputDecorationTheme(
+        filled: true,
+        fillColor: surfaceAlt,
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 14,
+          vertical: 14,
+        ),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(radius)),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(radius),
+          borderSide: BorderSide(color: border),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(radius),
+          borderSide: BorderSide(color: accentText, width: 1.6),
+        ),
+        hintStyle: TextStyle(fontSize: 13, color: textHint),
+        labelStyle: TextStyle(fontSize: 13.5, color: textMuted),
+        helperStyle: TextStyle(fontSize: 11.5, color: textMuted),
+        counterStyle: TextStyle(fontSize: 11, color: textHint),
+      ),
       dialogTheme: DialogThemeData(
         backgroundColor: surface,
         surfaceTintColor: surface,

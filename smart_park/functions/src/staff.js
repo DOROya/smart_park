@@ -126,7 +126,65 @@ async function resetStaffPassword(request) {
   return { username: String(record.username || ""), password };
 }
 
+const MAX_NAME_PART = 50;
+
+/**
+ * The new name a supervisor asked for, as { firstName, lastName, name }, or
+ * [code, message] when it can't be used. Only an active supervisor renames
+ * themselves here: gate staff have no Profile, and owners edit users/ directly.
+ */
+function supervisorRename(record, data) {
+  if (!record || record.role !== "supervisor" || !isActive(record)) {
+    return ["permission-denied", "Only an active supervisor can change their name here."];
+  }
+  const firstName = String(data?.firstName || "").replace(/\s+/g, " ").trim();
+  const lastName = String(data?.lastName || "").replace(/\s+/g, " ").trim();
+  if (!firstName || !lastName) {
+    return ["invalid-argument", "Please enter your first and last name."];
+  }
+  if (firstName.length > MAX_NAME_PART || lastName.length > MAX_NAME_PART) {
+    return ["invalid-argument", "That name is too long."];
+  }
+  return { firstName, lastName, name: `${firstName} ${lastName}` };
+}
+
+/**
+ * A supervisor's Profile name change. Their staff record holds the name the
+ * owner, staff list and gate scans show, but the rules don't let them write
+ * it, so both it and their profile are updated here. Returns the old and
+ * new names for the owner's Change History.
+ */
+async function renameSupervisor(request) {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "Please sign in again.");
+  }
+  const uid = request.auth.uid;
+  const db = getFirestore();
+  const staffRef = db.collection("staff_accounts").doc(uid);
+  const record = (await staffRef.get()).data();
+  const result = supervisorRename(record, request.data);
+  if (Array.isArray(result)) throw new HttpsError(result[0], result[1]);
+
+  const oldName = String(record.name || "").trim();
+  const batch = db.batch();
+  batch.set(
+    db.collection("users").doc(uid),
+    { firstName: result.firstName, lastName: result.lastName, updatedAt: FieldValue.serverTimestamp() },
+    { merge: true },
+  );
+  batch.update(staffRef, { name: result.name, updatedAt: FieldValue.serverTimestamp() });
+  await batch.commit();
+  return {
+    oldName,
+    newName: result.name,
+    facilityId: String(record.facilityId || ""),
+    ownerId: String(record.ownerId || ""),
+  };
+}
+
 module.exports = {
+  supervisorRename,
+  renameSupervisor,
   staffSignInChange,
   applyStaffSignInChange,
   generateStaffPassword,

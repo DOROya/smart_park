@@ -28,6 +28,8 @@ class SpProfileView extends StatefulWidget {
     this.wide = false,
     this.extraCards = const <Widget>[],
     this.allowDeleteAccount = true,
+    this.onSaved,
+    this.saveName,
   });
 
   final String roleLabel;
@@ -46,6 +48,13 @@ class SpProfileView extends StatefulWidget {
 
   /// False for accounts only their owner removes (supervisors).
   final bool allowDeleteAccount;
+
+  /// Called after the name is saved, so screens showing it can re-read it.
+  final VoidCallback? onSaved;
+
+  /// Saves the name somewhere other than the user profile alone (a
+  /// supervisor's also goes on their staff record). Null writes users/.
+  final Future<void> Function(String firstName, String lastName)? saveName;
 
   @override
   State<SpProfileView> createState() => _SpProfileViewState();
@@ -96,14 +105,19 @@ class _SpProfileViewState extends State<SpProfileView> {
     FocusScope.of(context).unfocus();
     setState(() => _savingProfile = true);
     try {
-      await FirebaseFirestore.instance
-          .collection('users')
-          .doc(uid)
-          .update(<String, dynamic>{
-            'firstName': firstName,
-            'lastName': lastName,
-            'updatedAt': FieldValue.serverTimestamp(),
-          });
+      if (widget.saveName case final saveName?) {
+        await saveName(firstName, lastName);
+      } else {
+        await FirebaseFirestore.instance
+            .collection('users')
+            .doc(uid)
+            .update(<String, dynamic>{
+              'firstName': firstName,
+              'lastName': lastName,
+              'updatedAt': FieldValue.serverTimestamp(),
+            });
+      }
+      widget.onSaved?.call();
       _showSnackBar('Profile updated.');
     } on FirebaseException catch (error) {
       _showSnackBar(

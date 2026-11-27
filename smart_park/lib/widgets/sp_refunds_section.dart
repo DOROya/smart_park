@@ -57,39 +57,21 @@ class _SpRefundsSectionState extends State<SpRefundsSection> {
   Future<void> _decide(ParkingRefund r, {required bool approve}) async {
     String note = '';
     if (!approve) {
-      final TextEditingController controller = TextEditingController();
-      final bool? ok = await showDialog<bool>(
-        context: context,
-        builder: (BuildContext context) => AlertDialog(
-          scrollable: true,
-          icon: const SpDialogIcon(
-            Icons.cancel_outlined,
-            tone: SpDialogTone.danger,
-          ),
-          title: const Text('Reject this refund request?'),
-          content: TextField(
-            controller: controller,
-            maxLength: 300,
-            decoration: const InputDecoration(
-              labelText: 'Reason shown to the driver (optional)',
-            ),
-          ),
-          actions: <Widget>[
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(context).pop(true),
-              style: FilledButton.styleFrom(backgroundColor: AppTheme.danger),
-              child: const Text('Reject'),
-            ),
-          ],
-        ),
+      final String? rejectNote = await spAskNote(
+        context,
+        icon: Icons.cancel_outlined,
+        tone: SpDialogTone.danger,
+        title: 'Reject this refund request?',
+        body: 'The driver is not refunded for this ticket.',
+        facts: _refundFacts(r),
+        label: 'Reason (optional)',
+        hint: 'e.g. The vehicle used the full time it paid for',
+        audience: 'The driver sees this reason.',
+        confirm: 'Reject',
+        destructive: true,
       );
-      note = controller.text.trim();
-      spDisposeAfterClose(controller);
-      if (ok != true) return;
+      if (rejectNote == null) return;
+      note = rejectNote;
     }
     setState(() => _busy.add(r.ticketId));
     try {
@@ -329,72 +311,37 @@ class _SpRefundsSectionState extends State<SpRefundsSection> {
     }
   }
 
-  /// A short text answer; null when cancelled.
-  Future<String?> _ask({
-    required String title,
-    required String body,
-    required String label,
-    required String confirm,
-  }) async {
-    final TextEditingController controller = TextEditingController();
-    final bool? ok = await showDialog<bool>(
-      context: context,
-      builder: (BuildContext context) => AlertDialog(
-        scrollable: true,
-        icon: const SpDialogIcon(
-          Icons.currency_exchange_rounded,
-          tone: SpDialogTone.info,
-        ),
-        title: Text(title),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            Text(body, style: const TextStyle(fontSize: 13, height: 1.4)),
-            const SizedBox(height: 12),
-            TextField(
-              controller: controller,
-              maxLength: 500,
-              maxLines: 3,
-              decoration: InputDecoration(labelText: label),
-            ),
-          ],
-        ),
-        actions: <Widget>[
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: Text(confirm),
-          ),
-        ],
-      ),
-    );
-    final String text = controller.text.trim();
-    spDisposeAfterClose(controller);
-    return ok == true ? text : null;
+  /// The summary box for a refund pop-up: facility, plate and amount.
+  List<(String, String)> _refundFacts(ParkingRefund r) {
+    final int amount = r.amountCentavos > 0
+        ? r.amountCentavos
+        : r.ticketAmountCentavos;
+    return <(String, String)>[
+      if (r.establishmentName.isNotEmpty) ('Facility', r.establishmentName),
+      if (r.vehiclePlate.isNotEmpty) ('Plate', r.vehiclePlate),
+      if (amount > 0)
+        (r.amountCentavos > 0 ? 'Refund' : 'Ticket', spPeso(amount / 100)),
+    ];
   }
 
   /// Owner: says this refund should not be charged to them.
   Future<void> _dispute(ParkingRefund r) async {
-    final String? message = await _ask(
+    final String? message = await spAskNote(
+      context,
+      icon: Icons.currency_exchange_rounded,
       title: 'Dispute this charge?',
       body:
-          'Tell SmartPark why this refund should not be charged to you. An '
-          'administrator reviews it and, if you are right, SmartPark covers '
-          'the refund instead. You can dispute a refund once.',
+          'An administrator reviews it and, if you are right, SmartPark '
+          'covers the refund instead. You can dispute a refund once.',
+      facts: _refundFacts(r),
       label: 'Why it should not be charged to you',
+      hint: 'e.g. The driver left early on their own; the gate was open',
+      audience: 'SmartPark admins see this.',
       confirm: 'Send dispute',
+      minLength: 10,
+      maxLength: 500,
     );
     if (message == null || !mounted) return;
-    if (message.length < 10) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Explain why in a sentence or two.')),
-      );
-      return;
-    }
     await _call(
       r,
       () => ParkingRefundService().dispute(r.ticketId, message),
@@ -404,14 +351,26 @@ class _SpRefundsSectionState extends State<SpRefundsSection> {
 
   /// Admin: moves the charge to SmartPark, or keeps it on the owner.
   Future<void> _resolveDispute(ParkingRefund r, {required bool uphold}) async {
-    final String? note = await _ask(
+    final String? note = await spAskNote(
+      context,
+      icon: uphold ? Icons.task_alt_rounded : Icons.gavel_rounded,
+      tone: uphold ? SpDialogTone.success : SpDialogTone.warning,
       title: uphold ? 'Uphold this dispute?' : 'Turn down this dispute?',
       body: uphold
           ? 'SmartPark covers this refund instead of the owner, and the '
                 'owner\'s balance drops by what they owed for it.'
           : 'The refund stays charged to the owner.',
+      facts: <(String, String)>[
+        ..._refundFacts(r),
+        if (r.disputeMessage.isNotEmpty) ('Owner says', r.disputeMessage),
+      ],
       label: 'Note to the owner (optional)',
+      hint: uphold
+          ? 'e.g. Confirmed from the gate log'
+          : 'e.g. The gate log shows the ticket was used',
+      audience: 'The owner sees this note.',
       confirm: uphold ? 'SmartPark covers it' : 'Turn down',
+      maxLength: 500,
     );
     if (note == null || !mounted) return;
     await _call(

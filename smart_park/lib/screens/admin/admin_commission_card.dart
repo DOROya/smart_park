@@ -242,7 +242,6 @@ class _ScheduleDialogState extends State<_ScheduleDialog> {
               decoration: const InputDecoration(
                 labelText: 'New rate (%)',
                 helperText: '1% to 15%',
-                border: OutlineInputBorder(),
               ),
             ),
             const SizedBox(height: 12),
@@ -271,7 +270,6 @@ class _ScheduleDialogState extends State<_ScheduleDialog> {
               maxLength: 500,
               decoration: const InputDecoration(
                 labelText: 'Message to owners (optional)',
-                border: OutlineInputBorder(),
               ),
             ),
             if (rate != null) ...<Widget>[

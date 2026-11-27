@@ -548,7 +548,12 @@ class _DriverHomeSectionState extends State<DriverHomeSection>
                   icon: const Icon(Icons.close_rounded),
                   onPressed: widget.searchController.clear,
                 ),
+          // Sits on its own raised white bar: no tinted fill or outline
+          // (the theme's default outline would otherwise show).
           border: InputBorder.none,
+          enabledBorder: InputBorder.none,
+          focusedBorder: InputBorder.none,
+          filled: false,
           contentPadding: const EdgeInsets.symmetric(
             horizontal: 16,
             vertical: 14,
