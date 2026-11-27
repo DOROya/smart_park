@@ -1722,9 +1722,12 @@ class _RefundPanelState extends State<_RefundPanel> {
               color: AppTheme.textSecondary,
             ),
           ),
-          if (!sent && amount > 0) ...<Widget>[
+          if (amount > 0) ...<Widget>[
             const SizedBox(height: 10),
-            _RefundCalculation(ticket: widget.ticket),
+            _RefundCalculation(
+              ticket: widget.ticket,
+              refund: sent ? refund : null,
+            ),
           ],
           if (canRequest) ...<Widget>[
             const SizedBox(height: 10),
@@ -1750,15 +1753,37 @@ class _RefundPanelState extends State<_RefundPanel> {
 }
 
 /// Why a refund is less than the price, and how it is worked out: the
-/// fees that can't be refunded, then the unused share of the rest.
+/// fees that can't be refunded, then the unused share of the rest. Before
+/// the refund is sent it is an estimate from the ticket; once [refund] is
+/// sent it shows the figures SmartPark saved, which the owner sees too.
 class _RefundCalculation extends StatelessWidget {
-  const _RefundCalculation({required this.ticket});
+  const _RefundCalculation({required this.ticket, this.refund});
 
   final Map<String, dynamic> ticket;
 
+  /// The sent (or refunded) refund, or null for an estimate.
+  final ParkingRefund? refund;
+
   @override
   Widget build(BuildContext context) {
-    final RefundBreakdown b = RefundBreakdown.of(ticket);
+    final RefundBreakdown estimate = RefundBreakdown.of(ticket);
+    final ParkingRefund? r = refund;
+    final bool saved = r != null && r.hasBreakdown;
+    final int paid = saved ? r.ticketAmountCentavos : estimate.paidCentavos;
+    final int platformFee = saved
+        ? r.keptCommissionCentavos
+        : estimate.platformFeeCentavos;
+    final int processorFee = saved
+        ? r.keptProcessorFeeCentavos
+        : estimate.processorFeeCentavos;
+    final int refundable = saved
+        ? r.refundableCentavos
+        : estimate.refundableCentavos;
+    final int refundedHours = saved ? r.refundedHours : estimate.refundedHours;
+    final int totalHours = saved ? r.totalHours : estimate.totalHours;
+    final int back = r != null ? r.amountCentavos : estimate.refundCentavos;
+    final int fees = platformFee + processorFee;
+    final int used = (paid - fees - back).clamp(0, paid);
     final String method = switch (((ticket['paymentMethod'] as String?) ?? '')
         .trim()) {
       'gcash' => 'GCash',
@@ -1790,6 +1815,35 @@ class _RefundCalculation extends StatelessWidget {
       ),
     );
     String peso(int centavos) => spPeso(centavos / 100);
+    Widget cell(String label, int centavos, String? note, {Color? color}) =>
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Text(
+                label,
+                style: TextStyle(fontSize: 11, color: AppTheme.textMuted),
+              ),
+              Text(
+                peso(centavos),
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w800,
+                  color: color ?? AppTheme.textDark,
+                ),
+              ),
+              if (note != null)
+                Text(
+                  note,
+                  style: TextStyle(
+                    fontSize: 10.5,
+                    height: 1.3,
+                    color: AppTheme.textMuted,
+                  ),
+                ),
+            ],
+          ),
+        );
 
     return Container(
       width: double.infinity,
@@ -1816,11 +1870,14 @@ class _RefundCalculation extends StatelessWidget {
               const SizedBox(width: 6),
               Expanded(
                 child: Text(
-                  'Refunds are not the full price. SmartPark\'s $feeRate fee '
-                  'and PayMongo\'s processing fee were taken when you paid, '
-                  'and the facility can\'t refund them, so they are kept '
-                  'back.'
-                  '${extraHours > 0 ? ' Extra hours you added are not refunded.' : ''}',
+                  saved && !r.feesSaved
+                      ? 'This refund was made before fees were kept back, so '
+                            'you got the unused share of the full price.'
+                      : 'Refunds are not the full price. SmartPark\'s $feeRate fee '
+                            'and PayMongo\'s processing fee were taken when you paid, '
+                            'and the facility can\'t refund them, so they are kept '
+                            'back.'
+                            '${extraHours > 0 ? ' Extra hours you added are not refunded.' : ''}',
                   style: TextStyle(
                     fontSize: 12,
                     height: 1.35,
@@ -1830,21 +1887,75 @@ class _RefundCalculation extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 6),
-          line('Ticket price', peso(b.paidCentavos)),
-          line('SmartPark fee ($feeRate)', '- ${peso(b.platformFeeCentavos)}'),
+          const SizedBox(height: 8),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              cell('You paid', paid, null),
+              cell(
+                'Not refunded',
+                fees + used,
+                fees > 0 && used > 0
+                    ? 'Fees ${peso(fees)}\nHours used ${peso(used)}'
+                    : fees > 0
+                    ? 'Fees'
+                    : used > 0
+                    ? 'Hours used'
+                    : null,
+              ),
+              cell(
+                r == null ? 'Back to you (est.)' : 'Back to you',
+                back,
+                '$refundedHours of $totalHours hours',
+                color: spEntryColor,
+              ),
+            ],
+          ),
+          const Divider(height: 16),
+          line('Ticket price', peso(paid)),
+          line('SmartPark fee ($feeRate)', '- ${peso(platformFee)}'),
           line(
             'PayMongo fee${method.isEmpty ? '' : ' ($method)'}, estimated',
-            '- ${peso(b.processorFeeCentavos)}',
+            '- ${peso(processorFee)}',
           ),
-          line('Refundable', peso(b.refundableCentavos)),
+          line('Refundable', peso(refundable)),
           line(
-            'Unused: ${formatParkingHours(b.refundedHours)} of '
-                '${formatParkingHours(b.totalHours)}',
-            '× ${b.refundedHours}/${b.totalHours}',
+            'Unused: ${formatParkingHours(refundedHours)} of '
+                '${formatParkingHours(totalHours)}',
+            '× $refundedHours/$totalHours',
           ),
           const Divider(height: 14),
-          line('Likely refund', peso(b.refundCentavos), bold: true),
+          line(
+            r == null
+                ? 'Likely refund'
+                : r.isRefunded
+                ? 'Refunded'
+                : 'Being refunded',
+            peso(back),
+            bold: true,
+          ),
+          if (r != null) ...<Widget>[
+            const Divider(height: 14),
+            line('Ticket', '#${r.ticketId}'),
+            if (r.sentAt != null)
+              line('Sent to PayMongo', spFormatDate(r.sentAt!)),
+            if (r.refundedAt != null)
+              line('PayMongo confirmed', spFormatDate(r.refundedAt!)),
+            if (r.paymongoRefundId.isNotEmpty)
+              line('PayMongo reference', r.paymongoRefundId),
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text(
+                'Quote the PayMongo reference to your bank or e-wallet if '
+                'the money does not show up.',
+                style: TextStyle(
+                  fontSize: 11,
+                  height: 1.35,
+                  color: AppTheme.textMuted,
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );

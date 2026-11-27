@@ -438,7 +438,7 @@ class _CommissionsListContentState extends State<_CommissionsListContent>
           r,
     ];
     final bool isTablet = spIsTablet(context);
-    final int limit = isTablet ? 24 : 12;
+    final int limit = isTablet ? 12 : 6;
     final List<Widget> transactionCards = <Widget>[
       for (final _CommissionRecord record
           in _showAll ? periodRecords : periodRecords.take(limit))

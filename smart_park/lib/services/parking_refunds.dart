@@ -42,6 +42,13 @@ class ParkingRefund {
     this.reasons = const <String>[],
     this.createdAt,
     this.refundedAt,
+    this.ticketAmountCentavos = 0,
+    this.keptCommissionCentavos = 0,
+    this.keptProcessorFeeCentavos = 0,
+    this.totalHours = 0,
+    this.paymongoRefundId = '',
+    this.sentAt,
+    this.feesSaved = true,
   });
 
   factory ParkingRefund.fromMap(String id, Map<String, dynamic> m) {
@@ -77,6 +84,14 @@ class ParkingRefund {
           .toList(),
       createdAt: date('createdAt'),
       refundedAt: date('refundedAt'),
+      ticketAmountCentavos: ((m['ticketAmountCentavos'] as num?) ?? 0).toInt(),
+      keptCommissionCentavos: ((m['platformFeeCentavos'] as num?) ?? 0).toInt(),
+      keptProcessorFeeCentavos: ((m['processorFeeCentavos'] as num?) ?? 0)
+          .toInt(),
+      totalHours: ((m['totalHours'] as num?) ?? 0).toInt(),
+      paymongoRefundId: text('paymongoRefundId'),
+      sentAt: date('sentAt'),
+      feesSaved: m.containsKey('platformFeeCentavos'),
     );
   }
 
@@ -114,6 +129,48 @@ class ParkingRefund {
   final List<String> reasons;
   final DateTime? createdAt;
   final DateTime? refundedAt;
+
+  /// What the driver paid for the ticket. 0 on refunds from before the
+  /// server saved the calculation.
+  final int ticketAmountCentavos;
+
+  /// SmartPark's commission on the ticket, kept back from the refund.
+  final int keptCommissionCentavos;
+
+  /// PayMongo's fee on the ticket (estimated), kept back from the refund.
+  final int keptProcessorFeeCentavos;
+
+  /// Hours the ticket's package included.
+  final int totalHours;
+
+  /// PayMongo's id for the refund, once sent.
+  final String paymongoRefundId;
+
+  /// When the refund was handed to PayMongo.
+  final DateTime? sentAt;
+
+  /// False on refunds made before fees were kept back: those refunded the
+  /// unused share of the full price.
+  final bool feesSaved;
+
+  /// The server saved the calculation (ticket price and fees).
+  bool get hasBreakdown => ticketAmountCentavos > 0 && totalHours > 0;
+
+  /// The part of the ticket price that can be refunded at all.
+  int get refundableCentavos {
+    final int left =
+        ticketAmountCentavos -
+        keptCommissionCentavos -
+        keptProcessorFeeCentavos;
+    return left < 0 ? 0 : left;
+  }
+
+  /// Hours refunded: unused hours, never more than the package.
+  int get refundedHours =>
+      unusedHours < totalHours || totalHours <= 0 ? unusedHours : totalHours;
+
+  /// Still on its way: not paid out, not turned down.
+  bool get isInProgress => !isPaidOut && !isRejected;
 
   bool get isRefunded => status == 'refunded';
 

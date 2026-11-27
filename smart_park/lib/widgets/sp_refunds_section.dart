@@ -25,12 +25,15 @@ class SpRefundsSection extends StatefulWidget {
 }
 
 class _SpRefundsSectionState extends State<SpRefundsSection> {
-  static const int _shown = 10;
+  static const int _shown = 6;
 
   late final Stream<QuerySnapshot<Map<String, dynamic>>> _refunds;
   Stream<DocumentSnapshot<Map<String, dynamic>>>? _balance;
   Stream<QuerySnapshot<Map<String, dynamic>>>? _balances;
   final Set<String> _busy = <String>{};
+
+  /// Refunds whose calculation is open.
+  final Set<String> _open = <String>{};
   bool _showAll = false;
 
   bool get _admin => widget.ownerId == null;
@@ -181,7 +184,12 @@ class _SpRefundsSectionState extends State<SpRefundsSection> {
               : Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: <Widget>[
-                    _summary(done.length, byOwner, byPlatform),
+                    _summary(
+                      done,
+                      byOwner,
+                      byPlatform,
+                      all.where((ParkingRefund r) => r.isInProgress).toList(),
+                    ),
                     if (_balance != null) _repayment(),
                     if (_admin && requests.isNotEmpty) ...<Widget>[
                       const SizedBox(height: 16),
@@ -557,14 +565,45 @@ class _SpRefundsSectionState extends State<SpRefundsSection> {
     }
   }
 
-  /// The total refunded, then who paid for it, each with a one-line why.
-  Widget _summary(int count, int byOwner, int byPlatform) {
+  /// The total refunded, a bar splitting it by who covered it, each part
+  /// with a one-line why, and what is still on its way.
+  Widget _summary(
+    List<ParkingRefund> paidOut,
+    int byOwner,
+    int byPlatform,
+    List<ParkingRefund> inProgress,
+  ) {
+    final int count = paidOut.length;
     final int total = byOwner + byPlatform;
-    Widget line(String who, int centavos, String why) => Padding(
-      padding: const EdgeInsets.only(top: 8),
+    // What drivers first paid for these tickets, when the server saved it.
+    final List<ParkingRefund> priced = paidOut
+        .where((ParkingRefund r) => r.hasBreakdown)
+        .toList();
+    final int paidTotal = priced.fold<int>(
+      0,
+      (int t, ParkingRefund r) => t + r.ticketAmountCentavos,
+    );
+    final int pending = inProgress.fold<int>(
+      0,
+      (int t, ParkingRefund r) => t + r.amountCentavos,
+    );
+    final Color ownerColor = AppTheme.warning;
+    final Color platformColor = spExitColor;
+
+    Widget line(Color color, String who, int centavos, String why) => Padding(
+      padding: const EdgeInsets.only(top: 10),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Container(
+              width: 10,
+              height: 10,
+              decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+            ),
+          ),
+          const SizedBox(width: 8),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -572,7 +611,11 @@ class _SpRefundsSectionState extends State<SpRefundsSection> {
                 Text(who, style: const TextStyle(fontWeight: FontWeight.w700)),
                 Text(
                   why,
-                  style: TextStyle(fontSize: 11.5, color: AppTheme.textMuted),
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    height: 1.35,
+                    color: AppTheme.textMuted,
+                  ),
                 ),
               ],
             ),
@@ -583,13 +626,15 @@ class _SpRefundsSectionState extends State<SpRefundsSection> {
             style: TextStyle(
               fontWeight: FontWeight.w800,
               color: AppTheme.textDark,
+              fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
             ),
           ),
         ],
       ),
     );
+
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: AppTheme.surfaceAlt,
         borderRadius: BorderRadius.circular(AppTheme.radius),
@@ -597,38 +642,100 @@ class _SpRefundsSectionState extends State<SpRefundsSection> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          Text(
-            'Refunded to drivers',
-            style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      'Refunded to drivers',
+                      style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
+                    ),
+                    Text(
+                      spPeso(total / 100),
+                      style: TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.w800,
+                        color: AppTheme.textDark,
+                      ),
+                    ),
+                    Text(
+                      <String>[
+                        '$count ticket${count == 1 ? '' : 's'} refunded',
+                        if (priced.length == count && paidTotal > 0)
+                          'Out of ${spPeso(paidTotal / 100)} paid',
+                      ].joinDots(),
+                      style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
+                    ),
+                  ],
+                ),
+              ),
+              if (inProgress.isNotEmpty)
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: <Widget>[
+                    SpChip(
+                      label: '${inProgress.length} in progress',
+                      color: spInsideColor,
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '${spPeso(pending / 100)} on its way',
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        color: AppTheme.textMuted,
+                      ),
+                    ),
+                  ],
+                ),
+            ],
           ),
-          Text(
-            spPeso(total / 100),
-            style: TextStyle(
-              fontSize: 22,
-              fontWeight: FontWeight.w800,
-              color: AppTheme.textDark,
+          if (total > 0) ...<Widget>[
+            const SizedBox(height: 12),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(99),
+              child: SizedBox(
+                height: 10,
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    if (byOwner > 0)
+                      Expanded(
+                        flex: byOwner,
+                        child: ColoredBox(color: ownerColor),
+                      ),
+                    if (byOwner > 0 && byPlatform > 0) const SizedBox(width: 2),
+                    if (byPlatform > 0)
+                      Expanded(
+                        flex: byPlatform,
+                        child: ColoredBox(color: platformColor),
+                      ),
+                  ],
+                ),
+              ),
             ),
-          ),
-          Text(
-            '$count ticket${count == 1 ? '' : 's'}',
-            style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
-          ),
-          const Divider(height: 18),
+          ],
+          const SizedBox(height: 4),
           line(
+            ownerColor,
             _admin ? 'Covered by owners' : 'Covered by you',
             byOwner,
             _admin
-                ? 'Facility pulled for its own reasons (rates, complaints, '
-                      'safety, not operating...).'
-                : 'Your facility was pulled for reasons such as rates, '
-                      'complaints, safety or not operating. Refunds come out '
-                      'of your share only: SmartPark\'s commission and '
-                      'PayMongo\'s fee are kept back from them.',
+                ? 'Facility pulled for its own reasons: rates, complaints, '
+                      'safety or not operating.'
+                : 'Your facility was pulled for its own reasons: rates, '
+                      'complaints, safety or not operating. It comes out of '
+                      'your share only. SmartPark\'s commission and '
+                      'PayMongo\'s fee are kept back from the refund.',
           ),
           line(
+            platformColor,
             'Covered by SmartPark',
             byPlatform,
-            'Pulled over permits or documents SmartPark had approved.',
+            'Pulled over permits or documents SmartPark had approved, or a '
+                'dispute SmartPark agreed with.',
           ),
         ],
       ),
@@ -752,9 +859,374 @@ class _SpRefundsSectionState extends State<SpRefundsSection> {
     _ => (r.statusLabel, AppTheme.textMuted),
   };
 
+  /// The refund's steps for its status: labels, how many are done, and
+  /// whether the current one is stuck. Null when there is nothing to show.
+  ({List<String> labels, int done, bool stuck})? _steps(ParkingRefund r) {
+    final String first = r.status == 'requested' || r.cause == 'driver_request'
+        ? 'Driver asked'
+        : 'Started';
+    const String last = 'Refunded';
+    return switch (r.status) {
+      'requested' => (
+        labels: <String>[first, 'In review', last],
+        done: 1,
+        stuck: false,
+      ),
+      'awaiting_exit' => (
+        labels: <String>[first, 'Waits for exit', last],
+        done: 1,
+        stuck: false,
+      ),
+      'approved' || 'processing' => (
+        labels: <String>[first, 'Sending', last],
+        done: 1,
+        stuck: false,
+      ),
+      'failed' => (
+        labels: <String>[first, 'Delayed', last],
+        done: 1,
+        stuck: true,
+      ),
+      'sent' => (
+        labels: <String>[first, 'Sent', 'Confirming'],
+        done: 2,
+        stuck: false,
+      ),
+      'refunded' => (
+        labels: <String>[first, 'Sent', last],
+        done: 3,
+        stuck: false,
+      ),
+      _ => null,
+    };
+  }
+
+  /// Three dots joined by lines: done (filled), current (ring), to come.
+  Widget _stepper(ParkingRefund r) {
+    final ({List<String> labels, int done, bool stuck})? s = _steps(r);
+    if (s == null) return const SizedBox.shrink();
+    final List<DateTime?> dates = <DateTime?>[
+      r.createdAt,
+      r.sentAt,
+      r.refundedAt,
+    ];
+    final Color doneColor = spEntryColor;
+    final Color nowColor = s.stuck ? spDeniedColor : spInsideColor;
+    Widget step(int i) {
+      final bool done = i < s.done;
+      final bool now = i == s.done;
+      final Color color = done
+          ? doneColor
+          : now
+          ? nowColor
+          : AppTheme.borderStrong;
+      return Expanded(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Row(
+              children: <Widget>[
+                Container(
+                  width: 14,
+                  height: 14,
+                  decoration: BoxDecoration(
+                    color: done ? color : AppTheme.surface,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: color, width: 2),
+                  ),
+                  child: done
+                      ? Icon(Icons.check, size: 9, color: AppTheme.surface)
+                      : null,
+                ),
+                if (i < 2)
+                  Expanded(
+                    child: Container(
+                      height: 2,
+                      margin: const EdgeInsets.symmetric(horizontal: 4),
+                      color: i < s.done ? doneColor : AppTheme.border,
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              s.labels[i],
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: now ? FontWeight.w700 : FontWeight.w500,
+                color: done || now ? AppTheme.textDark : AppTheme.textMuted,
+              ),
+            ),
+            if (done && dates[i] != null)
+              Text(
+                spFormatDate(dates[i]!),
+                style: TextStyle(fontSize: 10.5, color: AppTheme.textMuted),
+              ),
+          ],
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[step(0), step(1), step(2)],
+      ),
+    );
+  }
+
+  /// How the amount was worked out, line by line, like a receipt.
+  Widget _breakdown(ParkingRefund r) {
+    final int? owed = r.ownerOwedCentavos;
+    final TextStyle muted = TextStyle(
+      fontSize: 12.5,
+      color: AppTheme.textSecondary,
+    );
+    const List<FontFeature> figures = <FontFeature>[
+      FontFeature.tabularFigures(),
+    ];
+    Widget money(
+      String label,
+      String value, {
+      bool strong = false,
+      bool minus = false,
+      String? note,
+    }) => Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  label,
+                  style: strong
+                      ? TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w800,
+                          color: AppTheme.textDark,
+                        )
+                      : muted,
+                ),
+                if (note != null)
+                  Text(
+                    note,
+                    style: TextStyle(
+                      fontSize: 11,
+                      height: 1.3,
+                      color: AppTheme.textMuted,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          Text(
+            minus ? '− $value' : value,
+            style: TextStyle(
+              fontSize: strong ? 13 : 12.5,
+              fontWeight: strong ? FontWeight.w800 : FontWeight.w600,
+              color: minus ? AppTheme.textSecondary : AppTheme.textDark,
+              fontFeatures: figures,
+            ),
+          ),
+        ],
+      ),
+    );
+    String peso(int c) => spPeso(c / 100);
+    final Widget rule = Divider(height: 12, color: AppTheme.border);
+
+    final int smartParkPart = r.paidByOwner && owed != null
+        ? r.amountCentavos - owed
+        : 0;
+    return Container(
+      margin: const EdgeInsets.only(top: 10),
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+      decoration: BoxDecoration(
+        color: AppTheme.surfaceAlt,
+        borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          if (r.hasBreakdown) ...<Widget>[
+            money('Ticket price', peso(r.ticketAmountCentavos)),
+            if (r.keptCommissionCentavos > 0)
+              money(
+                'SmartPark commission',
+                peso(r.keptCommissionCentavos),
+                minus: true,
+                note: 'Kept back, not refunded',
+              ),
+            if (r.keptProcessorFeeCentavos > 0)
+              money(
+                'PayMongo fee',
+                peso(r.keptProcessorFeeCentavos),
+                minus: true,
+                note: 'Kept back, not refunded',
+              ),
+            if (!r.feesSaved)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 3),
+                child: Text(
+                  'Made before fees were kept back from refunds, so the '
+                  'driver got the unused share of the full price.',
+                  style: TextStyle(
+                    fontSize: 11,
+                    height: 1.3,
+                    color: AppTheme.textMuted,
+                  ),
+                ),
+              ),
+            rule,
+            money('Refundable part', peso(r.refundableCentavos)),
+            money(
+              'Unused hours',
+              '${r.refundedHours} of ${r.totalHours}',
+              note:
+                  '${peso(r.refundableCentavos)} × ${r.refundedHours} ÷ '
+                  '${r.totalHours} hours',
+            ),
+          ] else
+            money('Unused hours', '${r.unusedHours}'),
+          rule,
+          money('Refunded to driver', peso(r.amountCentavos), strong: true),
+          if (r.paidByOwner) ...<Widget>[
+            money(
+              _admin ? 'Charged to the owner' : 'Charged to you',
+              peso(owed ?? r.amountCentavos),
+              strong: true,
+              note: smartParkPart > 0
+                  ? 'SmartPark covers ${peso(smartParkPart)}, its commission '
+                        'on the refund.'
+                  : r.isPaidOut
+                  ? 'Taken from your share of later online sales.'
+                  : 'Charged once the refund is sent.',
+            ),
+          ] else
+            money(
+              'Covered by SmartPark',
+              peso(r.amountCentavos),
+              strong: true,
+              note: _admin ? null : 'Nothing is charged to you.',
+            ),
+          rule,
+          _reference('Ticket', r.ticketId),
+          if (r.paymongoRefundId.isNotEmpty)
+            _reference('PayMongo refund', r.paymongoRefundId),
+        ],
+      ),
+    );
+  }
+
+  /// Paid, kept back, refunded: the three figures an owner checks first,
+  /// shown without opening the calculation.
+  Widget _moneyStrip(ParkingRefund r) {
+    final int fees = r.keptCommissionCentavos + r.keptProcessorFeeCentavos;
+    final int used = (r.refundableCentavos - r.amountCentavos).clamp(
+      0,
+      r.refundableCentavos,
+    );
+    final int kept = fees + used;
+    Widget cell(String label, int centavos, String? note, {Color? color}) =>
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Text(
+                label,
+                style: TextStyle(fontSize: 11, color: AppTheme.textMuted),
+              ),
+              Text(
+                spPeso(centavos / 100),
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w800,
+                  color: color ?? AppTheme.textDark,
+                  fontFeatures: const <FontFeature>[
+                    FontFeature.tabularFigures(),
+                  ],
+                ),
+              ),
+              if (note != null)
+                Text(
+                  note,
+                  style: TextStyle(
+                    fontSize: 10.5,
+                    height: 1.3,
+                    color: AppTheme.textMuted,
+                  ),
+                ),
+            ],
+          ),
+        );
+    return Container(
+      margin: const EdgeInsets.only(top: 10),
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+      decoration: BoxDecoration(
+        border: Border.all(color: spCardBorder),
+        borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          cell('Driver paid', r.ticketAmountCentavos, null),
+          cell(
+            'Not refunded',
+            kept,
+            fees > 0 && used > 0
+                ? 'Fees ${spPeso(fees / 100)}\n'
+                      'Hours used ${spPeso(used / 100)}'
+                : fees > 0
+                ? 'Fees'
+                : used > 0
+                ? 'Hours used'
+                : null,
+          ),
+          cell(
+            'Refunded',
+            r.amountCentavos,
+            '${r.refundedHours} of ${r.totalHours} hours',
+            color: spEntryColor,
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// An id to quote to SmartPark or PayMongo; long-press copies it.
+  Widget _reference(String label, String id) => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 2),
+    child: Row(
+      children: <Widget>[
+        Text(
+          label,
+          style: TextStyle(fontSize: 11.5, color: AppTheme.textMuted),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: SelectableText(
+            id,
+            textAlign: TextAlign.right,
+            maxLines: 1,
+            style: TextStyle(
+              fontSize: 11.5,
+              color: AppTheme.textSecondary,
+              fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
+
   Widget _row(ParkingRefund r) {
     final (String statusLabel, Color statusColor) = _status(r);
     final bool busy = _busy.contains(r.ticketId);
+    final bool open = _open.contains(r.ticketId);
     final DateTime? when = r.refundedAt ?? r.createdAt;
     final List<String> why = r.reasons
         .where((String x) => x != 'Other')
@@ -765,11 +1237,10 @@ class _SpRefundsSectionState extends State<SpRefundsSection> {
       'driver_request' => 'Driver asked during a suspension',
       _ => r.causeLabel,
     };
-    final int? owed = r.ownerOwedCentavos;
-    final String payer = !r.paidByOwner
-        ? 'SmartPark'
-        : '${_admin ? 'Owner' : 'You'}'
-              '${owed == null || owed == r.amountCentavos ? '' : ' (${spPeso(owed / 100)}; SmartPark gives back its commission)'}';
+    final String coveredBy = r.paidByOwner
+        ? (_admin ? 'Covered by the owner' : 'Covered by you')
+        : 'Covered by SmartPark';
+    final Color coveredColor = r.paidByOwner ? AppTheme.warning : spExitColor;
     final String? disputeLine = switch (r.disputeStatus) {
       'open' =>
         _admin
@@ -781,157 +1252,210 @@ class _SpRefundsSectionState extends State<SpRefundsSection> {
             '${r.disputeNote.isEmpty ? '' : ' ${r.disputeNote}'}',
       _ => null,
     };
-
-    TextSpan label(String k, String v) => TextSpan(
-      children: <InlineSpan>[
-        TextSpan(
-          text: '$k  ',
-          style: TextStyle(color: AppTheme.textMuted),
-        ),
-        TextSpan(
-          text: v,
-          style: TextStyle(color: AppTheme.textDark),
-        ),
-      ],
-    );
+    final List<String> meta = <String>[
+      if (_admin && r.establishmentName.isNotEmpty) r.establishmentName,
+      if (when != null)
+        '${r.isRefunded ? 'Refunded' : 'Since'} ${spFormatDate(when)}',
+      '${r.unusedHours} unused hour${r.unusedHours == 1 ? '' : 's'}',
+    ];
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.all(12),
+      margin: const EdgeInsets.only(bottom: 10),
       decoration: BoxDecoration(
+        color: AppTheme.surface,
         border: Border.all(color: spCardBorder),
         borderRadius: BorderRadius.circular(AppTheme.radius),
       ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          Row(
-            children: <Widget>[
-              if (r.vehiclePlate.isNotEmpty) ...<Widget>[
-                SpPlateBadge(plate: r.vehiclePlate),
-                const SizedBox(width: 8),
-              ],
-              Expanded(
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: SpChip(label: statusLabel, color: statusColor),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Text(
-                spPeso(r.amountCentavos / 100),
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w800,
-                  color: AppTheme.textDark,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Text.rich(
-            TextSpan(
-              children: <InlineSpan>[
-                if (_admin) ...<InlineSpan>[
-                  label('Facility', r.establishmentName),
-                  const TextSpan(text: '\n'),
-                ],
-                label(
-                  'Why',
-                  why.isEmpty
-                      ? whatHappened
-                      : '$whatHappened (${why.join(', ')})',
-                ),
-                const TextSpan(text: '\n'),
-                label('Unused', '${r.unusedHours} hours of the ticket'),
-                const TextSpan(text: '\n'),
-                label('Covered by', payer),
-                if (when != null) ...<InlineSpan>[
-                  const TextSpan(text: '\n'),
-                  label(
-                    r.isRefunded ? 'Refunded' : 'Since',
-                    spFormatDate(when),
+          InkWell(
+            borderRadius: BorderRadius.circular(AppTheme.radius),
+            onTap: () => setState(
+              () => open ? _open.remove(r.ticketId) : _open.add(r.ticketId),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  Row(
+                    children: <Widget>[
+                      if (r.vehiclePlate.isNotEmpty) ...<Widget>[
+                        SpPlateBadge(plate: r.vehiclePlate),
+                        const SizedBox(width: 8),
+                      ],
+                      Expanded(
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: SpChip(label: statusLabel, color: statusColor),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        spPeso(r.amountCentavos / 100),
+                        style: TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.w800,
+                          color: AppTheme.textDark,
+                        ),
+                      ),
+                    ],
                   ),
-                ],
-              ],
-            ),
-            style: const TextStyle(fontSize: 12.5, height: 1.45),
-          ),
-          if (disputeLine != null) ...<Widget>[
-            const SizedBox(height: 4),
-            Text(
-              disputeLine,
-              style: TextStyle(
-                fontSize: 12,
-                height: 1.4,
-                fontWeight: FontWeight.w600,
-                color: AppTheme.textDark,
-              ),
-            ),
-          ],
-          if (!_admin && r.canDispute && !r.isRejected)
-            Align(
-              alignment: Alignment.centerRight,
-              child: TextButton(
-                onPressed: busy ? null : () => _dispute(r),
-                child: Text(busy ? 'Sending...' : 'Dispute this charge'),
-              ),
-            ),
-          if (_admin && r.hasOpenDispute) ...<Widget>[
-            const SizedBox(height: 8),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: <Widget>[
-                TextButton(
-                  onPressed: busy
-                      ? null
-                      : () => _resolveDispute(r, uphold: false),
-                  child: const Text('Turn down'),
-                ),
-                const SizedBox(width: 6),
-                FilledButton(
-                  onPressed: busy
-                      ? null
-                      : () => _resolveDispute(r, uphold: true),
-                  child: Text(busy ? 'Saving...' : 'SmartPark covers it'),
-                ),
-              ],
-            ),
-          ],
-          if (_admin && r.isFailed && r.failureReason.isNotEmpty) ...<Widget>[
-            const SizedBox(height: 4),
-            Text(
-              r.failureReason,
-              style: TextStyle(fontSize: 11.5, color: spDeniedColor),
-            ),
-          ],
-          if (_admin && (r.isPendingApproval || r.isFailed)) ...<Widget>[
-            const SizedBox(height: 8),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: <Widget>[
-                if (r.isPendingApproval)
-                  TextButton(
-                    onPressed: busy ? null : () => _decide(r, approve: false),
-                    style: TextButton.styleFrom(
-                      foregroundColor: AppTheme.danger,
+                  const SizedBox(height: 6),
+                  Text(
+                    meta.joinDots(),
+                    style: TextStyle(fontSize: 11.5, color: AppTheme.textMuted),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    why.isEmpty
+                        ? whatHappened
+                        : '$whatHappened (${why.join(', ')})',
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      height: 1.35,
+                      color: AppTheme.textDark,
                     ),
-                    child: const Text('Reject'),
                   ),
-                const SizedBox(width: 6),
-                FilledButton(
-                  onPressed: busy ? null : () => _decide(r, approve: true),
-                  child: Text(
-                    busy
-                        ? 'Sending...'
-                        : r.isFailed
-                        ? 'Retry refund'
-                        : 'Approve & refund',
+                  const SizedBox(height: 6),
+                  Row(
+                    children: <Widget>[
+                      Container(
+                        width: 8,
+                        height: 8,
+                        decoration: BoxDecoration(
+                          color: coveredColor,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          coveredBy,
+                          style: const TextStyle(
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                ),
+                  if (r.hasBreakdown) _moneyStrip(r),
+                  _stepper(r),
+                  if (open) _breakdown(r),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 6),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: <Widget>[
+                          Text(
+                            open
+                                ? 'Hide the calculation'
+                                : 'See the calculation',
+                            style: TextStyle(
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w700,
+                              color: spExitColor,
+                            ),
+                          ),
+                          Icon(
+                            open
+                                ? Icons.expand_less_rounded
+                                : Icons.expand_more_rounded,
+                            size: 18,
+                            color: spExitColor,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                if (disputeLine != null)
+                  Text(
+                    disputeLine,
+                    style: TextStyle(
+                      fontSize: 12,
+                      height: 1.4,
+                      fontWeight: FontWeight.w600,
+                      color: AppTheme.textDark,
+                    ),
+                  ),
+                if (_admin && r.isFailed && r.failureReason.isNotEmpty)
+                  Text(
+                    r.failureReason,
+                    style: TextStyle(fontSize: 11.5, color: spDeniedColor),
+                  ),
+                if (!_admin && r.canDispute && !r.isRejected)
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: OutlinedButton.icon(
+                      onPressed: busy ? null : () => _dispute(r),
+                      icon: const Icon(Icons.gavel_rounded, size: 16),
+                      label: Text(busy ? 'Sending...' : 'Dispute this charge'),
+                    ),
+                  ),
+                if (_admin && r.hasOpenDispute)
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: <Widget>[
+                      TextButton(
+                        onPressed: busy
+                            ? null
+                            : () => _resolveDispute(r, uphold: false),
+                        child: const Text('Turn down'),
+                      ),
+                      const SizedBox(width: 6),
+                      FilledButton(
+                        onPressed: busy
+                            ? null
+                            : () => _resolveDispute(r, uphold: true),
+                        child: Text(busy ? 'Saving...' : 'SmartPark covers it'),
+                      ),
+                    ],
+                  ),
+                if (_admin && (r.isPendingApproval || r.isFailed))
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: <Widget>[
+                      if (r.isPendingApproval)
+                        TextButton(
+                          onPressed: busy
+                              ? null
+                              : () => _decide(r, approve: false),
+                          style: TextButton.styleFrom(
+                            foregroundColor: AppTheme.danger,
+                          ),
+                          child: const Text('Reject'),
+                        ),
+                      const SizedBox(width: 6),
+                      FilledButton(
+                        onPressed: busy
+                            ? null
+                            : () => _decide(r, approve: true),
+                        child: Text(
+                          busy
+                              ? 'Sending...'
+                              : r.isFailed
+                              ? 'Retry refund'
+                              : 'Approve & refund',
+                        ),
+                      ),
+                    ],
+                  ),
               ],
             ),
-          ],
+          ),
         ],
       ),
     );
