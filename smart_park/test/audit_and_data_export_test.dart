@@ -30,6 +30,44 @@ void main() {
       expect(spAuditCategory(''), SpAuditCategory.other);
     });
 
+    test('admin changes group with accounts', () {
+      expect(spAuditCategory('admin.promoted'), SpAuditCategory.account);
+      expect(spAuditCategory('admin.level_changed'), SpAuditCategory.account);
+    });
+
+    test('a facility\'s own business is kept from the admin', () {
+      for (final String action in <String>[
+        'cash.received',
+        'staff.shift_ended',
+        'staff.added',
+        'staff.password_reset',
+        'gate.overtime_status_changed',
+        'gate.missed_exit_recorded',
+      ]) {
+        expect(spAuditIsFacilityInternal(action), isTrue, reason: action);
+      }
+      for (final String action in <String>[
+        'facility.approved',
+        'facility.rates_changed',
+        'driver.warned',
+        'refund.approved',
+        'report.dismissed',
+        'account.data_exported',
+        'admin.promoted',
+        '',
+      ]) {
+        expect(spAuditIsFacilityInternal(action), isFalse, reason: action);
+      }
+    });
+
+    test('pages hold 10 entries each', () {
+      expect(spAuditPageCount(0, 10), 1);
+      expect(spAuditPageCount(1, 10), 1);
+      expect(spAuditPageCount(10, 10), 1);
+      expect(spAuditPageCount(11, 10), 2);
+      expect(spAuditPageCount(43, 10), 5);
+    });
+
     test('actions that take something away are severe', () {
       expect(spAuditIsSevere('facility.suspended'), isTrue);
       expect(spAuditIsSevere('staff.deactivated'), isTrue);

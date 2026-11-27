@@ -34,10 +34,27 @@ SpAuditCategory spAuditCategory(String action) {
     'staff' || 'cash' => SpAuditCategory.staff,
     'refund' => SpAuditCategory.refund,
     'report' || 'driver' => SpAuditCategory.report,
-    'account' => SpAuditCategory.account,
+    // Admins added, removed or given another level.
+    'account' || 'admin' => SpAuditCategory.account,
     'maintenance' => SpAuditCategory.maintenance,
     _ => SpAuditCategory.other,
   };
+}
+
+/// Day-to-day running of one facility: cash handed over, shifts closed,
+/// gate records corrected and the owner's own staff. These belong to the
+/// owner, whose Change History shows them; the admin's Audit Log leaves
+/// them out.
+bool spAuditIsFacilityInternal(String action) {
+  final String prefix = action.split('.').first;
+  return prefix == 'cash' || prefix == 'gate' || prefix == 'staff';
+}
+
+/// Number of pages needed to show [count] entries, [perPage] at a time.
+/// An empty list still has one (empty) page.
+int spAuditPageCount(int count, int perPage) {
+  if (count <= 0) return 1;
+  return (count + perPage - 1) ~/ perPage;
 }
 
 /// Actions that take something away from someone, shown in red.
@@ -100,7 +117,8 @@ class SpAuditLogCard extends StatelessWidget {
       title: admin ? 'Audit Log' : 'Change History',
       subtitle: admin
           ? 'Who approved, suspended, refunded, warned or changed what, '
-                'and when.'
+                'and when. A facility\'s cash, shifts and staff stay with '
+                'its owner.'
           : 'Every change to your facility, rates and staff: who made it '
                 'and when, including SmartPark\'s review decisions.',
       child: SizedBox(
@@ -136,10 +154,26 @@ class SpAuditLogPage extends StatefulWidget {
 }
 
 class _SpAuditLogPageState extends State<SpAuditLogPage> {
-  static const int _pageSize = 50;
+  /// Entries on one page.
+  static const int _perPage = 10;
 
-  int _limit = _pageSize;
+  /// Entries read at a time. The whole history is small, so the newest
+  /// [_window] are read once and paged on the phone: the filter counts
+  /// and "Page 2 of 5" are then exact.
+  static const int _window = 300;
+
+  final ScrollController _scroll = ScrollController();
+  int _limit = _window;
+  int _page = 0;
   SpAuditCategory? _category;
+  late Stream<QuerySnapshot<Map<String, dynamic>>> _stream = _query()
+      .snapshots();
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
 
   Query<Map<String, dynamic>> _query() {
     Query<Map<String, dynamic>> query = FirebaseFirestore.instance.collection(
@@ -156,15 +190,42 @@ class _SpAuditLogPageState extends State<SpAuditLogPage> {
   }
 
   List<SpAuditCategory> get _categories => widget.admin
-      ? SpAuditCategory.values
-            .where((SpAuditCategory c) => c != SpAuditCategory.other)
-            .toList()
+      ? const <SpAuditCategory>[
+          SpAuditCategory.facility,
+          SpAuditCategory.refund,
+          SpAuditCategory.report,
+          SpAuditCategory.account,
+          SpAuditCategory.maintenance,
+        ]
       : const <SpAuditCategory>[
           SpAuditCategory.facility,
           SpAuditCategory.staff,
           SpAuditCategory.refund,
           SpAuditCategory.report,
         ];
+
+  /// Whether this viewer is shown [entry] at all.
+  bool _shows(Map<String, dynamic> entry) {
+    if (spAuditIsDuplicate(entry)) return false;
+    // The owner's own business stays in the owner's Change History.
+    if (widget.admin &&
+        spAuditIsFacilityInternal((entry['action'] as String?) ?? '')) {
+      return false;
+    }
+    return true;
+  }
+
+  void _goTo(int page) {
+    setState(() => _page = page);
+    if (_scroll.hasClients) _scroll.jumpTo(0);
+  }
+
+  void _loadOlder() {
+    setState(() {
+      _limit += _window;
+      _stream = _query().snapshots();
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -175,7 +236,7 @@ class _SpAuditLogPageState extends State<SpAuditLogPage> {
         title: Text(widget.admin ? 'Audit Log' : 'Change History'),
       ),
       body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-        stream: _query().snapshots(),
+        stream: _stream,
         builder:
             (
               BuildContext context,
@@ -199,7 +260,7 @@ class _SpAuditLogPageState extends State<SpAuditLogPage> {
                   .map(
                     (QueryDocumentSnapshot<Map<String, dynamic>> d) => d.data(),
                   )
-                  .where((Map<String, dynamic> e) => !spAuditIsDuplicate(e))
+                  .where(_shows)
                   .toList();
               final Map<SpAuditCategory, int> counts = <SpAuditCategory, int>{};
               for (final Map<String, dynamic> e in all) {
@@ -217,15 +278,25 @@ class _SpAuditLogPageState extends State<SpAuditLogPage> {
                   )
                   .toList();
               final bool mayHaveMore = docs.length >= _limit;
+              final int pages = spAuditPageCount(entries.length, _perPage);
+              // New entries can arrive while a later page is open; never
+              // point past the last page.
+              final int page = _page.clamp(0, pages - 1);
+              final int from = page * _perPage;
+              final List<Map<String, dynamic>> shown = entries
+                  .skip(from)
+                  .take(_perPage)
+                  .toList();
 
               return Column(
                 children: <Widget>[
                   _filters(all.length, counts),
                   Expanded(
                     child: ListView(
-                      padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+                      controller: _scroll,
+                      padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
                       children: <Widget>[
-                        if (entries.isEmpty)
+                        if (shown.isEmpty)
                           Padding(
                             padding: const EdgeInsets.only(top: 12),
                             child: SpEmptyState(
@@ -233,30 +304,37 @@ class _SpAuditLogPageState extends State<SpAuditLogPage> {
                               message: _category == null
                                   ? 'Nothing has been recorded yet.'
                                   : 'No ${_category!.label.toLowerCase()} '
-                                        'changes in the loaded history.',
+                                        'changes recorded yet.',
                             ),
                           ),
-                        for (int i = 0; i < entries.length; i++) ...<Widget>[
-                          // A heading at the start of each day; the cards
-                          // then only need the time.
-                          if (_startsDay(entries, i))
-                            _DayHeading(entries[i]['at']),
-                          _AuditEntryTile(
-                            entry: entries[i],
-                            admin: widget.admin,
-                          ),
+                        for (int i = 0; i < shown.length; i++) ...<Widget>[
+                          // A heading at the start of each day (and at the
+                          // top of each page); the cards then only need the
+                          // time.
+                          if (_startsDay(shown, i)) _DayHeading(shown[i]['at']),
+                          _AuditEntryTile(entry: shown[i], admin: widget.admin),
                           const SizedBox(height: 10),
                         ],
-                        if (mayHaveMore)
+                        // History older than what was read: offered only on
+                        // the last page, where it would continue.
+                        if (mayHaveMore && page == pages - 1)
                           TextButton.icon(
-                            onPressed: () =>
-                                setState(() => _limit += _pageSize),
+                            onPressed: _loadOlder,
                             icon: const Icon(Icons.expand_more_rounded),
                             label: const Text('Load older entries'),
                           ),
                       ],
                     ),
                   ),
+                  if (entries.length > _perPage)
+                    _Pager(
+                      page: page,
+                      pages: pages,
+                      from: from + 1,
+                      to: from + shown.length,
+                      total: entries.length,
+                      onPage: _goTo,
+                    ),
                 ],
               );
             },
@@ -288,7 +366,7 @@ class _SpAuditLogPageState extends State<SpAuditLogPage> {
               label: 'All',
               count: total,
               selected: _category == null,
-              onTap: () => setState(() => _category = null),
+              onTap: () => _filterBy(null),
             ),
             for (final SpAuditCategory category in _categories)
               _FilterPill(
@@ -296,11 +374,88 @@ class _SpAuditLogPageState extends State<SpAuditLogPage> {
                 icon: category.icon,
                 count: counts[category] ?? 0,
                 selected: _category == category,
-                onTap: () => setState(
-                  () => _category = _category == category ? null : category,
-                ),
+                onTap: () => _filterBy(_category == category ? null : category),
               ),
           ],
+        ),
+      ),
+    );
+  }
+
+  /// Shows only [category] (or everything), from its first page.
+  void _filterBy(SpAuditCategory? category) {
+    setState(() => _category = category);
+    _goTo(0);
+  }
+}
+
+/// The bar under the log: "11-20 of 43", the previous and next buttons
+/// and "Page 2 of 5".
+class _Pager extends StatelessWidget {
+  const _Pager({
+    required this.page,
+    required this.pages,
+    required this.from,
+    required this.to,
+    required this.total,
+    required this.onPage,
+  });
+
+  /// The open page, counted from 0.
+  final int page;
+  final int pages;
+  final int from;
+  final int to;
+  final int total;
+  final ValueChanged<int> onPage;
+
+  @override
+  Widget build(BuildContext context) {
+    final bool first = page == 0;
+    final bool last = page >= pages - 1;
+    return Container(
+      decoration: BoxDecoration(
+        color: AppTheme.surface,
+        border: Border(top: BorderSide(color: AppTheme.border)),
+      ),
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
+          child: Row(
+            children: <Widget>[
+              IconButton(
+                tooltip: 'Previous page',
+                onPressed: first ? null : () => onPage(page - 1),
+                icon: const Icon(Icons.chevron_left_rounded),
+              ),
+              Expanded(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    Text(
+                      'Page ${page + 1} of $pages',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        color: AppTheme.textDark,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '$from-$to of $total',
+                      style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
+                    ),
+                  ],
+                ),
+              ),
+              IconButton(
+                tooltip: 'Next page',
+                onPressed: last ? null : () => onPage(page + 1),
+                icon: const Icon(Icons.chevron_right_rounded),
+              ),
+            ],
+          ),
         ),
       ),
     );
