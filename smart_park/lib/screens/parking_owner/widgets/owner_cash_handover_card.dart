@@ -550,8 +550,8 @@ class _OwnerCashHandoverCardState extends State<OwnerCashHandoverCard> {
     final String receiver = _receiverLabel(h);
     // A supervisor's handover also says whether the owner has the cash.
     final String passedOn = heldBySupervisor(h, widget.ownerId)
-        ? ' · not yet with the owner'
-        : (h['ownerReceivedAt'] != null ? ' · now with the owner' : '');
+        ? ' · Not yet with the owner'
+        : (h['ownerReceivedAt'] != null ? ' · Now with the owner' : '');
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 8),
       decoration: BoxDecoration(
@@ -607,8 +607,8 @@ class _OwnerCashHandoverCardState extends State<OwnerCashHandoverCard> {
     final double overtime = ((h['overtimeAmount'] as num?) ?? 0).toDouble();
     final double walkIn = ((h['walkInAmount'] as num?) ?? 0).toDouble();
     final List<String> parts = <String>[
-      if (overtime > 0) 'overtime ${spPeso(overtime)}',
-      if (walkIn > 0) 'walk-in ${spPeso(walkIn)}',
+      if (overtime > 0) 'Overtime ${spPeso(overtime)}',
+      if (walkIn > 0) 'Walk-in ${spPeso(walkIn)}',
     ];
     return parts.isEmpty ? '' : ' · ${parts.join(' + ')}';
   }
