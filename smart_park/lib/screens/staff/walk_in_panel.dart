@@ -8,6 +8,8 @@ import '../../services/error_reporter.dart';
 import '../../services/gate_cash.dart' show kMaxWalkInFee;
 import '../../services/gate_scan_service.dart' show settleGateWrite;
 import '../../services/gate_unsent_exits.dart';
+import '../../services/parking_pricing.dart'
+    show VehicleRates, kBaseStayHours, walkInSuggestedFee;
 import '../../theme/app_theme.dart';
 import '../../utils/friendly_error.dart';
 import '../../widgets/smartpark_ui.dart';
@@ -75,6 +77,10 @@ class _WalkInPanelState extends State<WalkInPanel> {
           .where('source', isEqualTo: 'walk_in')
           .where('entryStatus', isEqualTo: 'checked_in')
           .snapshots();
+
+  /// The facility's posted rates, kept from [_detailsStream] for the
+  /// walk-in fee suggestion.
+  Map<String, dynamic>? _rates;
 
   @override
   void dispose() {
@@ -267,11 +273,32 @@ class _WalkInPanelState extends State<WalkInPanel> {
   /// cancel, and then nothing is recorded.
   Future<double?> _askWalkInFee(Map<String, dynamic> data) {
     final String plate = ((data['vehiclePlate'] as String?) ?? '').trim();
+    final String vehicleType = (data['vehicleType'] as String?) ?? 'car';
+    final DateTime? entryAt = spParseDateTime(data['entryAt']);
+    final Object? raw =
+        _rates?[vehicleType] ?? _rates?[vehicleType.toLowerCase()];
+    final VehicleRates? rates = raw == null ? null : VehicleRates.from(raw);
+    final double? suggested = rates == null
+        ? null
+        : walkInSuggestedFee(
+            rates,
+            entryAt == null
+                ? Duration.zero
+                : DateTime.now().difference(entryAt),
+          );
     return showDialog<double>(
       context: context,
       builder: (BuildContext context) => _WalkInFeeDialog(
         title: plate.isEmpty ? 'Walk-in exit' : 'Walk-in exit · $plate',
-        stay: _stayLabel(spParseDateTime(data['entryAt'])),
+        stay: _stayLabel(entryAt),
+        suggested: suggested,
+        rateNote: rates == null || suggested == null
+            ? ''
+            : rates.succeedingHour > 0
+            ? 'Posted rate: ${spPeso(rates.initial)} for the first '
+                  '$kBaseStayHours hours, then ${spPeso(rates.succeedingHour)} '
+                  'per hour.'
+            : 'Posted rate: ${spPeso(rates.initial)}.',
       ),
     );
   }
@@ -427,6 +454,12 @@ class _WalkInPanelState extends State<WalkInPanel> {
           StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
             stream: _detailsStream,
             builder: (BuildContext context, snap) {
+              final Object? rates = snap.data?.data()?['rates'];
+              if (rates is Map) {
+                _rates = rates.map<String, dynamic>(
+                  (dynamic k, dynamic v) => MapEntry<String, dynamic>('$k', v),
+                );
+              }
               final List<String> others = spOtherVehicleSlots(
                 snap.data?.data()?['slotCounts'],
               ).keys.toList();
@@ -506,17 +539,34 @@ class _WalkInPanelState extends State<WalkInPanel> {
 
 /// The cash fee for a walk-in leaving: pops the amount (0 for "No fee").
 class _WalkInFeeDialog extends StatefulWidget {
-  const _WalkInFeeDialog({required this.title, required this.stay});
+  const _WalkInFeeDialog({
+    required this.title,
+    required this.stay,
+    this.suggested,
+    this.rateNote = '',
+  });
 
   final String title;
   final String stay;
+
+  /// The fee at the posted rates, filled in for staff to keep or change.
+  final double? suggested;
+
+  /// "Posted rate: PHP 30.00 for the first 2 hours, then ...".
+  final String rateNote;
 
   @override
   State<_WalkInFeeDialog> createState() => _WalkInFeeDialogState();
 }
 
 class _WalkInFeeDialogState extends State<_WalkInFeeDialog> {
-  final TextEditingController _fee = TextEditingController();
+  late final TextEditingController _fee = TextEditingController(
+    text: widget.suggested == null
+        ? ''
+        : widget.suggested! == widget.suggested!.roundToDouble()
+        ? widget.suggested!.toStringAsFixed(0)
+        : widget.suggested!.toStringAsFixed(2),
+  );
   String? _error;
 
   @override
@@ -554,6 +604,18 @@ class _WalkInFeeDialogState extends State<_WalkInFeeDialog> {
             'cash; it is added to the cash you hand over at the end of your shift.',
             style: TextStyle(color: AppTheme.textSecondary, height: 1.35),
           ),
+          if (widget.rateNote.isNotEmpty) ...<Widget>[
+            const SizedBox(height: 8),
+            Text(
+              '${widget.rateNote} The amount below follows it. Change it if '
+              'you collected a different amount.',
+              style: TextStyle(
+                fontSize: 12.5,
+                color: AppTheme.textSecondary,
+                height: 1.35,
+              ),
+            ),
+          ],
           const SizedBox(height: 12),
           TextField(
             controller: _fee,
