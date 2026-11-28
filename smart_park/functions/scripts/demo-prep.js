@@ -15,12 +15,14 @@ const { execSync } = require("child_process");
 const PROJECT = "smartpark-87e3d";
 const FACILITY = "T5Zp8aIeuA1Hc8itSu7M";
 const DRIVER = "ic9RV61N66YSAwc0j3MxX8gjDrH3";
-// The parked overtime example belongs to another driver (Nathaniel Sevilla),
-// so the test driver starts the demo with no active ticket and an
-// ABC 1234 lookup at the gate finds only the demo ticket.
-const OVERTIME_TICKET = "wWbY5Abplmf1qucd3e0z"; // base stay, motorcycle
-const OVERTIME_PLATE = "LMN 4521";
-const OVERTIME_ENTRY_LOG = "demo_overtime_entry";
+// The parked overtime example is on the test driver, so the driver side
+// shows it and gets the "time almost up" / "overtime started" pushes. Its
+// plate differs from ABC 1234, so a gate lookup of that plate stays
+// unambiguous. (The earlier example, LMN 4521 on Nathaniel Sevilla's
+// account, was retired on 2026-11-28.)
+const OVERTIME_TICKET = "demo_driver_overtime"; // base stay, motorcycle
+const OVERTIME_PLATE = "NBC 2207";
+const OVERTIME_ENTRY_LOG = "demo_driver_overtime_entry";
 const GATE_STAFF = { id: "y844QJxLLVRYPzu2bFXAvEg58Tx1", name: "Juan Dela Cruz", email: "e6zfa_juandelacruz2@staff.smartpark.internal" };
 const OWNER = "3028hHByKZbq6nbw3wnO0tD7f253";
 const OVERTIME_MINUTES = 75; // how far past the paid time it is when run
