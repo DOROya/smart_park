@@ -15,10 +15,18 @@ const { execSync } = require("child_process");
 const PROJECT = "smartpark-87e3d";
 const FACILITY = "T5Zp8aIeuA1Hc8itSu7M";
 const DRIVER = "ic9RV61N66YSAwc0j3MxX8gjDrH3";
-const OVERTIME_TICKET = "9xxcMbvEDNHsx59MjQeN"; // base stay, motorcycle ABC 1234
+// The parked overtime example belongs to another driver (Nathaniel Sevilla),
+// so the test driver starts the demo with no active ticket and an
+// ABC 1234 lookup at the gate finds only the demo ticket.
+const OVERTIME_TICKET = "wWbY5Abplmf1qucd3e0z"; // base stay, motorcycle
+const OVERTIME_PLATE = "LMN 4521";
+const OVERTIME_ENTRY_LOG = "demo_overtime_entry";
+const GATE_STAFF = { id: "y844QJxLLVRYPzu2bFXAvEg58Tx1", name: "Juan Dela Cruz", email: "e6zfa_juandelacruz2@staff.smartpark.internal" };
+const OWNER = "3028hHByKZbq6nbw3wnO0tD7f253";
 const OVERTIME_MINUTES = 75; // how far past the paid time it is when run
 
 const NAME = "Juliville Parking";
+const OLD_NAMES = ["Juliville Parking Test 1"];
 const POLICIES = [
   "1. Present your SmartPark QR or ticket to the gate staff on entry and exit.",
   "2. The base stay covers the first 2 hours. Overtime is charged per hour at the posted rate and paid in cash at the exit gate.",
@@ -130,9 +138,17 @@ async function refreshOvertime() {
   // remainingHours 2 + 75 minutes over: checked in 3h15m ago.
   const remaining = 2;
   const entryAt = new Date(Date.now() - (remaining * 60 + OVERTIME_MINUTES) * 60 * 1000);
+  const ticket = decF((await call(`${BASE}/transactions/${OVERTIME_TICKET}`)).fields || {});
+  let qr = {};
+  try { qr = JSON.parse(ticket.qrCode || "{}"); } catch (_) { /* rebuilt below */ }
+  const qrCode = JSON.stringify({ ...qr, transactionId: OVERTIME_TICKET, vehiclePlate: OVERTIME_PLATE });
   await patch(`transactions/${OVERTIME_TICKET}`, {
+    vehiclePlate: OVERTIME_PLATE,
+    qrCode,
     entryStatus: "checked_in",
     entryAt,
+    entryStaffId: GATE_STAFF.id,
+    entryLogId: OVERTIME_ENTRY_LOG,
     remainingHours: remaining,
     overtimeStatus: "none",
     overtimeHours: 0,
@@ -140,22 +156,38 @@ async function refreshOvertime() {
     overtimeSentFor: null,
     reminderSentFor: null,
     exitAt: null,
+    exitLogId: null,
+    exitStaffId: null,
+    staySeconds: null,
     updatedAt: new Date(),
   });
-  // Its latest entry log shows it as inside again (Inside Now, Activity).
-  const entries = (await queryWhere("activity_logs", { transactionId: OVERTIME_TICKET, scanType: "entry" }))
-    .filter((l) => l.establishmentID === FACILITY)
-    .sort((a, b) => String(b.timestamp || "").localeCompare(String(a.timestamp || "")));
-  if (entries.length > 0) {
-    await patch(`activity_logs/${entries[0].id}`, {
-      isActive: true,
-      timestamp: entryAt,
-      exitAt: null,
-      exitLogId: null,
-      updatedAt: new Date(),
-    });
-  }
-  console.log(`Overtime ticket ${OVERTIME_TICKET}: entered ${entryAt.toLocaleString()}, ${OVERTIME_MINUTES} min over.`);
+  // Its entry log shows it as inside (Inside Now, Activity).
+  await patch(`activity_logs/${OVERTIME_ENTRY_LOG}`, {
+    transactionId: OVERTIME_TICKET,
+    driverId: ticket.driverId,
+    driverName: ticket.driverName || "",
+    vehiclePlate: OVERTIME_PLATE,
+    vehicleType: ticket.vehicleType || "motorcycle",
+    ownerId: OWNER,
+    establishmentID: FACILITY,
+    facilityId: FACILITY,
+    staffId: GATE_STAFF.id,
+    staffName: GATE_STAFF.name,
+    staffEmail: GATE_STAFF.email,
+    scanType: "entry",
+    gateMode: "entry",
+    status: "ALLOWED",
+    decision: "ALLOWED",
+    decisionReason: "Paid ticket verified for this facility.",
+    remainingHours: remaining,
+    isActive: true,
+    timestamp: entryAt,
+    createdAt: entryAt,
+    exitAt: null,
+    exitLogId: null,
+    updatedAt: new Date(),
+  });
+  console.log(`Overtime ticket ${OVERTIME_TICKET} (${OVERTIME_PLATE}): entered ${entryAt.toLocaleString()}, ${OVERTIME_MINUTES} min over.`);
 }
 
 async function main() {
@@ -184,6 +216,17 @@ async function main() {
       }
     }
   }
+  // Reports, flags, warnings and refunds filed under the old name.
+  for (const col of ["driver_reports", "staff_incidents", "driver_warnings", "refunds", "facility_reports"]) {
+    for (const old of OLD_NAMES) {
+      for (const d of await query(col, "establishmentName", old)) {
+        const fields = { establishmentName: NAME };
+        if (typeof d.message === "string" && d.message.includes(old)) fields.message = d.message.split(old).join(NAME);
+        await patch(`${col}/${d.id}`, fields);
+        renamed++;
+      }
+    }
+  }
   console.log(`Facility renamed to "${NAME}" with policies; ${renamed} records updated.`);
 
   // 2. The test driver's unused or expired temporary QRs: delete.
@@ -203,13 +246,17 @@ async function main() {
   let closed = 0;
   for (const t of tickets) {
     if (t.id === OVERTIME_TICKET) continue;
+    // Only the demo facility: Olaivar Park's TEST123 ticket keeps its unused
+    // hours for the pending refund request.
+    if (t.establishmentId !== FACILITY) continue;
     const entry = String(t.entryStatus || "").toLowerCase();
     const open = entry === "checked_in" || entry === "inside" || (t.remainingHours ?? 1) > 0;
     if (t.status === "paid" && open) {
+      // Read-back timestamps come out as strings, so only set exitAt when missing.
       await patch(`transactions/${t.id}`, {
         entryStatus: "checked_out",
         remainingHours: 0,
-        exitAt: t.exitAt || new Date(),
+        ...(t.exitAt ? {} : { exitAt: new Date() }),
         updatedAt: new Date(),
       });
       closed++;
