@@ -4,6 +4,7 @@
 //   cd functions && node scripts/demo-prep.js overtime   # only refresh the overtime ticket
 //   cd functions && node scripts/demo-prep.js policies   # only rewrite the posted policies
 //   cd functions && node scripts/demo-prep.js logs       # close gate entries left open by tickets that left
+//   cd functions && node scripts/demo-prep.js extras     # only refresh the QR-expiry and missed-exit examples
 //
 // Uses the Firebase CLI login (firebase login), through the Firestore REST
 // API, since this PC has no gcloud Application Default Credentials.
@@ -192,6 +193,100 @@ async function refreshOvertime() {
   console.log(`Overtime ticket ${OVERTIME_TICKET} (${OVERTIME_PLATE}): entered ${entryAt.toLocaleString()}, ${OVERTIME_MINUTES} min over.`);
 }
 
+// Examples on the test driver of things that otherwise take days to show.
+// Fixed ids starting "demo_", so steps 2 and 3 leave them alone.
+const PASS_EXPIRING = "demo_pass_expiring"; // "expires soon" push within 5 min
+const PASS_EXPIRED = "demo_pass_expired";
+const MISSED_EXIT_TICKET = "demo_missed_exit";
+const MISSED_EXIT_LOG = "demo_missed_exit_entry";
+const HOUR = 3600 * 1000;
+const PASS_LIFETIME = 72 * HOUR;
+
+// A motorcycle base-stay pass at the demo facility, as the app makes one.
+function demoPass(id, plate, createdAt, deleteAt) {
+  const expiresAt = new Date(createdAt.getTime() + PASS_LIFETIME);
+  return {
+    driverId: DRIVER,
+    establishmentId: FACILITY,
+    establishmentName: NAME,
+    ownerId: OWNER,
+    vehicleType: "motorcycle",
+    vehiclePlate: plate,
+    plan: "base",
+    duration: 1,
+    paymentMethod: "gcash",
+    amount: 30,
+    amountCentavos: 3000,
+    commissionRate: 0.05,
+    platformFeeCentavos: 150,
+    estimatedProcessorFeeCentavos: 60,
+    netToOwnerCentavos: 2790,
+    destinationAccountId: OWNER,
+    slotSnapshot: { car: 10, motorcycle: 5 },
+    overtimeRate: 10,
+    kind: "gate_pass",
+    transactionId: id,
+    qrCode: JSON.stringify({
+      transactionId: id, driverId: DRIVER, establishmentId: FACILITY, vehicleType: "motorcycle",
+      plan: "base", duration: 1, vehiclePlate: plate, generatedAt: createdAt.toISOString(),
+    }),
+    status: "awaiting_gate",
+    directPay: true,
+    payer: { phone: "+639171234567" },
+    expiresAt,
+    // TTL deletes passes at deleteAt; the expired one is kept a while.
+    deleteAt: deleteAt || expiresAt,
+    expiryReminderSent: false,
+    createdAt,
+    updatedAt: createdAt,
+  };
+}
+
+async function setupExtras() {
+  const now = Date.now();
+  // Expires in 11 h 50 min: inside the 12 h warning window.
+  await patch(`parking_checkouts/${PASS_EXPIRING}`,
+    demoPass(PASS_EXPIRING, "QRS 4410", new Date(now - PASS_LIFETIME + 11 * HOUR + 50 * 60 * 1000)));
+  // Expired 2 hours ago; kept for a week so the TTL doesn't remove it.
+  await patch(`parking_checkouts/${PASS_EXPIRED}`,
+    demoPass(PASS_EXPIRED, "JVL 8812", new Date(now - PASS_LIFETIME - 2 * HOUR), new Date(now + 7 * 24 * HOUR)));
+
+  // Parked two days ago on a 2-hour base stay and never scanned out.
+  const entryAt = new Date(now - 48 * HOUR);
+  const createdAt = new Date(entryAt.getTime() - 5 * 60 * 1000);
+  const plate = "KRT 5530";
+  const ref = decF((await call(`${BASE}/transactions/${OVERTIME_TICKET}`)).fields || {});
+  await patch(`transactions/${MISSED_EXIT_TICKET}`, {
+    driverId: DRIVER, driverName: ref.driverName || "", driverEmail: ref.driverEmail || "",
+    ownerId: OWNER, establishmentId: FACILITY, establishmentName: NAME,
+    vehicleType: "motorcycle", vehiclePlate: plate, plan: "base", duration: 1, amount: 30, overtimeRate: 10,
+    slotSnapshot: { car: 10, motorcycle: 5 },
+    status: "paid", paymentStatus: "paid", paymentMethod: "gcash",
+    paymongo: { status: "paid", referenceNumber: "", linkId: "", checkoutUrl: "" },
+    checkoutId: MISSED_EXIT_TICKET,
+    qrCode: JSON.stringify({
+      transactionId: MISSED_EXIT_TICKET, driverId: DRIVER, establishmentId: FACILITY, vehicleType: "motorcycle",
+      plan: "base", duration: 1, vehiclePlate: plate, generatedAt: createdAt.toISOString(),
+    }),
+    entryStatus: "checked_in", entryAt, entryStaffId: GATE_STAFF.id, entryLogId: MISSED_EXIT_LOG,
+    remainingHours: 2, overtimeStatus: "none", overtimeHours: 0, overtimeAmount: 0,
+    // Long past both notices: mark them sent so no late push goes out.
+    reminderSentFor: entryAt.getTime(), overtimeSentFor: entryAt.getTime(),
+    exitAt: null, exitLogId: null, exitStaffId: null, staySeconds: null, missedExit: null,
+    createdAt, createdAtClient: createdAt, updatedAt: new Date(),
+  });
+  await patch(`activity_logs/${MISSED_EXIT_LOG}`, {
+    transactionId: MISSED_EXIT_TICKET, driverId: DRIVER, driverName: ref.driverName || "",
+    vehiclePlate: plate, vehicleType: "motorcycle", ownerId: OWNER, establishmentID: FACILITY, facilityId: FACILITY,
+    staffId: GATE_STAFF.id, staffName: GATE_STAFF.name, staffEmail: GATE_STAFF.email,
+    scanType: "entry", gateMode: "entry", status: "ALLOWED", decision: "ALLOWED",
+    decisionReason: "Paid ticket verified for this facility.", remainingHours: 2, isActive: true,
+    timestamp: entryAt, createdAt: entryAt, exitAt: null, exitLogId: null, updatedAt: new Date(),
+  });
+  console.log(`Temporary QRs: QRS 4410 expires in 11 h 50 min, JVL 8812 expired 2 h ago. ` +
+    `Missed exit: KRT 5530 parked since ${entryAt.toLocaleString()}.`);
+}
+
 async function main() {
   H = { Authorization: `Bearer ${await token()}`, "Content-Type": "application/json" };
   if (process.argv[2] === "overtime") return refreshOvertime();
@@ -202,6 +297,7 @@ async function main() {
     return;
   }
   if (process.argv[2] === "logs") return closeStaleEntryLogs();
+  if (process.argv[2] === "extras") return setupExtras();
 
   // 1. Facility name and policy.
   await patch(`establishments/${FACILITY}`, {
@@ -235,6 +331,7 @@ async function main() {
   const checkouts = await query("parking_checkouts", "driverId", DRIVER);
   let deleted = 0;
   for (const c of checkouts) {
+    if (c.id.startsWith("demo_")) continue; // the examples below
     if (["awaiting_gate", "pending", "expired", "cancelled", "failed"].includes(c.status)) {
       await del(`parking_checkouts/${c.id}`);
       deleted++;
@@ -247,7 +344,7 @@ async function main() {
   const tickets = await query("transactions", "driverId", DRIVER);
   let closed = 0;
   for (const t of tickets) {
-    if (t.id === OVERTIME_TICKET) continue;
+    if (t.id === OVERTIME_TICKET || t.id === MISSED_EXIT_TICKET) continue;
     // Only the demo facility: Olaivar Park's TEST123 ticket keeps its unused
     // hours for the pending refund request.
     if (t.establishmentId !== FACILITY) continue;
@@ -269,6 +366,9 @@ async function main() {
 
   // 4. One parked ticket that is in overtime.
   await refreshOvertime();
+
+  // 5. Temporary QRs about to expire and expired, and a missed exit.
+  await setupExtras();
 }
 
 main().catch((e) => {
