@@ -30,6 +30,7 @@ const {
   asString,
   requireVerifiedUser,
   loadEstablishment,
+  facilityClosedMessage,
   priceCheckout,
   buildQrCode,
   chargeDetails,
@@ -612,13 +613,13 @@ async function startGatePayment(request, secretKey) {
   });
   if (!claimed.fresh) return { status: "pending" };
 
-  // The facility may have been suspended since the QR was made.
+  // The facility may have been suspended or closed since the QR was made;
+  // its gate admits no one then, so the driver must not be charged.
   const establishment = await loadEstablishment(db, claimed.c.establishmentId);
   let session;
   try {
-    if (String(establishment?.status || "").toLowerCase() !== "approved") {
-      throw new HttpsError("failed-precondition", "This facility is not accepting drivers right now.");
-    }
+    const closed = facilityClosedMessage(establishment, nowMs);
+    if (closed) throw new HttpsError("failed-precondition", closed);
     // An owner who owes refunds pays part back from this sale.
     const recovery = await reserveRecovery(db, claimed.c.ownerId, claimed.c.netToOwnerCentavos);
     if (recovery > 0) await ref.update({ refundRecoveryCentavos: recovery });

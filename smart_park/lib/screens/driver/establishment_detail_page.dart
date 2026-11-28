@@ -759,6 +759,11 @@ class _EstablishmentDetailPageState extends State<EstablishmentDetailPage>
 
   Widget _buildBottomBar(Map<String, dynamic> data) {
     final ({double price, int hours})? from = facilityCheapestStay(data);
+    // Closed by its owner for a while: the gate admits no one, so no new
+    // QRs (the server refuses them too). QRs made before stay valid.
+    final String? closedUntil = DriverEstablishmentService.closedUntilLabel(
+      data,
+    );
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
       decoration: BoxDecoration(
@@ -792,7 +797,7 @@ class _EstablishmentDetailPageState extends State<EstablishmentDetailPage>
             ],
             Expanded(
               child: ElevatedButton.icon(
-                onPressed: _generatingTicket
+                onPressed: _generatingTicket || closedUntil != null
                     ? null
                     : () => _openVehicleSelection(data),
                 icon: _generatingTicket
@@ -812,7 +817,9 @@ class _EstablishmentDetailPageState extends State<EstablishmentDetailPage>
                   ),
                 ),
                 label: Text(
-                  _generatingTicket ? 'Preparing QR...' : 'Park Here',
+                  _generatingTicket
+                      ? 'Preparing QR...'
+                      : (closedUntil ?? 'Park Here'),
                   style: const TextStyle(
                     fontWeight: FontWeight.w800,
                     fontSize: 15,

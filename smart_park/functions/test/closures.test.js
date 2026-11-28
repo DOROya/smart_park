@@ -25,3 +25,23 @@ test("the notice says until when, why, and that tickets stay valid", () => {
   assert.match(n.body, /Closed until Nov 24, 3:00 PM \(Holiday\)\./);
   assert.match(n.body, /stays valid/);
 });
+
+test("facilityClosedMessage refuses pulled and temporarily closed facilities", () => {
+  const { facilityClosedMessage } = require("../src/checkout");
+  const now = Date.UTC(2026, 10, 28, 4, 0);
+  assert.equal(facilityClosedMessage({ status: "approved" }, now), null);
+  assert.match(facilityClosedMessage({ status: "suspended" }, now), /not accepting/);
+  assert.match(
+    facilityClosedMessage({ status: "approved", closedUntil: at(now + 3600e3) }, now),
+    /closed until/,
+  );
+  // Ended, or not started yet.
+  assert.equal(facilityClosedMessage({ status: "approved", closedUntil: at(now - 1) }, now), null);
+  assert.equal(
+    facilityClosedMessage(
+      { status: "approved", closedAt: at(now + 60e3), closedUntil: at(now + 3600e3) },
+      now,
+    ),
+    null,
+  );
+});
