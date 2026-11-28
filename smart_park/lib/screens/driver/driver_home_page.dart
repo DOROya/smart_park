@@ -8,6 +8,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import '../../services/error_reporter.dart';
+import '../../services/facility_status.dart' show isFacilityRestricted;
 import '../../services/parking_push.dart';
 import '../../services/permission_service.dart';
 import '../../theme/app_theme.dart';
@@ -126,7 +127,34 @@ class _DriverHomePageState extends State<DriverHomePage>
         ],
       ).timeout(const Duration(seconds: 6));
       offline = snaps.first.metadata.isFromCache;
+      // Facilities SmartPark pulled: their unparked tickets are invalid.
+      final Set<String> facilityIds = <String>{
+        for (final QueryDocumentSnapshot<Map<String, dynamic>> d
+            in snaps[0].docs)
+          _facilityIdOf(d.data()),
+      }..remove('');
+      final Set<String> pulled = <String>{};
+      final List<String> ids = facilityIds.toList();
+      for (int i = 0; i < ids.length; i += 30) {
+        final QuerySnapshot<Map<String, dynamic>> facilities = await db
+            .collection('establishment_details')
+            .where(
+              FieldPath.documentId,
+              whereIn: ids.sublist(
+                i,
+                i + 30 > ids.length ? ids.length : i + 30,
+              ),
+            )
+            .get()
+            .timeout(const Duration(seconds: 6));
+        for (final QueryDocumentSnapshot<Map<String, dynamic>> f
+            in facilities.docs) {
+          if (isFacilityRestricted(f.data())) pulled.add(f.id);
+        }
+      }
       pick = pickShortcutTicket(
+        facilityPulled: (Map<String, dynamic> t) =>
+            pulled.contains(_facilityIdOf(t)),
         tickets: <(String, Map<String, dynamic>)>[
           for (final QueryDocumentSnapshot<Map<String, dynamic>> d
               in snaps[0].docs)
@@ -815,3 +843,9 @@ class _DriverHomePageState extends State<DriverHomePage>
     );
   }
 }
+
+String _facilityIdOf(Map<String, dynamic> ticket) =>
+    ((ticket['establishmentId'] as String?) ??
+            (ticket['establishmentID'] as String?) ??
+            '')
+        .trim();

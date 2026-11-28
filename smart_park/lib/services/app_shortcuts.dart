@@ -69,7 +69,8 @@ class AppShortcuts {
 }
 
 /// Which of the driver's tickets "Show my ticket" opens, in order:
-/// a ticket checked in now; else the newest paid ticket with hours left;
+/// a ticket checked in now; else the newest paid ticket with hours left
+/// whose facility is not pulled ([facilityPulled]);
 /// else the newest unused temporary QR; else null (the Tickets tab).
 /// [tickets] and [passes] are (id, data) pairs; [createdAt] reads a date.
 ({String kind, String id, Map<String, dynamic> data})? pickShortcutTicket({
@@ -77,6 +78,7 @@ class AppShortcuts {
   required List<(String, Map<String, dynamic>)> passes,
   required DateTime? Function(Map<String, dynamic> data) createdAt,
   DateTime? now,
+  bool Function(Map<String, dynamic> ticket)? facilityPulled,
 }) {
   final DateTime at = now ?? DateTime.now();
   final DateTime epoch = DateTime.fromMillisecondsSinceEpoch(0);
@@ -96,7 +98,10 @@ class AppShortcuts {
       tickets
           .where(
             ((String, Map<String, dynamic>) t) =>
-                paid(t.$2) && (parked(t.$2) || ticketHoursLeft(t.$2) > 0),
+                paid(t.$2) &&
+                (parked(t.$2) ||
+                    (ticketHoursLeft(t.$2) > 0 &&
+                        !(facilityPulled?.call(t.$2) ?? false))),
           )
           .toList()
         ..sort(newestFirst);

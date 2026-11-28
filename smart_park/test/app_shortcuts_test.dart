@@ -32,6 +32,38 @@ void main() {
     expect(pick?.id, 'parked');
   });
 
+  test('skips an unparked ticket at a pulled facility', () {
+    final Map<String, dynamic> pulled = ticket(22)
+      ..['establishmentId'] = 'olaivar';
+    final Map<String, dynamic> parkedThere = ticket(5, entry: 'checked_in')
+      ..['establishmentId'] = 'olaivar';
+    bool isPulled(Map<String, dynamic> t) => t['establishmentId'] == 'olaivar';
+    expect(
+      pickShortcutTicket(
+        tickets: <(String, Map<String, dynamic>)>[
+          ('pulled', pulled),
+          ('ok', ticket(10)),
+        ],
+        passes: const <(String, Map<String, dynamic>)>[],
+        createdAt: created,
+        now: now,
+        facilityPulled: isPulled,
+      )?.id,
+      'ok',
+    );
+    // Already inside: it still needs the QR to get out.
+    expect(
+      pickShortcutTicket(
+        tickets: <(String, Map<String, dynamic>)>[('parked', parkedThere)],
+        passes: const <(String, Map<String, dynamic>)>[],
+        createdAt: created,
+        now: now,
+        facilityPulled: isPulled,
+      )?.id,
+      'parked',
+    );
+  });
+
   test('then the newest paid ticket with hours left, then a temporary QR', () {
     final Map<String, dynamic> usedUp = ticket(23)..['remainingHours'] = 0;
     expect(
