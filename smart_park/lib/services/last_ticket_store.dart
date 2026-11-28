@@ -104,7 +104,15 @@ class LastTicketStore {
     }
   }
 
-  /// On sign-out, and when no ticket is active any more.
+  /// When no paid ticket is usable any more (hours used up, or its
+  /// facility was pulled). A saved temporary QR is kept.
+  static Future<void> clearTicket() async {
+    final SavedTicket? saved = await load();
+    if (saved == null || saved.isPass) return;
+    await clear();
+  }
+
+  /// On sign-out.
   static Future<void> clear() async {
     _lastSaved = null;
     try {

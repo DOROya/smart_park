@@ -179,6 +179,12 @@ class _DriverTicketHistorySectionState extends State<DriverTicketHistorySection>
                           facilitySnapshot.data ??
                               const <String, Map<String, dynamic>>{},
                           refundsByTicket(refundSnapshot.data),
+                          // Until facility status arrives, a ticket at a
+                          // pulled facility would flash as Active.
+                          facilitiesLoading:
+                              facilityIds.isNotEmpty &&
+                              !facilitySnapshot.hasData &&
+                              !facilitySnapshot.hasError,
                         ),
                   ),
             );
@@ -190,8 +196,9 @@ class _DriverTicketHistorySectionState extends State<DriverTicketHistorySection>
     AsyncSnapshot<QuerySnapshot<Map<String, dynamic>>> snapshot,
     List<QueryDocumentSnapshot<Map<String, dynamic>>> tickets,
     Map<String, Map<String, dynamic>> facilities,
-    Map<String, ParkingRefund> refunds,
-  ) {
+    Map<String, ParkingRefund> refunds, {
+    bool facilitiesLoading = false,
+  }) {
     final List<QueryDocumentSnapshot<Map<String, dynamic>>> active =
         <QueryDocumentSnapshot<Map<String, dynamic>>>[];
     final List<QueryDocumentSnapshot<Map<String, dynamic>>> invalid =
@@ -215,8 +222,12 @@ class _DriverTicketHistorySectionState extends State<DriverTicketHistorySection>
     }
 
     // Kept on this phone so "Show my ticket" opens it with no signal: the
-    // one parked first, else the newest with hours left.
-    if (active.isNotEmpty) {
+    // one parked first, else the newest with hours left. Cleared once the
+    // server says none is usable (e.g. its facility was pulled), so the
+    // no-signal screen never shows a ticket the gate will refuse.
+    final bool settled =
+        !facilitiesLoading && snapshot.hasData && !snapshot.hasError;
+    if (settled && active.isNotEmpty) {
       final QueryDocumentSnapshot<Map<String, dynamic>> best = active
           .firstWhere(
             (QueryDocumentSnapshot<Map<String, dynamic>> d) =>
@@ -228,6 +239,9 @@ class _DriverTicketHistorySectionState extends State<DriverTicketHistorySection>
       );
     }
     final bool offline = snapshot.data?.metadata.isFromCache ?? false;
+    if (settled && active.isEmpty && !offline) {
+      unawaited(LastTicketStore.clearTicket());
+    }
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
@@ -292,7 +306,8 @@ class _DriverTicketHistorySectionState extends State<DriverTicketHistorySection>
             icon: Icons.error_outline_rounded,
             message: 'Unable to load your tickets right now.',
           )
-        else if (snapshot.connectionState == ConnectionState.waiting)
+        else if (snapshot.connectionState == ConnectionState.waiting ||
+            facilitiesLoading)
           const Padding(padding: EdgeInsets.all(24), child: SpSkeletonList())
         else if (tickets.isEmpty)
           const SpEmptyState(
