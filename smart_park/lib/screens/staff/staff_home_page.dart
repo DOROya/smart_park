@@ -24,6 +24,7 @@ import '../../widgets/smartpark_ui.dart';
 import '../../widgets/sp_vehicle_type.dart';
 import '../../widgets/sp_activity_details.dart';
 import '../../widgets/sp_activity_search.dart';
+import '../../widgets/sp_connection.dart';
 import '../../widgets/sp_driver_report.dart' show showFlagIncidentDialog;
 import '../../widgets/sp_loading.dart';
 import '../../widgets/sp_overtime.dart';

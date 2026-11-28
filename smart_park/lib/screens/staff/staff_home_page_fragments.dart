@@ -756,9 +756,14 @@ extension _StaffHomePageFragments on _StaffHomePageState {
       2 => _buildHistoryTab(),
       _ => _buildDashboardTab(userData),
     };
-    // On every tab, so an exit that never reached the server is not missed.
+    // On every tab, so an exit that never reached the server is not missed,
+    // and staff know about lost signal before a scan, not during one.
     return Column(
       children: <Widget>[
+        const SpConnectionBanner(
+          message: 'No connection · Exits still work, entries need signal.',
+          padding: EdgeInsets.fromLTRB(16, 8, 16, 0),
+        ),
         UnsentExitsBanner(unsent: _unsentExits),
         Expanded(child: tab),
       ],

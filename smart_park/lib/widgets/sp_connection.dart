@@ -77,7 +77,18 @@ class SpPullToRefresh extends StatelessWidget {
 /// only after Firestore has served from the cache for a few seconds, so a
 /// slow first connection or a short blip does not flash it.
 class SpConnectionBanner extends StatefulWidget {
-  const SpConnectionBanner({super.key});
+  const SpConnectionBanner({
+    super.key,
+    this.message = 'No connection. Numbers may be out of date until '
+        'you are back online.',
+    this.padding = const EdgeInsets.only(bottom: 8),
+  });
+
+  /// What the strip says. Each role can say what still works offline.
+  final String message;
+
+  /// Space around the strip, only while it shows.
+  final EdgeInsetsGeometry padding;
 
   @override
   State<SpConnectionBanner> createState() => _SpConnectionBannerState();
@@ -143,7 +154,7 @@ class _SpConnectionBannerState extends State<SpConnectionBanner> {
       child: !_offline
           ? const SizedBox(width: double.infinity)
           : Padding(
-              padding: const EdgeInsets.only(bottom: 8),
+              padding: widget.padding,
               child: Container(
                 padding: const EdgeInsets.fromLTRB(12, 6, 4, 6),
                 decoration: BoxDecoration(
@@ -163,8 +174,7 @@ class _SpConnectionBannerState extends State<SpConnectionBanner> {
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        'No connection. Numbers may be out of date until '
-                        'you are back online.',
+                        widget.message,
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w600,
