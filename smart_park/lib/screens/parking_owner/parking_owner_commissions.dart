@@ -24,7 +24,6 @@ class _CommissionRecord {
     required this.platformFee,
     required this.netToOwner,
     required this.status,
-    this.refundPayback = 0,
     this.createdAt,
     this.overtimeHours = 0,
     this.overtimeAmount = 0,
@@ -38,14 +37,9 @@ class _CommissionRecord {
   final double platformFee;
   final double netToOwner;
 
-  /// Part of the owner's share kept back to pay off a refund they owe
-  /// (`refundRecoveryCentavos` on the split). Zero on most sales.
-  final double refundPayback;
-
   /// PayMongo's (estimated) processing fee - whatever is left of the gross
-  /// after SmartPark's commission, any refund payback and the payout.
-  double get processingFee =>
-      grossAmount - platformFee - refundPayback - netToOwner;
+  /// after SmartPark's commission and the owner's payout.
+  double get processingFee => grossAmount - platformFee - netToOwner;
   final String status;
   final DateTime? createdAt;
 
@@ -278,7 +272,6 @@ class _CommissionsListContentState extends State<_CommissionsListContent>
       double grossAmount = 0;
       double platformFee = 0;
       double netToOwner = 0;
-      double refundPayback = 0;
       String status =
           ((data['status'] as String?) ??
                   (data['paymentStatus'] as String?) ??
@@ -298,8 +291,6 @@ class _CommissionsListContentState extends State<_CommissionsListContent>
         platformFee =
             ((matchingSplit['platformFeeCentavos'] as num?) ?? 0) / 100;
         netToOwner = ((matchingSplit['netToOwnerCentavos'] as num?) ?? 0) / 100;
-        refundPayback =
-            ((matchingSplit['refundRecoveryCentavos'] as num?) ?? 0) / 100;
         if (matchingSplit['status'] != null) {
           status = (matchingSplit['status'] as String).toUpperCase();
         }
@@ -339,7 +330,6 @@ class _CommissionsListContentState extends State<_CommissionsListContent>
         platformFee: platformFee,
         netToOwner: netToOwner,
         status: status,
-        refundPayback: refundPayback,
         createdAt: createdAt,
         overtimeHours: ((data['overtimeHours'] as num?) ?? 0).toInt(),
         overtimeAmount: ((data['overtimeAmount'] as num?) ?? 0).toDouble(),
@@ -640,9 +630,7 @@ extension on _CommissionsListContentState {
             at: r.createdAt!,
             grossCentavos: centavos(r.grossAmount),
             commissionCentavos: centavos(r.platformFee),
-            // The report has no payback column yet, so it stays with
-            // processing there and the columns still add up.
-            processingCentavos: centavos(r.processingFee + r.refundPayback),
+            processingCentavos: centavos(r.processingFee),
             payoutCentavos: centavos(r.netToOwner),
           ),
       for (final QueryDocumentSnapshot<Map<String, dynamic>> doc in txDocs)
@@ -875,8 +863,6 @@ class _TransactionCard extends StatelessWidget {
                   child: Divider(height: 1, color: AppTheme.border),
                 ),
                 _line('Commission', record.platformFee),
-                if (record.refundPayback > 0)
-                  _line('Refund payback', record.refundPayback),
                 _line('Processing (est.)', record.processingFee),
                 _line('Payout (est.)', record.netToOwner, strong: true),
                 if (record.hasOvertime) _overtimeLine(),
@@ -948,7 +934,6 @@ class _OwnerTransactionsPageState extends State<_OwnerTransactionsPage> {
     final double gross = sum((_CommissionRecord r) => r.grossAmount);
     final double commission = sum((_CommissionRecord r) => r.platformFee);
     final double processing = sum((_CommissionRecord r) => r.processingFee);
-    final double payback = sum((_CommissionRecord r) => r.refundPayback);
     final double payout = sum((_CommissionRecord r) => r.netToOwner);
 
     final int extraCount = all.where(_isExtra).length;
@@ -993,7 +978,6 @@ class _OwnerTransactionsPageState extends State<_OwnerTransactionsPage> {
                   payout: payout,
                   commission: commission,
                   processing: processing,
-                  payback: payback,
                 ),
                 const SizedBox(height: 16),
                 _search(),
@@ -1070,7 +1054,6 @@ class _OwnerTransactionsPageState extends State<_OwnerTransactionsPage> {
     required double payout,
     required double commission,
     required double processing,
-    double payback = 0,
   }) {
     final Color payoutColor = spEntryColor;
     final Color commissionColor = AppTheme.accentText;
@@ -1208,18 +1191,6 @@ class _OwnerTransactionsPageState extends State<_OwnerTransactionsPage> {
                 legend(processingColor, 'Processing', processing),
               ],
             ),
-            if (payback > 0) ...<Widget>[
-              const SizedBox(height: 8),
-              Text(
-                '${spPeso(payback)} of your share paid back refunds you '
-                'owe. See Refunds for the balance.',
-                style: TextStyle(
-                  fontSize: 12,
-                  height: 1.35,
-                  color: AppTheme.textSecondary,
-                ),
-              ),
-            ],
           ],
         ],
       ),
@@ -1504,13 +1475,6 @@ class _OwnerTransactionsPageState extends State<_OwnerTransactionsPage> {
                       minus: true,
                       color: AppTheme.textSecondary,
                     ),
-                    if (r.refundPayback > 0)
-                      line(
-                        'Refund payback',
-                        r.refundPayback,
-                        minus: true,
-                        color: AppTheme.textSecondary,
-                      ),
                     line(
                       'PayMongo processing (est.)',
                       r.processingFee,
@@ -1524,24 +1488,6 @@ class _OwnerTransactionsPageState extends State<_OwnerTransactionsPage> {
                       strong: true,
                       color: spEntryColor,
                     ),
-                    if (paid) ...<Widget>[
-                      const SizedBox(height: 6),
-                      Text(
-                        <String>[
-                          if (r.refundPayback > 0)
-                            'Refund payback is part of your share that went '
-                                'to a refund you owe.',
-                          'PayMongo sends your payout to your bank, not '
-                              'SmartPark. Its fee is an estimate, so what '
-                              'arrives can differ slightly.',
-                        ].join(' '),
-                        style: TextStyle(
-                          fontSize: 11.5,
-                          height: 1.35,
-                          color: AppTheme.textMuted,
-                        ),
-                      ),
-                    ],
                     if (r.hasOvertime) ...<Widget>[
                       Divider(height: 14, color: AppTheme.border),
                       line(

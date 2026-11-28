@@ -149,14 +149,6 @@ class _DriverPackageSelectionPageState
                         'Hours you do not use stay on the ticket for your '
                         'next visit.',
                   ),
-                  const SizedBox(height: 12),
-                  const SpDialogPoint(
-                    icon: Icons.currency_exchange_rounded,
-                    text:
-                        'Refunds only happen if SmartPark suspends or deactivates '
-                        'the facility. You get back your unused hours, minus '
-                        "SmartPark's fee and PayMongo's fee.",
-                  ),
                   const SizedBox(height: 16),
                   Material(
                     color: AppTheme.surfaceAlt,

@@ -211,24 +211,6 @@ int includedStayHours({required String plan, required int duration}) {
 int stayHours(Duration elapsed) =>
     elapsed.inMinutes <= 0 ? 0 : (elapsed.inMinutes / 60).ceil();
 
-/// What a walk-in owes at the posted [rates] for a [stay]: the base rate
-/// for the first [kBaseStayHours] hours, then the succeeding-hour rate for
-/// every started hour after, capped at the daily rate per started day when
-/// the facility has one. Null when no base rate is posted. Staff can still
-/// change the amount; this is only the starting point.
-double? walkInSuggestedFee(VehicleRates rates, Duration stay) {
-  if (rates.initial <= 0) return null;
-  final int hours = stayHours(stay);
-  final int extra = hours > kBaseStayHours ? hours - kBaseStayHours : 0;
-  double fee = rates.initial + extra * rates.succeedingHour;
-  if (rates.succeedingDaily > 0) {
-    final int days = hours <= 0 ? 1 : (hours / 24).ceil();
-    final double cap = rates.succeedingDaily * days;
-    if (cap >= rates.initial && fee > cap) fee = cap;
-  }
-  return (fee * 100).round() / 100;
-}
-
 /// Grace periods an owner can pick (`establishment_details
 /// .gracePeriodMinutes`): minutes past the paid time a vehicle may still
 /// leave without overtime.
