@@ -17,6 +17,7 @@ const {
 const paymongo = require("./paymongo");
 const { dayKeyManila, dayStartManila } = require("./dates");
 const { settleRecoveryInTx } = require("./refunds");
+const { manilaLabel } = require("./closures");
 const paymentHealth = require("./payment_health");
 
 const CHECKOUTS = "parking_checkouts";
@@ -44,6 +45,24 @@ async function loadEstablishment(db, establishmentId) {
 }
 
 /**
+ * Why [establishment] takes no new drivers at [nowMs], or null when it
+ * does: an admin pulled it (not approved), or its owner closed it for a
+ * while (`closedUntil`, with `closedAt` when it starts). Its gate admits no
+ * one then, so nothing may be sold or charged.
+ */
+function facilityClosedMessage(establishment, nowMs) {
+  if (String(establishment?.status || "").toLowerCase() !== "approved") {
+    return "This facility is not accepting drivers right now.";
+  }
+  const until = establishment?.closedUntil?.toMillis?.();
+  const from = establishment?.closedAt?.toMillis?.();
+  if (until && nowMs < until && (!from || nowMs >= from)) {
+    return `This facility is closed until ${manilaLabel(until)}.`;
+  }
+  return null;
+}
+
+/**
  * Validates what the driver picked and prices it from the establishment's
  * own rates. Returns the checkout record to store (no PayMongo session yet).
  */
@@ -66,12 +85,8 @@ async function priceCheckout(db, driverId, data) {
   if (!establishment) {
     throw new HttpsError("not-found", "Parking establishment not found.");
   }
-  if (String(establishment.status || "").toLowerCase() !== "approved") {
-    throw new HttpsError(
-      "failed-precondition",
-      "This establishment is not accepting drivers right now.",
-    );
-  }
+  const closed = facilityClosedMessage(establishment, Date.now());
+  if (closed) throw new HttpsError("failed-precondition", closed);
 
   let priced;
   try {
@@ -463,6 +478,7 @@ module.exports = {
   asString,
   requireVerifiedUser,
   loadEstablishment,
+  facilityClosedMessage,
   priceCheckout,
   buildQrCode,
   chargeDetails,
